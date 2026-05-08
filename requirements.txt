@@ -1,0 +1,23 @@
+# APEX — Resume Intelligence Agent
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Pure Python 3.8+ stdlib — NO pip packages required!
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# Standard library modules used:
+#   - http.server     (web server)
+#   - urllib          (HTTP requests)
+#   - json            (parsing)
+#   - threading       (parallel scraping)
+#   - xml.etree       (RSS feed parsing)
+#   - re              (regex)
+#   - html            (entity decoding)
+#
+# External services you'll need API keys for (free tiers available):
+#   1. OpenAI API   → https://platform.openai.com/api-keys
+#   2. JSearch API  → https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch
+#
+# Both keys go in config.json (see config.example.json for the template)
+#
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# This file is intentionally empty. Just run: python agent_server.py
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
