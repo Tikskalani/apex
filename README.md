@@ -31,28 +31,6 @@ APEX is fundamentally different. It is a **local AI agent** that:
 
 It runs entirely on your machine. Your resume never leaves your computer except for the API calls you authorize.
 
----
-
-## Demo
-
-> *Replace this section with a recorded demo GIF — see [How to record the demo](#how-to-record-the-demo) below.*
-
-```
-Physical Therapist · Live Run
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✓ 71 live listings from Indeed, LinkedIn, Glassdoor, Arbeitnow
-✓ Sector: healthcare | Confidence: HIGH (90%)
-✓ ATS Score: 55 → 92 (+37 points)
-✓ Self-improvement loop: 3 iterations
-  ▶ Iteration 1 — keyword injection: 75 → 85 (+10) ✓ KEPT
-  ✗ Iteration 2 — quantification: 85 → 75 (-10) REJECTED
-  ○ Iteration 3 — readability: 85 → 85 (same, best kept)
-✓ All 16 tabs populated
-✓ Cost: ~18¢
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-A real exported PDF is available at [`assets/sample-export.pdf`](assets/sample-export.pdf).
 
 ---
 
