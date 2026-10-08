@@ -82,12 +82,30 @@ def app(tmp_path_factory, fake_openai):
     log.close()
 
 
+def _headless_pids():
+    """PIDs of Playwright's headless Chromium (never the user's chrome.exe)."""
+    if os.name != 'nt':
+        return set()
+    out = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq headless_shell.exe', '/FO', 'CSV', '/NH'],
+                         capture_output=True, text=True).stdout
+    return {int(line.split('","')[1]) for line in out.splitlines() if line.startswith('"headless_shell')}
+
+
 @pytest.fixture(scope='session')
 def browser():
+    before = _headless_pids()
     with sync_playwright() as p:
         b = p.chromium.launch(headless=os.environ.get('APEX_HEADED') != '1')
         yield b
         b.close()
+    # On Windows the driver can exit before Chromium finishes shutting down,
+    # orphaning a process per run. Give it a moment, then reap only the
+    # headless_shell processes this session started.
+    deadline = time.time() + 10
+    while (left := _headless_pids() - before) and time.time() < deadline:
+        time.sleep(0.5)
+    for pid in left:
+        subprocess.run(['taskkill', '/PID', str(pid), '/T', '/F'], capture_output=True)
 
 
 class PageProbe:
