@@ -110,6 +110,132 @@ def load_config():
     exit(1)
 
 OPENAI_KEY, JSEARCH_KEY = load_config()
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# HOSTED DEMO MODE (all off unless APEX_ACCESS_CODE is set)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Locally nothing here applies. On a public host:
+#   APEX_ACCESS_CODE     code visitors type on /login (required)
+#   APEX_SESSION_SECRET  >= 32 random chars; signs session cookies (required)
+#   APEX_PUBLIC_HOST     e.g. apex-you.fly.dev (accepted Host / https Origin)
+#   APEX_BIND            0.0.0.0 inside a container
+#   APEX_TRUST_PROXY=1   take the client IP from Fly-Client-IP / X-Forwarded-For
+#   APEX_VISITOR_BUDGET  AI cost units per visitor per hour (default 40; a full run is 10)
+#   APEX_DAILY_BUDGET    AI cost units for everyone per UTC day (default 300)
+import hmac, hashlib, secrets
+from urllib.parse import parse_qs as _parse_qs
+ACCESS_CODE     = os.environ.get('APEX_ACCESS_CODE', '')
+SESSION_SECRET  = os.environ.get('APEX_SESSION_SECRET', '')
+PUBLIC_HOST     = os.environ.get('APEX_PUBLIC_HOST', '').strip().lower()
+BIND            = os.environ.get('APEX_BIND', '').strip()
+TRUST_PROXY     = os.environ.get('APEX_TRUST_PROXY') == '1'
+HOSTED          = bool(ACCESS_CODE)
+VISITOR_BUDGET  = int(os.environ.get('APEX_VISITOR_BUDGET') or 40)
+DAILY_BUDGET    = int(os.environ.get('APEX_DAILY_BUDGET') or 300)
+SESSION_DAYS    = 14
+if HOSTED and len(SESSION_SECRET) < 32:
+    print('\n  ERROR: APEX_SESSION_SECRET must be at least 32 random characters when APEX_ACCESS_CODE is set.')
+    exit(1)
+if (PUBLIC_HOST or BIND not in ('', '127.0.0.1', '::1', 'localhost')) and not HOSTED:
+    print('\n  ERROR: refusing to listen publicly without APEX_ACCESS_CODE: anyone could spend your OpenAI credits.')
+    exit(1)
+
+# Rough relative cost of each AI-backed route (a full /analyze run is ~12 model calls).
+AI_COSTS = {'/analyze': 10, '/tailor': 2, '/apply-all-recommendations': 2, '/transcribe': 2,
+            '/bullets': 1, '/negotiate': 1, '/bridge': 1, '/followup': 1, '/drift': 1, '/match': 1,
+            '/xray': 1, '/grade-answer': 1, '/velocity': 1, '/draft-cover-letter': 1, '/parse-resume': 1}
+# Features that act with the operator's email account or collect third-party
+# credentials. They stay local-only.
+HOSTED_DISABLED = {'/config/smtp', '/config/smtp/test', '/alerts/subscribe', '/alerts/unsubscribe',
+                   '/alerts/test', '/alerts/scan', '/alerts/list', '/inbox/scan'}
+_budget_lock = threading.Lock()
+_visitor_spend = {}            # owner -> [(ts, units)]
+_login_fail = {}               # ip -> [ts, ...]
+
+
+def _sign(payload):
+    return hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+
+
+def make_session():
+    owner = secrets.token_hex(16)
+    exp = int(time.time()) + SESSION_DAYS * 86400
+    payload = f'v1.{owner}.{exp}'
+    return owner, f'{payload}.{_sign(payload)}'
+
+
+def read_session(token):
+    """Owner id for a valid, unexpired token, else None."""
+    try:
+        v, owner, exp, sig = (token or '').split('.')
+        payload = f'{v}.{owner}.{exp}'
+        if v != 'v1' or not hmac.compare_digest(sig, _sign(payload)) or int(exp) < time.time():
+            return None
+        return owner
+    except ValueError:
+        return None
+
+
+def charge(owner, units):
+    """Spend AI budget. Returns None, or a message saying why not."""
+    if not HOSTED or not units:
+        return None
+    now = time.time()
+    today = time.strftime('%Y-%m-%d', time.gmtime(now))
+    with _budget_lock:
+        hist = [(t, u) for t, u in _visitor_spend.get(owner, []) if now - t < 3600]
+        used = sum(u for _, u in hist)
+        if used + units > VISITOR_BUDGET:
+            wait = int(3600 - (now - hist[0][0])) // 60 + 1 if hist else 60
+            return f'Demo limit reached for this hour. Try again in about {wait} minute{"s" if wait != 1 else ""}.'
+        # The daily cap is stored in apex.db: it survives the machine stopping.
+        if not store.try_spend(today, units, DAILY_BUDGET):
+            return "The demo's AI budget for today is used up. It resets at midnight UTC."
+        hist.append((now, units))
+        _visitor_spend[owner] = hist
+    return None
+
+
+def login_throttled(ip):
+    now = time.time()
+    with _budget_lock:
+        recent = [t for t in _login_fail.get(ip, []) if now - t < 600]
+        _login_fail[ip] = recent
+        return len(recent) >= 5
+
+
+def login_failed(ip):
+    with _budget_lock:
+        _login_fail.setdefault(ip, []).append(time.time())
+
+
+LOGIN_CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+             "form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+
+
+def login_page(error=''):
+    err = f'<p class="err" role="alert">{html_lib.escape(error)}</p>' if error else ''
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>APEX · Sign in</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 L28 26 L22 26 L19.5 20 L12.5 20 L10 26 L4 26 Z M16 9 L13.5 16 L18.5 16 Z' fill='%233e9eff'/%3E%3C/svg%3E">
+<style>
+*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#000;color:#e8eaed;
+font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px}}
+main{{width:min(400px,100%);background:#0b0d10;border:1px solid rgba(255,255,255,.08);border-radius:22px;padding:36px 32px}}
+h1{{font-size:28px;font-weight:600;letter-spacing:-.02em;margin:18px 0 6px}}p{{color:#9aa0a6;margin:0 0 24px}}
+label{{display:block;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#80868b;margin-bottom:8px}}
+input{{width:100%;padding:13px 14px;background:#14171b;border:1px solid rgba(255,255,255,.1);border-radius:12px;color:#fff;font-size:16px}}
+input:focus{{outline:none;border-color:#3e9eff;box-shadow:0 0 0 4px rgba(62,158,255,.12)}}
+button{{width:100%;margin-top:16px;padding:13px;border:0;border-radius:999px;background:#3e9eff;color:#fff;font-size:15px;font-weight:600;cursor:pointer}}
+button:hover{{background:#5aaeff}}.err{{color:#ff5560;margin:14px 0 0}}small{{display:block;margin-top:22px;color:#5f6368;font-size:12px}}
+</style></head><body><main>
+<svg width="40" height="40" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 L28 26 L22 26 L19.5 20 L12.5 20 L10 26 L4 26 Z M16 9 L13.5 16 L18.5 16 Z" fill="#3e9eff"/></svg>
+<h1>APEX</h1><p>Resume intelligence agent · live demo</p>
+<form method="post" action="/login"><label for="code">Access code</label>
+<input id="code" name="code" type="password" autocomplete="current-password" required autofocus>
+<button type="submit">Enter</button>{err}</form>
+<small>Your pipeline in this demo is private to your browser session. Don't paste anything you wouldn't put on a public resume.</small>
+</main></body></html>'''
 UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 
 
@@ -3483,18 +3609,22 @@ class Handler(BaseHTTPRequestHandler):
     # Sec-Fetch-Site is refused before any route runs. Requests with no Origin
     # header (curl, the test suite) are allowed: browsers always send Origin on
     # cross-origin fetches, so its absence means a non-browser client.
-    ALLOWED_HOSTS = {f'localhost:{PORT}', f'127.0.0.1:{PORT}', f'[::1]:{PORT}'}
+    ALLOWED_HOSTS = {f'localhost:{PORT}', f'127.0.0.1:{PORT}', f'[::1]:{PORT}'} | ({PUBLIC_HOST} if PUBLIC_HOST else set())
+    ALLOWED_ORIGINS = {f'http://{h}' for h in (f'localhost:{PORT}', f'127.0.0.1:{PORT}', f'[::1]:{PORT}')} \
+        | ({f'https://{PUBLIC_HOST}'} if PUBLIC_HOST else set())
 
     def _allowed_origin(self):
         origin = self.headers.get('Origin')
-        if origin and origin.split('://', 1)[-1] in self.ALLOWED_HOSTS and origin.startswith('http://'):
-            return origin
-        return None
+        return origin if origin in self.ALLOWED_ORIGINS else None
 
     def _guard(self, path):
         """Return an error string if this request must be refused, else None."""
+        # Platform health checks call /health with an internal Host (the
+        # machine's private address). Only the Host check is skipped for it;
+        # Origin and Sec-Fetch-Site rules below still apply.
+        health = self.command == 'GET' and path == '/health'
         host = (self.headers.get('Host') or '').lower()
-        if host not in self.ALLOWED_HOSTS:
+        if host not in self.ALLOWED_HOSTS and not health:
             return 'Host not allowed. Open http://localhost:%d/' % PORT
         origin = self.headers.get('Origin')
         if origin is not None and not self._allowed_origin():
@@ -3510,6 +3640,78 @@ class Handler(BaseHTTPRequestHandler):
             if not is_nav:
                 return 'Cross-site request refused'
         return None
+
+    # ── HOSTED: session gate ───────────────────────────────────────────────────
+    OPEN_PATHS = {'/health', '/login', '/logout'}
+
+    def _client_ip(self):
+        if TRUST_PROXY:
+            ip = self.headers.get('Fly-Client-IP') or (self.headers.get('X-Forwarded-For') or '').split(',')[0].strip()
+            if ip:
+                return ip
+        return self.client_address[0]
+
+    def _cookie(self, name):
+        for part in (self.headers.get('Cookie') or '').split(';'):
+            k, _, v = part.strip().partition('=')
+            if k == name:
+                return v
+        return ''
+
+    def _gate(self, path):
+        """Hosted mode: set self.owner from the session, or answer and return False."""
+        self.owner = ''
+        if not HOSTED or path in self.OPEN_PATHS:
+            return True
+        owner = read_session(self._cookie('apex_session'))
+        if owner:
+            self.owner = owner
+            return True
+        if self.command == 'GET' and path in ('/', '/index.html'):
+            self._redirect('/login')
+        else:
+            self._send_json(401, {'error': 'Your session has ended. Reload the page to sign in again.', 'login': True})
+        return False
+
+    def _redirect(self, where, cookie=None):
+        self.send_response(303)
+        self.send_header('Location', where)
+        if cookie is not None:
+            self.send_header('Set-Cookie', cookie)
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+
+    def _session_cookie(self, token, max_age):
+        attrs = f'apex_session={token}; Path=/; Max-Age={max_age}; HttpOnly; SameSite=Lax'
+        return attrs + ('; Secure' if PUBLIC_HOST else '')
+
+    def _login_html(self, code, error=''):
+        body = login_page(error).encode('utf-8')
+        self.send_response(code)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Content-Security-Policy', LOGIN_CSP)
+        self.send_header('X-Frame-Options', 'DENY')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_login_post(self):
+        length = int(self.headers.get('Content-Length') or 0)
+        if length > 4096:
+            self.close_connection = True
+            self._login_html(413, 'Request too large.'); return
+        form = _parse_qs(self.rfile.read(length).decode('utf-8', 'replace'))
+        ip = self._client_ip()
+        if login_throttled(ip):
+            self._login_html(429, 'Too many attempts. Wait ten minutes and try again.'); return
+        code = (form.get('code') or [''])[0]
+        if not hmac.compare_digest(code.encode('utf-8'), ACCESS_CODE.encode('utf-8')):
+            login_failed(ip)
+            self._login_html(401, 'That access code is not right.'); return
+        _, token = make_session()
+        self._redirect('/', self._session_cookie(token, SESSION_DAYS * 86400))
 
     def _refuse(self, msg):
         body = json.dumps({'error': msg}).encode('utf-8')
@@ -3553,6 +3755,13 @@ class Handler(BaseHTTPRequestHandler):
         qs = parse_qs(u.query or '')
         err = self._guard(path)
         if err: self._refuse(err); return
+        if HOSTED and path == '/login':
+            self._login_html(200); return
+        if HOSTED and path == '/logout':
+            self._redirect('/login', self._session_cookie('', 0)); return
+        if not self._gate(path): return
+        if HOSTED and path in HOSTED_DISABLED:
+            self._send_json(403, {'error': 'This feature is turned off in the online demo. Run APEX locally to use it.'}); return
         if path.startswith('/api/'):
             self._api('GET', path, qs, None); return
 
@@ -3580,6 +3789,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header('X-Content-Type-Options', 'nosniff')
                 self.send_header('Referrer-Policy', 'no-referrer')
                 self.send_header('X-Frame-Options', 'DENY')
+                if PUBLIC_HOST:
+                    self.send_header('Strict-Transport-Security', 'max-age=31536000')
                 self.end_headers()
                 self.wfile.write(body)
             except Exception as e:
@@ -3617,7 +3828,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/config':
             smtp = _load_smtp_config()
             # Never return key material: report presence only.
-            self._send_json(200, {'JSEARCH_ACTIVE': bool(JSEARCH_KEY), 'SMTP_CONFIGURED': bool(smtp['user'] and smtp['pass'])})
+            self._send_json(200, {'JSEARCH_ACTIVE': bool(JSEARCH_KEY), 'HOSTED': HOSTED,
+                                  'SMTP_CONFIGURED': (not HOSTED) and bool(smtp['user'] and smtp['pass'])})
             return
         if path == '/templates':
             self._send_json(200, {'templates': [{'id':k,'name':v['name'],'desc':v['desc']} for k,v in TEMPLATES.items()]})
@@ -3665,29 +3877,29 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if method == 'GET':
                 if path == '/api/applications':
-                    self._send_json(200, {'applications': store.list_applications(), 'summary': store.summary()}); return
+                    self._send_json(200, {'applications': store.list_applications(owner=self.owner), 'summary': store.summary(owner=self.owner)}); return
                 if path == '/api/application':
-                    self._send_json(200, {'application': store.get_application(q('id'), with_history=True)}); return
+                    self._send_json(200, {'application': store.get_application(q('id'), owner=self.owner, with_history=True)}); return
                 if path == '/api/scores/latest':
-                    self._send_json(200, {'score': store.latest_score(q('jobTitle'))}); return
+                    self._send_json(200, {'score': store.latest_score(q('jobTitle'), owner=self.owner)}); return
             else:
                 if path == '/api/applications':
-                    a, created = store.create_application(b)
+                    a, created = store.create_application(b, owner=self.owner)
                     self._send_json(201 if created else 200, {'application': a, 'created': created}); return
                 if path == '/api/applications/update':
                     changes = {k: v for k, v in b.items() if k != 'id'}
-                    self._send_json(200, {'application': store.update_application(b.get('id', ''), changes)}); return
+                    self._send_json(200, {'application': store.update_application(b.get('id', ''), changes, owner=self.owner)}); return
                 if path == '/api/applications/delete':
-                    store.delete_application(b.get('id', ''))
+                    store.delete_application(b.get('id', ''), owner=self.owner)
                     self._send_json(200, {'deleted': True}); return
                 if path == '/api/applications/import':
                     src = b.get('source') if b.get('source') in ('import', 'gmail') else 'import'
-                    self._send_json(200, store.import_applications(b.get('items'), source=src)); return
+                    self._send_json(200, store.import_applications(b.get('items'), source=src, owner=self.owner)); return
                 if path == '/api/applications/artifact':
-                    aid = store.add_artifact(b.get('id', ''), b.get('kind', ''), b.get('content'))
+                    aid = store.add_artifact(b.get('id', ''), b.get('kind', ''), b.get('content'), owner=self.owner)
                     self._send_json(201, {'artifact_id': aid}); return
                 if path == '/api/applications/followup-sent':
-                    self._send_json(200, {'application': store.record_followup_sent(b.get('id', ''))}); return
+                    self._send_json(200, {'application': store.record_followup_sent(b.get('id', ''), owner=self.owner)}); return
             self._send_json(404, {'error': 'not found'})
         except store.StoreError as e:
             self._send_json(404 if 'not found' in str(e) else 400, {'error': str(e)})
@@ -3735,11 +3947,24 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         # Refuse foreign origins before touching the body. A text/plain POST
         # skips the CORS preflight, so the preflight alone protects nothing.
-        err = self._guard(self.path.split('?', 1)[0])
+        route = self.path.split('?', 1)[0]
+        err = self._guard(route)
         if err:
             self._refuse(err)
             self.close_connection = True   # body left unread; don't reuse the socket
             return
+        if HOSTED and route == '/login':
+            self._handle_login_post(); return
+        if not self._gate(route):
+            self.close_connection = True
+            return
+        if HOSTED and route in HOSTED_DISABLED:
+            self.close_connection = True
+            self._send_json(403, {'error': 'This feature is turned off in the online demo. Run APEX locally to use it.'}); return
+        why = charge(self.owner, AI_COSTS.get(route, 0))
+        if why:
+            self.close_connection = True
+            self._send_json(429, {'error': why}); return
         # Read body — needed for all POST routes
         try:
             p = self._read_json_body()
@@ -3833,11 +4058,11 @@ class Handler(BaseHTTPRequestHandler):
 
             self._sse_start()
             raw_emit = self._make_emitter()
-            def emit(ev, _title=p.get('jobTitle', '').strip(), _sector=p.get('industry', 'general').strip()):
+            def emit(ev, _title=p.get('jobTitle', '').strip(), _sector=p.get('industry', 'general').strip(), _owner=self.owner):
                 if isinstance(ev, dict) and ev.get('type') == 'report_data':
                     d = ev.get('data') or {}
                     try:
-                        store.record_score(_title, _sector, d.get('atsScoreBefore'), d.get('atsScoreAfter'))
+                        store.record_score(_title, _sector, d.get('atsScoreBefore'), d.get('atsScoreAfter'), owner=_owner)
                     except Exception as ex:
                         print(f'  ⚠ score not recorded: {ex}')
                 raw_emit(ev)
@@ -3870,7 +4095,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {'error': 'Paste your resume in Launch first.'}); return
             baseline = store._score(p.get('baselineScore'))
             if baseline is None:
-                last = store.latest_score(job_title)
+                last = store.latest_score(job_title, owner=self.owner)
                 if not last:
                     self._send_json(400, {'error': f'No baseline for "{job_title}" yet. Run the agent once for this '
                                                     'job title; drift is measured against that run.'}); return
@@ -4286,20 +4511,26 @@ def run():
     # 'localhost' resolves to ::1 before 127.0.0.1 on Windows. Listening on
     # IPv4 only made every new connection wait ~2s for the refused IPv6 attempt.
     # Listen on both loopback addresses (still loopback only, never 0.0.0.0).
-    server = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
-    server.daemon_threads = True
     extra = []
-    try:
-        s6 = _ThreadingHTTPServerV6(('::1', PORT), Handler)
-        s6.daemon_threads = True
-        threading.Thread(target=s6.serve_forever, daemon=True).start()
-        extra.append(s6)
-    except OSError:
-        pass   # no IPv6 loopback on this machine; IPv4 still serves
+    if BIND:
+        cls = _ThreadingHTTPServerV6 if ':' in BIND else ThreadingHTTPServer
+        server = cls((BIND, PORT), Handler)
+        server.daemon_threads = True
+    else:
+        server = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
+        server.daemon_threads = True
+        try:
+            s6 = _ThreadingHTTPServerV6(('::1', PORT), Handler)
+            s6.daemon_threads = True
+            threading.Thread(target=s6.serve_forever, daemon=True).start()
+            extra.append(s6)
+        except OSError:
+            pass   # no IPv6 loopback on this machine; IPv4 still serves
     js_ok = bool(JSEARCH_KEY)
     smtp_cfg = _load_smtp_config()
     smtp_ok = bool(smtp_cfg['user'] and smtp_cfg['pass'])
-    threading.Thread(target=alerts_background_loop, daemon=True).start()
+    if not HOSTED:
+        threading.Thread(target=alerts_background_loop, daemon=True).start()
     bar = '=' * 64
     print('')
     print(bar)
@@ -4317,7 +4548,11 @@ def run():
     print('  JSearch:  ' + ('ACTIVE' if js_ok else 'off (free APIs cover it)'))
     print('  SMTP:     ' + ('ACTIVE' if smtp_ok else 'off (set up in Alerts tab)'))
     print(bar)
-    print('  OPEN:  http://localhost:' + str(PORT) + '/   (page + API on one origin)')
+    if HOSTED:
+        print(f'  HOSTED DEMO: access code required · {VISITOR_BUDGET} units/visitor/hour · {DAILY_BUDGET} units/day')
+        print(f'  PUBLIC:  https://{PUBLIC_HOST}/' if PUBLIC_HOST else f'  LISTEN:  {BIND or "127.0.0.1"}:{PORT}')
+    else:
+        print('  OPEN:  http://localhost:' + str(PORT) + '/   (page + API on one origin)')
     print('  Ctrl+C to stop')
     print(bar + '\n', flush=True)
     try:

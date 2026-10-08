@@ -5,6 +5,10 @@ $APEX_DB). Every public function opens its own short-lived connection, so it is
 safe to call from ThreadingHTTPServer's request threads.
 
 Rules:
+- Every row belongs to an `owner`. Running locally there is one owner, ''. In
+  the hosted demo each signed-in visitor gets a random owner id, so visitors
+  never see each other's data. Every query filters by owner; a row owned by
+  someone else is indistinguishable from a missing row ("not found").
 - Applications are mutable records; every status change also appends an event.
 - Events and artifacts are append-only.
 - Validation lives here, not in the HTTP layer: callers get StoreError with a
@@ -22,10 +26,12 @@ SOURCES = ('manual', 'tailor', 'gmail', 'jobs', 'import')
 ARTIFACT_KINDS = ('tailored_resume', 'cover_letter', 'followup', 'outreach', 'note')
 FOLLOWUP_AFTER_DAYS = 7
 MAX_TEXT = 200_000           # per artifact; a resume is ~5 KB
+MAX_APPS_PER_OWNER = 2000    # a hosted visitor can't fill the disk
 
-SCHEMA = """
+TABLES = """
 CREATE TABLE IF NOT EXISTS applications (
     id             TEXT PRIMARY KEY,
+    owner          TEXT NOT NULL DEFAULT '',
     company        TEXT NOT NULL CHECK (length(trim(company)) > 0),
     role           TEXT NOT NULL CHECK (length(trim(role)) > 0),
     url            TEXT NOT NULL DEFAULT '',
@@ -38,9 +44,6 @@ CREATE TABLE IF NOT EXISTS applications (
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS applications_dedupe
-    ON applications (lower(trim(company)), lower(trim(role)), url);
-
 CREATE TABLE IF NOT EXISTS events (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
@@ -48,8 +51,6 @@ CREATE TABLE IF NOT EXISTS events (
     kind           TEXT NOT NULL,
     detail         TEXT NOT NULL DEFAULT '{}'
 );
-CREATE INDEX IF NOT EXISTS events_app ON events (application_id, at);
-
 CREATE TABLE IF NOT EXISTS artifacts (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
@@ -57,17 +58,28 @@ CREATE TABLE IF NOT EXISTS artifacts (
     content        TEXT NOT NULL,
     created_at     TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS artifacts_app ON artifacts (application_id, kind, created_at);
-
 CREATE TABLE IF NOT EXISTS score_history (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner        TEXT NOT NULL DEFAULT '',
     job_title    TEXT NOT NULL,
     sector       TEXT NOT NULL DEFAULT 'general',
     score_before INTEGER,
     score_after  INTEGER,
     created_at   TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS score_title ON score_history (lower(job_title), created_at);
+CREATE TABLE IF NOT EXISTS spend (
+    day   TEXT PRIMARY KEY,              -- UTC YYYY-MM-DD
+    units INTEGER NOT NULL DEFAULT 0     -- AI cost units used that day (hosted demo)
+);
+"""
+
+INDEXES = """
+CREATE UNIQUE INDEX IF NOT EXISTS applications_dedupe_owner
+    ON applications (owner, lower(trim(company)), lower(trim(role)), url);
+CREATE INDEX IF NOT EXISTS applications_owner ON applications (owner, updated_at);
+CREATE INDEX IF NOT EXISTS events_app ON events (application_id, at);
+CREATE INDEX IF NOT EXISTS artifacts_app ON artifacts (application_id, kind, created_at);
+CREATE INDEX IF NOT EXISTS score_owner_title ON score_history (owner, lower(job_title), created_at);
 """
 
 
@@ -95,9 +107,23 @@ def _connect():
 
 
 def init():
+    parent = os.path.dirname(db_path())
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     with _connect() as conn:
         conn.execute('PRAGMA journal_mode = WAL')
-        conn.executescript(SCHEMA)
+        conn.executescript(TABLES)
+        # Databases created before owners existed: add the column in place.
+        # Existing rows become owner '' (the local user), which is what they were.
+        def has_owner(table):
+            return any(r['name'] == 'owner' for r in conn.execute('SELECT name FROM pragma_table_info(?)', (table,)))
+        if not has_owner('applications'):
+            conn.execute("ALTER TABLE applications ADD COLUMN owner TEXT NOT NULL DEFAULT ''")
+        if not has_owner('score_history'):
+            conn.execute("ALTER TABLE score_history ADD COLUMN owner TEXT NOT NULL DEFAULT ''")
+        conn.execute('DROP INDEX IF EXISTS applications_dedupe')     # pre-owner index
+        conn.execute('DROP INDEX IF EXISTS score_title')
+        conn.executescript(INDEXES)
 
 
 # ── validation ────────────────────────────────────────────────────────────────
@@ -136,6 +162,7 @@ def _url(v):
 
 def _row(r):
     d = dict(r)
+    d.pop('owner', None)          # internal; never sent to the browser
     d['followup_due'] = _followup_due(d)
     return d
 
@@ -155,11 +182,17 @@ def _event(conn, app_id, kind, **detail):
                  (app_id, _now(), kind, json.dumps(detail, ensure_ascii=False)))
 
 
+def _find_dupe(conn, owner, company, role, url):
+    return conn.execute(
+        'SELECT * FROM applications WHERE owner = ? AND lower(trim(company)) = lower(?)'
+        ' AND lower(trim(role)) = lower(?) AND url = ?', (owner, company, role, url)).fetchone()
+
+
 # ── applications ──────────────────────────────────────────────────────────────
 
-def create_application(data):
-    """Create, or return the existing row if company+role+url already exists.
-    Returns (application, created: bool)."""
+def create_application(data, *, owner=''):
+    """Create, or return the existing row if company+role+url already exists
+    for this owner. Returns (application, created: bool)."""
     company = _text(data.get('company'), 'company', 200, required=True)
     role = _text(data.get('role'), 'role', 200, required=True)
     url = _url(data.get('url'))
@@ -179,33 +212,32 @@ def create_application(data):
         'created_at': now, 'updated_at': now,
     }
     with _connect() as conn:
-        existing = conn.execute(
-            'SELECT * FROM applications WHERE lower(trim(company)) = lower(?) AND lower(trim(role)) = lower(?) AND url = ?',
-            (company, role, url)).fetchone()
+        existing = _find_dupe(conn, owner, company, role, url)
         if existing:
             return _row(existing), False
+        n = conn.execute('SELECT count(*) FROM applications WHERE owner = ?', (owner,)).fetchone()[0]
+        if n >= MAX_APPS_PER_OWNER:
+            raise StoreError(f'pipeline is full ({MAX_APPS_PER_OWNER} applications); delete some first')
         try:
             conn.execute(
-                'INSERT INTO applications (id, company, role, url, location, status, applied_on, next_action_on,'
-                ' notes, source, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-                (rec['id'], rec['company'], rec['role'], rec['url'], rec['location'], rec['status'],
+                'INSERT INTO applications (id, owner, company, role, url, location, status, applied_on,'
+                ' next_action_on, notes, source, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                (rec['id'], owner, rec['company'], rec['role'], rec['url'], rec['location'], rec['status'],
                  rec['applied_on'], rec['next_action_on'], rec['notes'], rec['source'],
                  rec['created_at'], rec['updated_at']))
         except sqlite3.IntegrityError:
             # Lost a race with an identical create on another request thread.
-            existing = conn.execute(
-                'SELECT * FROM applications WHERE lower(trim(company)) = lower(?) AND lower(trim(role)) = lower(?) AND url = ?',
-                (company, role, url)).fetchone()
+            existing = _find_dupe(conn, owner, company, role, url)
             if existing:
                 return _row(existing), False
             raise
         _event(conn, rec['id'], 'created', status=status, source=source)
-    return get_application(rec['id']), True
+    return get_application(rec['id'], owner=owner), True
 
 
-def get_application(app_id, with_history=False):
+def get_application(app_id, *, owner='', with_history=False):
     with _connect() as conn:
-        r = conn.execute('SELECT * FROM applications WHERE id = ?', (app_id,)).fetchone()
+        r = conn.execute('SELECT * FROM applications WHERE id = ? AND owner = ?', (app_id, owner)).fetchone()
         if not r:
             raise StoreError('application not found')
         a = _row(r)
@@ -219,22 +251,24 @@ def get_application(app_id, with_history=False):
     return a
 
 
-def list_applications():
+def list_applications(*, owner=''):
     with _connect() as conn:
-        rows = [_row(r) for r in conn.execute('SELECT * FROM applications ORDER BY updated_at DESC')]
+        rows = [_row(r) for r in conn.execute(
+            'SELECT * FROM applications WHERE owner = ? ORDER BY updated_at DESC', (owner,))]
         kits = {r['application_id']: r['n'] for r in conn.execute(
-            'SELECT application_id, count(*) AS n FROM artifacts GROUP BY application_id')}
+            'SELECT a.application_id, count(*) AS n FROM artifacts a JOIN applications p ON p.id = a.application_id'
+            ' WHERE p.owner = ? GROUP BY a.application_id', (owner,))}
     for a in rows:
         a['artifact_count'] = kits.get(a['id'], 0)
     return rows
 
 
-def update_application(app_id, changes):
+def update_application(app_id, changes, *, owner=''):
     allowed = {'status', 'notes', 'next_action_on', 'url', 'location', 'company', 'role', 'applied_on'}
     unknown = set(changes) - allowed - {'id'}
     if unknown:
         raise StoreError(f'cannot update: {", ".join(sorted(unknown))}')
-    current = get_application(app_id)
+    current = get_application(app_id, owner=owner)
     upd = {}
     if 'status' in changes:
         upd['status'] = _status(changes['status'])
@@ -261,26 +295,26 @@ def update_application(app_id, changes):
         try:
             conn.execute(
                 'UPDATE applications SET company = ?, role = ?, url = ?, location = ?, status = ?, applied_on = ?,'
-                ' next_action_on = ?, notes = ?, updated_at = ? WHERE id = ?',
+                ' next_action_on = ?, notes = ?, updated_at = ? WHERE id = ? AND owner = ?',
                 (m['company'], m['role'], m['url'], m['location'], m['status'], m['applied_on'],
-                 m['next_action_on'], m['notes'], m['updated_at'], app_id))
+                 m['next_action_on'], m['notes'], m['updated_at'], app_id, owner))
         except sqlite3.IntegrityError:
             raise StoreError('another application already has this company, role and link')
         if 'status' in upd and upd['status'] != current['status']:
             _event(conn, app_id, 'status', frm=current['status'], to=upd['status'])
         if 'notes' in upd and upd['notes'] != current['notes']:
             _event(conn, app_id, 'note')
-    return get_application(app_id)
+    return get_application(app_id, owner=owner)
 
 
-def delete_application(app_id):
+def delete_application(app_id, *, owner=''):
     with _connect() as conn:
-        n = conn.execute('DELETE FROM applications WHERE id = ?', (app_id,)).rowcount
+        n = conn.execute('DELETE FROM applications WHERE id = ? AND owner = ?', (app_id, owner)).rowcount
     if not n:
         raise StoreError('application not found')
 
 
-def import_applications(items, source='import'):
+def import_applications(items, source='import', *, owner=''):
     """Bulk create with dedupe (localStorage migration, Gmail scan).
     Returns counts. Invalid rows are skipped and reported, never half-saved."""
     if not isinstance(items, list):
@@ -288,7 +322,8 @@ def import_applications(items, source='import'):
     created, duplicates, skipped = 0, 0, []
     for i, it in enumerate(items[:1000]):
         try:
-            _, was_new = create_application({**(it or {}), 'source': (it or {}).get('source') or source})
+            it = it if isinstance(it, dict) else {}
+            _, was_new = create_application({**it, 'source': it.get('source') or source}, owner=owner)
             created += was_new
             duplicates += not was_new
         except StoreError as e:
@@ -296,8 +331,8 @@ def import_applications(items, source='import'):
     return {'created': created, 'duplicates': duplicates, 'skipped': skipped}
 
 
-def summary():
-    apps = list_applications()
+def summary(*, owner=''):
+    apps = list_applications(owner=owner)
     by = {s: sum(1 for a in apps if a['status'] == s) for s in STATUSES}
     sent = sum(by[s] for s in ('applied', 'interview', 'offer', 'rejected'))
     progressed = by['interview'] + by['offer']
@@ -310,7 +345,7 @@ def summary():
 
 # ── artifacts (apply kit) ─────────────────────────────────────────────────────
 
-def add_artifact(app_id, kind, content):
+def add_artifact(app_id, kind, content, *, owner=''):
     if kind not in ARTIFACT_KINDS:
         raise StoreError(f'kind must be one of: {", ".join(ARTIFACT_KINDS)}')
     content = '' if content is None else str(content)
@@ -318,7 +353,7 @@ def add_artifact(app_id, kind, content):
         raise StoreError('content is empty')
     if len(content) > MAX_TEXT:
         raise StoreError('content is too large')
-    get_application(app_id)   # raises if missing
+    get_application(app_id, owner=owner)   # raises if missing or someone else's
     with _connect() as conn:
         cur = conn.execute('INSERT INTO artifacts (application_id, kind, content, created_at) VALUES (?,?,?,?)',
                            (app_id, kind, content, _now()))
@@ -327,14 +362,33 @@ def add_artifact(app_id, kind, content):
     return cur.lastrowid
 
 
-def record_followup_sent(app_id, days=FOLLOWUP_AFTER_DAYS):
+def record_followup_sent(app_id, days=FOLLOWUP_AFTER_DAYS, *, owner=''):
     """Mark that a follow-up went out; schedule the next one."""
-    get_application(app_id)
+    get_application(app_id, owner=owner)
     nxt = (date.today() + timedelta(days=days)).isoformat()
     with _connect() as conn:
-        conn.execute('UPDATE applications SET next_action_on = ?, updated_at = ? WHERE id = ?', (nxt, _now(), app_id))
+        conn.execute('UPDATE applications SET next_action_on = ?, updated_at = ? WHERE id = ? AND owner = ?',
+                     (nxt, _now(), app_id, owner))
         _event(conn, app_id, 'followup_sent', next_action_on=nxt)
-    return get_application(app_id)
+    return get_application(app_id, owner=owner)
+
+
+# ── daily AI budget (hosted demo) ─────────────────────────────────────────────
+
+def try_spend(day, units, cap):
+    """Atomically add `units` to `day` unless that would exceed `cap`.
+    Persisted so a restarted (auto-stopped) machine can't reset the cap."""
+    with _connect() as conn:
+        conn.execute('INSERT OR IGNORE INTO spend (day, units) VALUES (?, 0)', (day,))
+        cur = conn.execute('UPDATE spend SET units = units + ? WHERE day = ? AND units + ? <= ?',
+                           (units, day, units, cap))
+        return cur.rowcount == 1
+
+
+def spent(day):
+    with _connect() as conn:
+        r = conn.execute('SELECT units FROM spend WHERE day = ?', (day,)).fetchone()
+    return r['units'] if r else 0
 
 
 # ── score history (drift baseline) ────────────────────────────────────────────
@@ -347,18 +401,22 @@ def _score(v):
     return max(0, min(100, n))
 
 
-def record_score(job_title, sector, before, after):
+def record_score(job_title, sector, before, after, *, owner=''):
     title = _text(job_title, 'job_title', 200, required=True)
     b, a = _score(before), _score(after)
     if a is None:
         raise StoreError('score_after must be a number')
     with _connect() as conn:
-        conn.execute('INSERT INTO score_history (job_title, sector, score_before, score_after, created_at) VALUES (?,?,?,?,?)',
-                     (title, (sector or 'general').strip(), b, a, _now()))
+        conn.execute('INSERT INTO score_history (owner, job_title, sector, score_before, score_after, created_at)'
+                     ' VALUES (?,?,?,?,?,?)', (owner, title, (sector or 'general').strip(), b, a, _now()))
 
 
-def latest_score(job_title):
+def latest_score(job_title, *, owner=''):
     with _connect() as conn:
-        r = conn.execute('SELECT * FROM score_history WHERE lower(job_title) = lower(?) ORDER BY id DESC LIMIT 1',
-                         ((job_title or '').strip(),)).fetchone()
-    return dict(r) if r else None
+        r = conn.execute('SELECT * FROM score_history WHERE owner = ? AND lower(job_title) = lower(?)'
+                         ' ORDER BY id DESC LIMIT 1', (owner, (job_title or '').strip())).fetchone()
+    if not r:
+        return None
+    d = dict(r)
+    d.pop('owner', None)
+    return d

@@ -67,6 +67,23 @@ Local resume-optimization and job-search agent app. Single developer, runs local
    secrets in any response, static serving is allowlist-only. Do not loosen
    these to "fix" a fetch error — fix the origin instead.
 
+## Hosted demo mode (Fly.io; see DEPLOY.md)
+
+Off unless `APEX_ACCESS_CODE` is set; local runs never see it. When on:
+access-code sign-in (`/login`, throttled 5 fails / 10 min per IP), HMAC-signed
+session cookie (`APEX_SESSION_SECRET`, HttpOnly, Secure, SameSite=Lax, 14
+days), each session is a separate store `owner` (visitors never see each
+other's data), AI routes metered by `AI_COSTS` against a per-visitor hourly
+budget (memory) and a daily budget (persisted in `apex.db` so restarts can't
+reset it), and `HOSTED_DISABLED` routes (SMTP, alerts, Gmail import) answer
+403. The server refuses to listen publicly without an access code. `/health`
+skips only the Host check (platform health checks use an internal Host).
+Deploy as ONE machine (`fly deploy --ha=false`): SQLite on one volume.
+
+7. **Every store call passes `owner=self.owner`.** A query without an owner
+   filter leaks one visitor's resumes to another in the hosted demo.
+   `tests/e2e/test_hosted.py` checks isolation; extend it with any new route.
+
 ## Endpoints
 
 GET: `/` (index.html), `/health`, `/cities`, `/templates`, `/config`,

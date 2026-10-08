@@ -50,7 +50,7 @@ def test_no_wildcard_cors_anywhere(app):
 @pytest.mark.parametrize('method,path,headers', [
     ('GET', '/health', {'Origin': 'https://evil.example'}),
     ('GET', '/config', {'Origin': 'null'}),                                       # file:// page
-    ('GET', '/health', {'Host': 'evil.example'}),                                 # DNS rebinding
+    ('GET', '/config', {'Host': 'evil.example'}),                                 # DNS rebinding
     ('GET', '/health', {'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'no-cors'}),
     ('OPTIONS', '/config/smtp', {'Origin': 'https://evil.example'}),
     ('POST', '/config/smtp', {'Origin': 'https://evil.example', 'Content-Type': 'application/json'}),

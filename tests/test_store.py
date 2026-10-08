@@ -145,3 +145,75 @@ def test_score_history_baseline():
     assert (last['score_before'], last['score_after']) == (55, 84)
     with pytest.raises(S.StoreError):
         S.record_score('X', 'general', 1, 'n/a')
+
+
+# ── owners (hosted demo: one visitor never sees another's data) ──────────────
+
+def test_owners_are_isolated():
+    a, _ = S.create_application({'company': 'Acme', 'role': 'Analyst'}, owner='alice')
+    b, created = S.create_application({'company': 'Acme', 'role': 'Analyst'}, owner='bob')
+    assert created and a['id'] != b['id'], 'dedupe is per owner'
+    assert 'owner' not in a, 'owner id is internal and never returned'
+    assert [x['id'] for x in S.list_applications(owner='alice')] == [a['id']]
+    assert S.list_applications() == [], 'the local owner sees neither'
+    for fn in (lambda: S.get_application(a['id'], owner='bob'),
+               lambda: S.update_application(a['id'], {'status': 'offer'}, owner='bob'),
+               lambda: S.add_artifact(a['id'], 'note', 'x', owner='bob'),
+               lambda: S.record_followup_sent(a['id'], owner='bob'),
+               lambda: S.delete_application(a['id'], owner='bob')):
+        with pytest.raises(S.StoreError, match='application not found'):
+            fn()
+    assert S.get_application(a['id'], owner='alice')['status'] == 'applied', 'bob changed nothing'
+    S.add_artifact(a['id'], 'note', 'hello', owner='alice')
+    assert S.list_applications(owner='bob')[0]['artifact_count'] == 0
+    assert S.summary(owner='bob')['total'] == 1
+
+
+def test_scores_are_per_owner():
+    S.record_score('Data Analyst', 'general', 40, 70, owner='alice')
+    assert S.latest_score('Data Analyst', owner='bob') is None
+    assert S.latest_score('Data Analyst', owner='alice')['score_after'] == 70
+    assert 'owner' not in S.latest_score('Data Analyst', owner='alice')
+
+
+def test_per_owner_cap(monkeypatch):
+    monkeypatch.setattr(S, 'MAX_APPS_PER_OWNER', 2)
+    S.create_application({'company': 'A', 'role': 'R'}, owner='x')
+    S.create_application({'company': 'B', 'role': 'R'}, owner='x')
+    with pytest.raises(S.StoreError, match='pipeline is full'):
+        S.create_application({'company': 'C', 'role': 'R'}, owner='x')
+    S.create_application({'company': 'C', 'role': 'R'}, owner='y')
+
+
+def test_upgrades_a_database_created_before_owners(tmp_path, monkeypatch):
+    old = tmp_path / 'old.db'
+    with sqlite3.connect(old) as c:
+        c.executescript("""
+          CREATE TABLE applications (id TEXT PRIMARY KEY, company TEXT NOT NULL, role TEXT NOT NULL,
+            url TEXT NOT NULL DEFAULT '', location TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
+            applied_on TEXT, next_action_on TEXT, notes TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'manual',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+          CREATE UNIQUE INDEX applications_dedupe ON applications (lower(trim(company)), lower(trim(role)), url);
+          CREATE TABLE score_history (id INTEGER PRIMARY KEY AUTOINCREMENT, job_title TEXT NOT NULL,
+            sector TEXT NOT NULL DEFAULT 'general', score_before INTEGER, score_after INTEGER, created_at TEXT NOT NULL);
+          INSERT INTO applications VALUES ('old1','Legacy Co','Analyst','','','interview','2026-09-01',NULL,'',
+            'manual','2026-09-01T00:00:00+00:00','2026-09-01T00:00:00+00:00');
+          INSERT INTO score_history (job_title, score_before, score_after, created_at) VALUES ('Analyst', 30, 60, 'x');
+        """)
+    monkeypatch.setenv('APEX_DB', str(old))
+    S.init(); S.init()                                   # idempotent
+    assert [a['company'] for a in S.list_applications()] == ['Legacy Co'], 'existing rows belong to the local user'
+    assert S.latest_score('Analyst')['score_after'] == 60
+    S.create_application({'company': 'Legacy Co', 'role': 'Analyst'}, owner='visitor')   # old global index is gone
+
+
+def test_daily_spend_is_capped_atomically():
+    assert S.try_spend('2026-10-08', 6, 10) and S.try_spend('2026-10-08', 4, 10)
+    assert not S.try_spend('2026-10-08', 1, 10), 'at the cap'
+    assert S.spent('2026-10-08') == 10 and S.spent('2026-10-09') == 0
+    assert S.try_spend('2026-10-09', 1, 10), 'a new day starts fresh'
+    results = []
+    ts = [threading.Thread(target=lambda: results.append(S.try_spend('2026-10-10', 1, 5))) for _ in range(20)]
+    for t in ts: t.start()
+    for t in ts: t.join()
+    assert sum(results) == 5 and S.spent('2026-10-10') == 5

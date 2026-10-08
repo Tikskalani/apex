@@ -1077,6 +1077,11 @@ label {
   .tracker-table td[colspan] { grid-column: 1 / -1; }
 }
 
+/* ─── Hosted demo ─── */
+.hosted .local-only { display: none !important; }
+.hosted-only { display: none !important; }
+.hosted .hosted-only { display: inline-flex !important; }
+
 /* ─── Hide / utility ─── */
 .hidden { display: none !important; }
 .copy-btn {
@@ -1170,7 +1175,7 @@ label {
 
     <div class="telemetry">
       <div class="tel-item"><span class="tel-dot live" id="tel-server"></span>SERVER<span class="tel-val" id="tel-server-v">…</span></div>
-      <div class="tel-item"><span class="tel-dot" id="tel-smtp"></span>SMTP<span class="tel-val" id="tel-smtp-v">—</span></div>
+      <div class="tel-item local-only"><span class="tel-dot" id="tel-smtp"></span>SMTP<span class="tel-val" id="tel-smtp-v">—</span></div>
       <div class="tel-item">ATS<span class="tel-val" id="tel-ats">—</span></div>
       <div class="tel-item">JOBS<span class="tel-val" id="tel-jobs">—</span></div>
     </div>
@@ -1179,6 +1184,9 @@ label {
       <button class="icon-btn" id="open-log" aria-label="Activity">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
       </button>
+      <a class="icon-btn hosted-only" href="/logout" aria-label="Sign out" title="Sign out">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </a>
       <button class="icon-btn primary" id="open-drawer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         <span>Launch</span>
@@ -1197,7 +1205,7 @@ label {
       <button class="dock-item" data-view="gap" data-tip="Gap Report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3 V21 H21 M7 14 L10 11 L14 15 L20 9"/></svg></button>
       <button class="dock-item" data-view="templates" data-tip="PDF Templates"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></button>
       <button class="dock-item" data-view="jobs" data-tip="Live Jobs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21 V5 a2 2 0 0 0 -2 -2 H10 a2 2 0 0 0 -2 2 V21"/></svg></button>
-      <button class="dock-item" data-view="alerts" data-tip="Job Alerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8 a6 6 0 0 1 12 0 c0 7 3 9 3 9 H3 s3 -2 3 -9 M10 21 a2 2 0 0 0 4 0"/></svg></button>
+      <button class="dock-item local-only" data-view="alerts" data-tip="Job Alerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8 a6 6 0 0 1 12 0 c0 7 3 9 3 9 H3 s3 -2 3 -9 M10 21 a2 2 0 0 0 4 0"/></svg></button>
       <div class="dock-divider"></div>
       <button class="dock-item" data-view="cl" data-tip="Cover Letter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4 H20 A2 2 0 0 1 22 6 V18 A2 2 0 0 1 20 20 H4 A2 2 0 0 1 2 18 V6 A2 2 0 0 1 4 4 M2 7 L12 13 L22 7"/></svg></button>
       <button class="dock-item" data-view="iv" data-tip="Interview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9 11 A3 3 0 0 1 15 11 c0 2 -3 2 -3 4 M12 17 v.01"/></svg></button>
@@ -1642,7 +1650,7 @@ label {
             </div>
             <button class="btn btn-primary" id="trk-add">Add to pipeline</button>
             <!-- ─── Gmail Inbox Scanner ─── -->
-            <div class="card" style="margin-top:var(--s5); border-color:rgba(62,158,255,0.20); background:linear-gradient(180deg, rgba(62,158,255,0.03), var(--bg-1))">
+            <div class="card local-only" style="margin-top:var(--s5); border-color:rgba(62,158,255,0.20); background:linear-gradient(180deg, rgba(62,158,255,0.03), var(--bg-1))">
               <div class="card-h">
                 <h3>Auto-sync from Gmail</h3>
                 <span class="badge"><span class="tel-dot"></span>IMAP · App Password</span>
@@ -1856,6 +1864,19 @@ label {
 <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js" integrity="sha384-4xaIisuLEy2lo2HkB2C4rEf7v8jbTb2kuogX6TkuEt9feTWKBSFSOzsqNNbV+sKh" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
 <script>
+// Hosted demo: an expired session answers 401 {login:true}; go sign in again
+// instead of showing a raw error on whichever panel happened to ask.
+{
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = async (...args) => {
+    const r = await nativeFetch(...args);
+    if (r.status === 401) {
+      r.clone().json().then(j => { if (j && j.login) location.href = '/login'; }).catch(() => {});
+    }
+    return r;
+  };
+}
+
 // Same origin as the page when served by agent_server.py (the only supported way).
 const SERVER = location.protocol.startsWith('http') ? location.origin : 'http://localhost:7842';
 const $  = id => document.getElementById(id);
@@ -1970,6 +1991,7 @@ async function loadConfig() {
   try {
     const r = await fetch(SERVER + '/config');
     const j = await r.json();
+    document.body.classList.toggle('hosted', !!j.HOSTED);
     $('tel-smtp').className = 'tel-dot ' + (j.SMTP_CONFIGURED ? 'live' : 'warn');
     $('tel-smtp-v').textContent = j.SMTP_CONFIGURED ? 'READY' : 'OFF';
     $('smtp-status').innerHTML = j.SMTP_CONFIGURED

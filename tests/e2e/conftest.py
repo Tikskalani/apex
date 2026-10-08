@@ -37,49 +37,76 @@ def fake_openai():
         yield f
 
 
+class ServerProcess:
+    """A copy of the app in a temp dir, started with the given extra env."""
+
+    def __init__(self, tmp_path_factory, fake_openai, extra_env=None, config=True):
+        d = tmp_path_factory.mktemp('apex')
+        for name in ('agent_server.py', 'apex_store.py', 'index.html'):
+            shutil.copy(ROOT / name, d / name)
+        env = dict(os.environ, APEX_OPENAI_BASE=fake_openai.url)
+        if config:
+            (d / 'config.json').write_text(json.dumps({'OPENAI_KEY': 'sk-test-stub-not-a-real-key', 'JSEARCH_KEY': ''}))
+        else:
+            env['OPENAI_API_KEY'] = 'sk-test-stub-not-a-real-key'     # how a container gets its key
+        self.port = _free_port()
+        env['APEX_PORT'] = str(self.port)
+        env.update(extra_env or {})
+        self.dir, self.url = d, f'http://localhost:{self.port}'
+        self._log_path = d / 'server.log'
+        self._log = open(self._log_path, 'w', encoding='utf-8')
+        self.proc = subprocess.Popen([sys.executable, '-I', str(d / 'agent_server.py')], cwd=d, env=env,
+                                     stdout=self._log, stderr=subprocess.STDOUT)
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            if self.proc.poll() is not None:
+                pytest.fail(f'agent_server.py exited with {self.proc.returncode}:\n{self.log()}')
+            try:
+                c = http.client.HTTPConnection('localhost', self.port, timeout=1)
+                c.request('GET', '/health')
+                if c.getresponse().status == 200:
+                    break
+            except OSError:
+                time.sleep(0.2)
+        else:
+            self.proc.kill()
+            pytest.fail(f'agent_server.py did not answer /health within 20s:\n{self.log()}')
+
+    def log(self):
+        return self._log_path.read_text(encoding='utf-8', errors='replace')
+
+    def stop(self):
+        self.proc.terminate()
+        try:
+            self.proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+        self._log.close()
+
+
 @pytest.fixture(scope='session')
 def app(tmp_path_factory, fake_openai):
-    """Start agent_server.py on a free port. Yields an object with .url, .port, .log."""
-    d = tmp_path_factory.mktemp('apex')
-    for name in ('agent_server.py', 'apex_store.py', 'index.html'):
-        shutil.copy(ROOT / name, d / name)
-    (d / 'config.json').write_text(json.dumps({'OPENAI_KEY': 'sk-test-stub-not-a-real-key', 'JSEARCH_KEY': ''}))
-    port = _free_port()
-    log_path = d / 'server.log'
-    env = dict(os.environ, APEX_PORT=str(port), APEX_OPENAI_BASE=fake_openai.url)
-    log = open(log_path, 'w', encoding='utf-8')
-    proc = subprocess.Popen([sys.executable, '-I', str(d / 'agent_server.py')], cwd=d, env=env,
-                            stdout=log, stderr=subprocess.STDOUT)
-
-    class App:
-        pass
-    a = App()
-    a.port, a.url, a.dir, a.proc = port, f'http://localhost:{port}', d, proc
-    a.log = lambda: log_path.read_text(encoding='utf-8', errors='replace')
-
-    deadline = time.time() + 20
-    while time.time() < deadline:
-        if proc.poll() is not None:
-            pytest.fail(f'agent_server.py exited with {proc.returncode}:\n{a.log()}')
-        try:
-            c = http.client.HTTPConnection('localhost', port, timeout=1)
-            c.request('GET', '/health')
-            if c.getresponse().status == 200:
-                break
-        except OSError:
-            time.sleep(0.2)
-    else:
-        proc.kill()
-        pytest.fail(f'agent_server.py did not answer /health within 20s:\n{a.log()}')
-
+    """The app as you run it locally. Yields .url, .port, .dir, .log()."""
+    a = ServerProcess(tmp_path_factory, fake_openai)
     yield a
+    a.stop()
 
-    proc.terminate()
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-    log.close()
+
+HOSTED_CODE = 'correct-horse-battery-staple'
+HOSTED_HOST = 'apex-demo.example.test'
+
+
+@pytest.fixture(scope='session')
+def hosted(tmp_path_factory, fake_openai):
+    """The app as the public demo runs it: access code, signed sessions,
+    per-visitor budget (small here so the limit is testable), proxy IP trust."""
+    a = ServerProcess(tmp_path_factory, fake_openai, config=False, extra_env={
+        'APEX_ACCESS_CODE': HOSTED_CODE, 'APEX_SESSION_SECRET': 'x' * 48,
+        'APEX_PUBLIC_HOST': HOSTED_HOST, 'APEX_TRUST_PROXY': '1',
+        'APEX_VISITOR_BUDGET': '3', 'APEX_DAILY_BUDGET': '1000'})
+    a.code, a.public_host = HOSTED_CODE, HOSTED_HOST
+    yield a
+    a.stop()
 
 
 def _headless_pids():

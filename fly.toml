@@ -1,0 +1,37 @@
+# Fly.io config for the APEX demo. See DEPLOY.md.
+# Replace apex-CHANGE-ME (twice) with your app name, e.g. apex-yourname.
+app = "apex-CHANGE-ME"
+primary_region = "dfw"            # Dallas. Pick one near you: fly platform regions
+
+[env]
+  APEX_PUBLIC_HOST    = "apex-CHANGE-ME.fly.dev"
+  APEX_VISITOR_BUDGET = "40"      # AI cost units per visitor per hour (a full run = 10)
+  APEX_DAILY_BUDGET   = "300"     # for everyone per UTC day (~30 full runs)
+
+[http_service]
+  internal_port        = 8080
+  force_https          = true
+  auto_stop_machines   = "stop"   # sleeps when idle: you pay only while it's used
+  auto_start_machines  = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type       = "requests"
+    soft_limit = 40
+    hard_limit = 60
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval     = "30s"
+    method       = "GET"
+    path         = "/health"
+    timeout      = "5s"
+
+# Persistent disk for apex.db (pipelines + the daily budget counter).
+[[mounts]]
+  source      = "apex_data"
+  destination = "/data"
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "512mb"
