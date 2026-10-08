@@ -548,6 +548,7 @@ input[type="text"], input[type="email"], input[type="password"], input[type="dat
   border-radius: var(--r2); color: var(--fg-0);
   font-family: inherit; font-size: var(--t-body);
   transition: var(--t-fast); outline: none;
+  color-scheme: dark;   /* native date picker / select popups match the theme */
 }
 input:focus, select:focus, textarea:focus {
   border-color: var(--acc);
@@ -1051,10 +1052,29 @@ label {
 .drift-row { display: flex; align-items: baseline; gap: var(--s5); flex-wrap: wrap; margin: var(--s3) 0; }
 .drift-num { font-size: 44px; font-weight: 300; letter-spacing: -0.02em; line-height: 1; }
 .drift-delta.up { color: var(--green-soft); } .drift-delta.down { color: var(--red-soft); } .drift-delta.flat { color: var(--fg-3); }
+.btn-quiet-danger { background: transparent; border-color: transparent; color: var(--red-soft); }
+.btn-quiet-danger:hover { background: rgba(232,33,39,0.10); border-color: rgba(232,33,39,0.35); color: var(--red-soft); }
+#pp-modal .modal-header { flex-wrap: nowrap; align-items: flex-start; }
+#pp-modal .modal-header > div { min-width: 0; }
 @media (max-width: 640px) {
   .pp-fields { grid-template-columns: 1fr; }
-  .tracker-table th:nth-child(4), .tracker-table td:nth-child(4),
-  .tracker-table th:nth-child(6), .tracker-table td:nth-child(6) { display: none; }
+  #pp-modal .modal-header h2 { font-size: 20px; min-width: 0; }
+  /* Rows become cards: company/role on the left, status + Open on the right. */
+  .tracker-table thead { display: none; }
+  .tracker-table, .tracker-table tbody, .tracker-table td { display: block; }
+  .tracker-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px;
+    padding: var(--s4) 0 var(--s4) var(--s3); border-bottom: 1px solid var(--line); align-items: center; }
+  .tracker-table td { padding: 0; border: 0; }
+  .tracker-table td:nth-child(1) { grid-column: 1; grid-row: 1; }
+  .tracker-table td:nth-child(2) { grid-column: 1; grid-row: 2; color: var(--fg-2); }
+  .tracker-table td:nth-child(3) { grid-column: 2; grid-row: 1; }
+  .tracker-table td:nth-child(5) { grid-column: 1; grid-row: 3; }
+  .tracker-table td:nth-child(7) { grid-column: 2; grid-row: 2 / span 2; justify-self: end; }
+  .tracker-table td:nth-child(4), .tracker-table td:nth-child(6) { display: none; }
+  .tracker-table td:nth-child(5):has(> :not(.due-pill)), .tracker-table td.mono:nth-child(5):not(:has(.due-pill)) { display: none; }
+  .tracker-table tr.due td:first-child { box-shadow: none; }
+  .tracker-table tr.due { box-shadow: inset 3px 0 0 var(--amber); }
+  .tracker-table td[colspan] { grid-column: 1 / -1; }
 }
 
 /* ─── Hide / utility ─── */
@@ -1773,7 +1793,7 @@ label {
     <button class="btn btn-primary" id="pp-followup-btn">Draft follow-up</button>
     <button class="btn" id="pp-sent">Mark follow-up sent</button>
     <span style="flex:1"></span>
-    <button class="btn btn-danger" id="pp-delete">Delete</button>
+    <button class="btn btn-sm btn-quiet-danger" id="pp-delete">Delete application</button>
   </div>
 </aside>
 
