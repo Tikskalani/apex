@@ -42,7 +42,7 @@ class ServerProcess:
 
     def __init__(self, tmp_path_factory, fake_openai, extra_env=None, config=True):
         d = tmp_path_factory.mktemp('apex')
-        for name in ('agent_server.py', 'apex_store.py', 'index.html'):
+        for name in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'index.html'):
             shutil.copy(ROOT / name, d / name)
         env = dict(os.environ, APEX_OPENAI_BASE=fake_openai.url)
         if config:

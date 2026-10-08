@@ -126,6 +126,45 @@ class _Handler(BaseHTTPRequestHandler):
             content = json.dumps(longform() if 'LONGFORM' in user else MARCUS)
         elif 'cover letters' in system:
             content = COVER_LETTER
+        elif 'Requirements analyst' in system:          # market requirements (counted against postings)
+            content = json.dumps({'candidates': [
+                {'name': n, 'kind': k} for n, k in (
+                    ('SQL', 'hard'), ('Excel', 'tool'), ('Python', 'hard'), ('Tableau', 'tool'), ('dashboards', 'hard'),
+                    ('reporting', 'hard'), ('data analysis', 'hard'), ('stakeholder communication', 'soft'),
+                    ('A/B testing', 'hard'), ('KPIs', 'domain'))],
+                'emerging': [{'name': 'dbt'}], 'salary_skills': [{'name': 'Python', 'impact': 'high', 'note': 'x'}]})
+        elif 'strict evidence auditor' in system:         # which market keywords the resume demonstrates
+            kws = json.loads(user.split('KEYWORDS:')[1].split('RESUME:')[0].strip())
+            no = {'python', 'tableau', 'a/b testing', 'kpis'}
+            content = json.dumps({'supported': [k for k in kws if k.lower() not in no],
+                                  'unsupported': [k for k in kws if k.lower() in no]})
+        elif 'the way the real screen works' in system:   # engine: diagnose
+            content = json.dumps({'blocks': [
+                {'id': 'S', 'impact': 1, 'specificity': 1, 'scannability': 3, 'relevance': 2,
+                 'issues': ['generic'], 'question': None},
+                {'id': 'B1', 'impact': 1, 'specificity': 2, 'scannability': 3, 'relevance': 4,
+                 'issues': ['"Responsible for" hides the action'],
+                 'question': 'How many managers used these reports, and how often?'},
+                {'id': 'B2', 'impact': 2, 'specificity': 2, 'scannability': 3, 'relevance': 5, 'issues': [], 'question': None}],
+                'document': {'problems': [{'issue': 'The summary says "Hard worker and team player"', 'fix': 'Lead with SQL reporting'}],
+                             'strengths': ['Hands-on SQL'], 'summary_verdict': 'generic', 'most_relevant': ['B2']}})
+        elif 'best resume writer in the world' in system:  # engine: rewrite
+            b1 = ('Built weekly reports used by 9 managers' if 'CANDIDATE ANSWER' in user
+                  else 'Built recurring reports for the management team')
+            content = json.dumps({'edits': [
+                {'id': 'S', 'lines': ['Data analyst who works with SQL to build reports and dashboards for the management team.'],
+                 'why': 'leads with the role', 'keywords': ['SQL']},
+                {'id': 'B1', 'lines': [b1], 'why': 'strong verb, ENGINEMARKER', 'keywords': []},
+                {'id': 'B2', 'lines': ['Queried SQL databases to extract reporting data'], 'why': 'specific', 'keywords': ['SQL']}],
+                'order': [], 'section_order': []})
+        elif 'strict fact checker for resumes' in system:  # engine: verify
+            items = json.loads(user.split('ITEMS:')[1].split('Return ONLY JSON')[0])
+            content = json.dumps({'results': [{'id': it['id'], 'ok': True, 'problems': []} for it in items]})
+        elif 'You reward evidence' in system:              # engine: judge
+            a_before = 'Responsible for making reports' in user.split('=== A ===')[1].split('=== B ===')[0]
+            content = json.dumps({'A': {'score': 48 if a_before else 74, 'weakest': 'x'},
+                                  'B': {'score': 74 if a_before else 48, 'weakest': 'x'},
+                                  'better': 'B' if a_before else 'A', 'why': 'clearer evidence'})
         elif 'job search strategist' in system:          # /followup
             content = json.dumps({
                 'week_1_email': {'subject': 'Following up on the Senior Data Analyst role',

@@ -1,4 +1,4 @@
-# APEX v10.4
+# APEX v11
 
 Local resume-optimization and job-search agent app. Single developer, runs locally on Windows from the project folder.
 
@@ -66,6 +66,31 @@ Local resume-optimization and job-search agent app. Single developer, runs local
    your browser can send requests to `localhost`. So: no wildcard CORS, no
    secrets in any response, static serving is allowlist-only. Do not loosen
    these to "fix" a fetch error — fix the origin instead.
+
+## The engine (apex_engine.py) — how a run improves a resume
+
+`/analyze` Phase 4 measures demand (model proposes role-specific requirements;
+code counts the share of scraped postings that mention each). Phase 6 is
+`apex_engine.optimize()`: Doc parse (stable ids; only summary + experience/
+project bullets editable; re-assembled from original lines) → diagnose
+(recruiter rubric + evidence questions) → rewrite (PLAYBOOK) → per-bullet
+verify (deterministic `fact_gate`, then batched model audit for additions AND
+omissions; one retry, then revert that bullet only) → judge (hiring-manager
+A/B in both orders, averaged). Phase 7 Gap Report is built from the engine's
+findings (no extra model call). The page lets the user untick edits
+(`/engine/render`, no model call) and answer questions (`/engine/answer`).
+
+8. **Never ship model text that hasn't passed the per-bullet verification.**
+   The old "Apply All Suggestions" regenerated the resume unchecked; it is gone.
+   Any new feature that writes resume text goes through `apex_engine`.
+9. **Judge quality with the judge, not the keyword score.** `ats_score` is the
+   "Keyword match" number only; it is blind to writing quality and was the
+   reason v10 shipped resumes unchanged.
+
+Models: `APEX_MODEL` / `APEX_MODEL_FAST` (env or config.json; default gpt-4o).
+`gpt()` adapts to reasoning models (max_completion_tokens, no temperature,
+reasoning_effort), uses JSON mode, retries 429/5xx, fails fast when out of
+credits, and meters real cost per run.
 
 ## Hosted demo mode (Fly.io; see DEPLOY.md)
 

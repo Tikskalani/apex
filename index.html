@@ -918,6 +918,7 @@ label {
   box-shadow: 0 12px 40px rgba(0,0,0,0.6);
   font-size: 13px; font-weight: 500;
   transition: var(--t-med); z-index: 1000;
+  pointer-events: none;   /* informational only: an invisible toast sat over the Launch button on phones */
   max-width: 90vw;
   opacity: 0;
 }
@@ -1077,6 +1078,27 @@ label {
   .tracker-table td[colspan] { grid-column: 1 / -1; }
 }
 
+/* ─── Evidence Engine review ─── */
+.eng-scores { display: flex; gap: var(--s6); flex-wrap: wrap; margin: var(--s4) 0; }
+.eng-score .v { font-size: 40px; font-weight: 300; letter-spacing: -0.02em; line-height: 1.05; }
+.eng-score .v .to { color: var(--acc-soft); }
+.eng-score .l { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--fg-3); font-family: 'JetBrains Mono', monospace; margin-top: 4px; }
+.eng-change { border: 1px solid var(--line); border-radius: var(--r2); padding: var(--s4); margin-bottom: var(--s3); background: var(--bg-2); }
+.eng-change.off { opacity: 0.55; }
+.eng-change .ctx { font-size: 11px; color: var(--fg-3); font-family: 'JetBrains Mono', monospace; margin-bottom: 8px; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.eng-change .before { font-size: 13px; color: var(--fg-3); text-decoration: line-through; text-decoration-color: rgba(255,85,96,0.6); margin-bottom: 8px; line-height: 1.55; }
+.eng-change .after { font-size: 14px; color: var(--fg-0); line-height: 1.6; }
+.eng-change .after div + div { margin-top: 4px; }
+.eng-change .why { font-size: 12px; color: var(--green-soft); margin-top: 8px; }
+.eng-keep { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-2); cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 500; margin: 0; }
+.eng-keep input { width: 16px; height: 16px; accent-color: var(--acc); }
+.eng-q { border-top: 1px solid var(--line); padding: var(--s4) 0; }
+.eng-q:first-of-type { border-top: 0; padding-top: 0; }
+.eng-q .line { font-size: 12px; color: var(--fg-3); margin-bottom: 6px; line-height: 1.5; }
+.eng-q .ask { font-size: 14px; color: var(--fg-0); margin-bottom: 8px; }
+.eng-final { white-space: pre-wrap; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.65; color: var(--fg-1);
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r2); padding: var(--s5); max-height: 70vh; overflow: auto; }
+
 /* ─── Hosted demo ─── */
 .hosted .local-only { display: none !important; }
 .hosted-only { display: none !important; }
@@ -1176,7 +1198,7 @@ label {
     <div class="telemetry">
       <div class="tel-item"><span class="tel-dot live" id="tel-server"></span>SERVER<span class="tel-val" id="tel-server-v">…</span></div>
       <div class="tel-item local-only"><span class="tel-dot" id="tel-smtp"></span>SMTP<span class="tel-val" id="tel-smtp-v">—</span></div>
-      <div class="tel-item">ATS<span class="tel-val" id="tel-ats">—</span></div>
+      <div class="tel-item" title="Hiring-manager score after the last run">SCORE<span class="tel-val" id="tel-ats">—</span></div>
       <div class="tel-item">JOBS<span class="tel-val" id="tel-jobs">—</span></div>
     </div>
 
@@ -1277,7 +1299,7 @@ label {
           <div class="view-header">
             <div class="view-eyebrow">02 · X-Ray</div>
             <h2 class="view-title">Resume <strong>X-Ray</strong></h2>
-            <p class="view-subtitle">Original vs. APEX-rewritten, side by side. Optimized text in <span style="color:var(--acc)">blue</span> highlights injected keywords.</p>
+            <p class="view-subtitle">Every edit verified against your own resume. Keep what you like, answer a few questions to make it stronger.</p>
           </div>
           <div id="resume-content"><div class="empty">Run the agent to see your diff.</div></div>
         </section>
@@ -1287,7 +1309,7 @@ label {
           <div class="view-header">
             <div class="view-eyebrow">03 · Diagnostic</div>
             <h2 class="view-title">Gap <strong>Report</strong></h2>
-            <p class="view-subtitle">Surgical analysis: bullet rewrites with reasons, sector-specific recommendations, next steps.</p>
+            <p class="view-subtitle">What a recruiter for your target role would flag, what the market asks for that you don't show yet, and what to do next.</p>
           </div>
           <div id="gap-content"><div class="empty">Gap analysis appears after a run.</div></div>
         </section>
@@ -1933,7 +1955,10 @@ const ACTIONS = {
   launch:      () => $('open-drawer').click(),
   loc:         el => quickLoc(el.dataset.arg),
   copy:        el => { const get = COPY_SOURCES[el.dataset.arg]; copyText(get ? get(el) : ''); },
-  applyAll:    () => applyAllSuggestions(),
+  engineUse:     () => engineUse(),
+  engineCopy:    () => copyText(state.engine && state.engine.text),
+  engineRestore: () => engineRestore(),
+  engineAnswer:  el => engineAnswer(el),
   quickMatch:  el => quickMatch(Number(el.dataset.arg)),
   quickTailor: el => quickTailor(Number(el.dataset.arg)),
   ixAddAll:    () => ixAddAll(),
@@ -2121,6 +2146,7 @@ $('run-btn').addEventListener('click', async () => {
   $('run-btn').disabled = true;
   $('run-btn-text').innerHTML = '<span class="spinner"></span>Running…';
   $('log-panel').innerHTML = '';
+  state.engine = null;
   ['market','heat','analyze','rewrite','report'].forEach(id => setProgress(id, ''));
   closeDrawer();
   switchTab('market');
@@ -2148,8 +2174,10 @@ function handleEvent(ev) {
     state.rec.optimized = ev.optimized || '';
     state.rec.addedKeywords = ev.added || [];
     state.rec.jobTitle = $('job-title').value || '';
-    renderResume(ev.original, ev.optimized, ev.added);
+    window._optResume = ev.optimized || '';
+    if (!state.engine) renderResume(ev.original, ev.optimized, ev.added);
   }
+  else if (ev.type === 'engine_data') renderEngine(ev.data || {}, ev.answers);
   else if (ev.type === 'report_data') {
     if (ev.data && Array.isArray(ev.data.changes)) state.rec.changes = ev.data.changes;
     setTimeout(refreshDriftBaseline, 300);   // the server just recorded this run's score
@@ -2250,42 +2278,57 @@ function integrityBlock(d) {
     </div>`;
 }
 
+function engineBlock(d) {
+  if (d.editsVerified === undefined) return '';
+  const sup = d.supported || [], uns = d.unsupported || [];
+  return `
+    <div class="card" style="margin-top:var(--s5)">
+      <div class="card-h"><h3>Evidence Engine</h3><span class="badge"><span class="tel-dot live"></span>nothing invented</span></div>
+      <div class="hero-meta" style="margin-bottom:var(--s4)">
+        <div class="hero-meta-item"><div class="v">${toScore(d.editsVerified, 0, 999)}</div><div class="l">Edits verified against your resume</div></div>
+        <div class="hero-meta-item"><div class="v">${toScore(d.editsReverted, 0, 999)}</div><div class="l">Kept as-is (could not verify)</div></div>
+        <div class="hero-meta-item"><div class="v">${sup.length}</div><div class="l">Requirements you demonstrate</div></div>
+        <div class="hero-meta-item"><div class="v">${uns.length}</div><div class="l">Requirements you don't show</div></div>
+      </div>
+      ${uns.length ? `<div style="font-size:13px;opacity:.85"><strong>Not added to your resume.</strong> The market asks for these but your resume shows no evidence, so they are listed as gaps, never claimed:
+        <div style="margin-top:6px">${uns.map(g => `<span class="kw cold" style="margin:2px">${escHtml(g)}</span>`).join('')}</div></div>` : ''}
+      <div style="margin-top:var(--s4);font-size:12px;opacity:.6">Hiring-manager score: a blind review of before vs after by a simulated hiring manager for your target role, both orders averaged. Keyword match: measured coverage of the requirements below.</div>
+    </div>`;
+}
+
 function renderMarket(d) {
   state.sector = d.sector || 'general';
-  state.marketKeywords = (d.hot||[]).concat(d.warm||[],d.emerging||[]).map(k=>k.name||k);
-
-  $('tel-ats').textContent = (d.atsScoreAfter || 0) + '/100';
+  state.marketKeywords = (d.frequency || d.hot || []).map(k => k.name || k);
+  const rec = d.recruiterScoreAfter != null;
+  const before = rec ? d.recruiterScoreBefore : (d.atsScoreBefore || 0);
+  const after = rec ? d.recruiterScoreAfter : (d.atsScoreAfter || 0);
+  const delta = (after ?? 0) - (before ?? 0);
+  $('tel-ats').textContent = toScore(after) + '/100';
   $('tel-jobs').textContent = d.total_jobs_analyzed || 0;
-
-  const before = d.atsScoreBefore || 0;
-  const after = d.atsScoreAfter || 0;
-  const delta = after - before;
-
   $('market-content').innerHTML = `
     <div class="hero">
       <div class="hero-content">
-        <div class="hero-mega-label">ATS Score</div>
-        <div class="hero-mega-num">${after}<span class="small">/100</span></div>
+        <div class="hero-mega-label">${rec ? 'Hiring-manager score' : 'Keyword match'}</div>
+        <div class="hero-mega-num">${toScore(after)}<span class="small">/100</span></div>
         <div class="hero-meta">
-          <div class="hero-meta-item"><div class="v">${before} → ${after}</div><div class="l">Before → After</div></div>
-          <div class="hero-meta-item"><div class="v">${delta >= 0 ? '+' : ''}${delta}</div><div class="l">Delta</div></div>
-          <div class="hero-meta-item"><div class="v">${d.confidence || '—'}</div><div class="l">Confidence</div></div>
-          <div class="hero-meta-item"><div class="v">${d.total_jobs_analyzed || 0}</div><div class="l">Jobs Scanned</div></div>
-          <div class="hero-meta-item"><div class="v">${(d.scrape_info?.sources || []).length}</div><div class="l">Sources Live</div></div>
+          <div class="hero-meta-item"><div class="v">${toScore(before)} → ${toScore(after)}</div><div class="l">Before → After</div></div>
+          ${rec ? `<div class="hero-meta-item"><div class="v">${toScore(d.atsScoreBefore)} → ${toScore(d.atsScoreAfter)}</div><div class="l">Keyword match</div></div>` : ''}
+          <div class="hero-meta-item"><div class="v">${escHtml(d.confidence || '—')}</div><div class="l">Data confidence</div></div>
+          <div class="hero-meta-item"><div class="v">${toScore(d.total_jobs_analyzed, 0, 99999)}</div><div class="l">Postings analysed</div></div>
+          <div class="hero-meta-item"><div class="v">${(d.scrape_info?.sources || []).length}</div><div class="l">Sources live</div></div>
         </div>
       </div>
-      ${gauge(after, 'ATS', true, delta)}
+      ${gauge(after, rec ? 'Hiring mgr' : 'Match', true, delta)}
     </div>
-
-    ${integrityBlock(d)}
-
-    ${kwBlock('Hot Keywords', d.hot, 'hot', '65%+ of postings')}
-    ${kwBlock('Warm Keywords', d.warm, 'warm', '30 – 64%')}
-    ${kwBlock('Cold Keywords', d.cold, 'cold', 'Under 30%')}
-    ${kwBlock('Emerging Trends', d.emerging, 'em', 'Rising fast')}
-    ${kwBlock('Hard Skills', d.hard_skills, 'hard', 'Technical')}
-    ${kwBlock('Soft Skills', d.soft_skills, 'soft', 'Interpersonal')}
-    ${kwBlock('Salary Premium', d.salary_skills, 'sal', 'Adds $$$')}
+    ${engineBlock(d)}
+    ${d.validation_note ? `<div style="font-size:12px;opacity:.6;margin:var(--s4) 0">${escHtml(d.validation_note)}</div>` : ''}
+    ${kwBlock('Most requested', d.hot, 'hot', d.measured ? '25%+ of postings, or in your posting' : 'top requirements')}
+    ${kwBlock('Often requested', d.warm, 'warm', '10 – 24%')}
+    ${kwBlock('Sometimes requested', d.cold, 'cold', 'under 10%')}
+    ${kwBlock('Emerging', d.emerging, 'em', 'model judgement, not measured')}
+    ${kwBlock('Hard skills', d.hard_skills, 'hard', 'technical')}
+    ${kwBlock('Soft skills', d.soft_skills, 'soft', 'interpersonal')}
+    ${kwBlock('Salary premium', d.salary_skills, 'sal', 'model judgement')}
   `;
 }
 
@@ -2293,8 +2336,9 @@ function kwBlock(title, items, cls, subtitle) {
   if (!items || !items.length) return '';
   const tags = items.map(k => {
     const name = escHtml(k.name || k);
-    const freq = k.freq || k.pct;
-    return `<span class="kw ${cls}">${name}${freq ? ` <span class="freq">${escHtml(freq)}</span>` : ''}</span>`;
+    const freq = k.pct ?? k.freq;
+    const mark = k.in_posting ? ' <span class="freq" title="in your target posting">★</span>' : '';
+    return `<span class="kw ${cls}">${name}${freq != null && freq !== '' ? ` <span class="freq">${escHtml(freq)}%</span>` : ''}${mark}</span>`;
   }).join('');
   return `<div class="card" style="margin-bottom:var(--s4)">
     <div class="card-h">
@@ -2349,70 +2393,162 @@ function renderResume(orig, opt, added=[]) {
     </div>`;
 }
 
-// ─── One-click "Apply All Suggestions" ───
-window.applyAllSuggestions = async () => {
-  if (!state.rec.optimized && !window._optResume) return toast('Run the agent first', 'err');
-  // Show progress in the X-Ray card
-  const banner = document.querySelector('#resume-content .card');
-  if (banner) banner.style.opacity = '0.6';
-  const recCount = state.rec.changes.length + state.rec.bulletRewrites.filter(b => b.rewrite).length + state.rec.addedKeywords.length;
-  toast('Merging ' + recCount + ' recommendations into final resume…');
+// ─── EVIDENCE ENGINE REVIEW ───
+// Every edit was verified server-side; the user decides which to keep. The text
+// is re-assembled by /engine/render from the original lines (no model call).
+function renderEngine(d, answers) {
+  const keep = {};
+  (d.changes || []).forEach(c => keep[c.id] = true);
+  state.engine = { data: d, keep, keepOrder: true, keepSections: true, answers: answers || (state.engine && state.engine.answers) || {},
+                   text: d.final || '' };
+  state.rec.original = d.original || state.rec.original;
+  state.rec.optimized = d.final || '';
+  window._optResume = d.final || '';
+  drawEngine();
+}
+
+function drawEngine() {
+  const E = state.engine, d = E.data;
+  const sc = d.score || {};
+  const ch = d.changes || [], qs = d.questions || [], rej = d.rejected || [];
+  const kept = ch.filter(c => E.keep[c.id]).length;
+  const scoreBlock = sc.after != null ? `
+    <div class="eng-scores">
+      <div class="eng-score"><div class="v">${toScore(sc.before)} <span class="to">→ ${toScore(sc.after)}</span></div><div class="l">Hiring-manager score</div></div>
+      <div class="eng-score"><div class="v">${kept}<span style="font-size:20px;color:var(--fg-3)">/${ch.length}</span></div><div class="l">Edits kept</div></div>
+      <div class="eng-score"><div class="v">${qs.length}</div><div class="l">Questions for you</div></div>
+    </div>
+    ${sc.verdict ? `<p style="color:var(--fg-2);font-size:13px;line-height:1.6;max-width:820px">${escHtml(sc.verdict)}</p>` : ''}` : '';
+  const structure = [];
+  if (d.section_order) structure.push(`<label class="eng-keep"><input type="checkbox" data-engine="sections" ${E.keepSections ? 'checked' : ''}> Section order: ${escHtml(d.section_order.join(' → '))}</label>`);
+  if ((d.order || []).length) structure.push(`<label class="eng-keep"><input type="checkbox" data-engine="order" ${E.keepOrder ? 'checked' : ''}> Most relevant bullets first in ${d.order.length} role${d.order.length > 1 ? 's' : ''}</label>`);
+  $('resume-content').innerHTML = `
+    <div class="card" style="background:linear-gradient(135deg, rgba(62,158,255,0.10), rgba(139,92,246,0.06));border-color:rgba(62,158,255,0.35);margin-bottom:var(--s5)">
+      <div class="view-eyebrow" style="margin-bottom:6px">Edited like a top recruiter would · every fact checked against your resume</div>
+      <h3 style="font-size:var(--t-h1);font-weight:500;letter-spacing:-0.01em">${ch.length ? `${ch.length} verified edit${ch.length > 1 ? 's' : ''}` : 'No edits needed'}${rej.length ? ` · ${rej.length} line${rej.length > 1 ? 's' : ''} kept as written` : ''}</h3>
+      ${scoreBlock}
+      <div style="display:flex;gap:var(--s2);flex-wrap:wrap;margin-top:var(--s4)">
+        <button class="btn btn-primary btn-big" data-action="engineUse">Use this version</button>
+        <button class="copy-btn" data-action="engineCopy">Copy text</button>
+        <button class="copy-btn" data-action="engineRestore">Restore my original</button>
+      </div>
+    </div>
+
+    ${qs.length ? `<div class="card" style="margin-bottom:var(--s5)" id="eng-questions">
+      <div class="card-h"><h3>Make it stronger with facts only you know</h3><span class="h-sub">${qs.length} question${qs.length > 1 ? 's' : ''} · skip any you can't answer</span></div>
+      <p style="color:var(--fg-2);font-size:13px;margin-bottom:var(--s4)">Real numbers are the biggest upgrade a resume can get, and APEX will never invent them. Answer what you know; each answer is used only in the line it belongs to.</p>
+      ${qs.map(q => `<div class="eng-q">
+        <div class="line">${escHtml(q.line)}</div>
+        <div class="ask">${escHtml(q.question)}</div>
+        <input type="text" data-answer="${escHtml(q.id)}" value="${escHtml(E.answers[q.id] || '')}" placeholder="e.g. 9 managers, weekly" maxlength="300">
+      </div>`).join('')}
+      <button class="btn btn-primary" data-action="engineAnswer" style="margin-top:var(--s3)">Rewrite with my answers</button>
+    </div>` : ''}
+
+    ${structure.length ? `<div class="card" style="margin-bottom:var(--s5)"><div class="card-h"><h3>Order</h3></div>
+      <div style="display:grid;gap:10px">${structure.join('')}</div></div>` : ''}
+
+    <div class="card" style="margin-bottom:var(--s5)">
+      <div class="card-h"><h3>Edits</h3><span class="h-sub">untick any you don't want</span></div>
+      ${ch.length ? ch.map(c => `<div class="eng-change ${E.keep[c.id] ? '' : 'off'}">
+        <div class="ctx"><span>${escHtml(c.kind === 'summary' ? 'Summary' : (c.group || c.section || '')).slice(0, 90)}</span>
+          <label class="eng-keep"><input type="checkbox" data-engine="keep" data-id="${escHtml(c.id)}" ${E.keep[c.id] ? 'checked' : ''}> Keep</label></div>
+        <div class="before">${escHtml(c.before)}</div>
+        <div class="after">${(c.after || []).map(l => `<div>${escHtml(l)}</div>`).join('')}</div>
+        ${c.why ? `<div class="why">${escHtml(c.why)}</div>` : ''}
+      </div>`).join('') : '<div class="empty">Nothing to change: no edit improved on what you wrote.</div>'}
+    </div>
+
+    ${rej.length ? `<div class="card" style="margin-bottom:var(--s5)">
+      <div class="card-h"><h3>Kept as you wrote them</h3><span class="h-sub">a proposed edit could not be verified, so it was not used</span></div>
+      ${rej.map(r => `<div class="eng-q"><div class="ask">${escHtml(r.line)}</div><div class="line">${escHtml((r.why || []).join(' · '))}</div></div>`).join('')}
+    </div>` : ''}
+
+    <div class="card">
+      <div class="card-h"><h3>Your resume</h3><span class="h-sub">with the edits you kept</span></div>
+      <div class="eng-final" id="eng-final">${escHtml(E.text)}</div>
+    </div>`;
+}
+
+async function engineRerender() {
+  const E = state.engine, d = E.data;
+  const edits = {};
+  (d.changes || []).forEach(c => { if (E.keep[c.id]) edits[c.id] = c.after; });
   try {
-    // 1. Call the new merge endpoint that combines optimized + Gap changes + Bullet rewrites + keywords
-    const r = await fetch(SERVER + '/apply-all-recommendations', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        original: state.rec.original || $('resume-text').value,
-        optimized: state.rec.optimized || window._optResume,
-        changes: state.rec.changes,
-        bulletRewrites: state.rec.bulletRewrites,
-        addedKeywords: state.rec.addedKeywords,
-        sector: state.sector,
-        jobTitle: state.rec.jobTitle || $('job-title').value,
-      })
-    });
-    const j = await r.json();
-    const merged = (j.merged && !j.merged.startsWith('[merge error')) ? j.merged : (state.rec.optimized || window._optResume);
-    // 2. Replace working resume + re-parse for templates
-    $('resume-text').value = merged;
-    window._optResume = merged;
-    // 3. Re-parse into structured fields for the PDF templates
-    const pr = await fetch(SERVER + '/parse-resume', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ resume: merged })
-    });
-    const parsed = (await pr.json()).struct || {};
-    if (parsed && Object.keys(parsed).length) state.resumeStruct = parsed;
-    // 4. Refresh template previews so user sees the final content
-    if (state.templates.length) await loadTemplatePreviews();
-    toast('Done — switch to PDF Templates to download', 'ok');
-    if (banner) banner.style.opacity = '1';
-    // 5. Auto-jump to Templates tab
-    switchTab('templates');
-  } catch(e) {
-    toast('Merge error: ' + e.message, 'err');
-    if (banner) banner.style.opacity = '1';
+    const j = await api('/engine/render', { resume: d.original, edits,
+      order: E.keepOrder ? (d.order || []) : [], section_order: E.keepSections ? d.section_order : null });
+    E.text = j.text;
+    state.rec.optimized = j.text;
+    window._optResume = j.text;
+    drawEngine();
+  } catch (e) { toast('Could not update: ' + e.message, 'err'); }
+}
+
+document.addEventListener('change', ev => {
+  const el = ev.target.closest('[data-engine]');
+  if (!el || !state.engine) return;
+  if (el.dataset.engine === 'keep') state.engine.keep[el.dataset.id] = el.checked;
+  if (el.dataset.engine === 'order') state.engine.keepOrder = el.checked;
+  if (el.dataset.engine === 'sections') state.engine.keepSections = el.checked;
+  engineRerender();
+});
+document.addEventListener('input', ev => {
+  const el = ev.target.closest('[data-answer]');
+  if (el && state.engine) state.engine.answers[el.dataset.answer] = el.value;
+});
+
+async function engineAnswer(btn) {
+  const E = state.engine; if (!E) return;
+  const answers = {};
+  Object.entries(E.answers).forEach(([k, v]) => { if (String(v || '').trim()) answers[k] = String(v).trim(); });
+  if (!Object.keys(answers).length) return toast('Answer at least one question first', 'err');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Rewriting with your answers…';
+  try {
+    await streamSSE('/engine/answer', { resume: E.data.original, target: E.data.target, answers }, handleEvent);
+    toast('Rewritten with your answers', 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+    btn.disabled = false; btn.textContent = 'Rewrite with my answers';
   }
-};
+}
+
+async function engineUse() {
+  const E = state.engine; if (!E) return;
+  $('resume-text').value = E.text;
+  state.resumeStruct = null;
+  toast('Using the edited version · your original is kept: "Restore my original" brings it back', 'ok');
+  if (await ensureResumeStruct()) {
+    if (state.templates.length) await loadTemplatePreviews();
+    switchTab('templates');
+  }
+}
+
+function engineRestore() {
+  const E = state.engine; if (!E) return;
+  $('resume-text').value = E.data.original || state.rec.original || '';
+  state.resumeStruct = null;
+  toast('Your original resume is back in Launch', 'ok');
+}
 
 // ─── GAP REPORT ───
 function renderGapReport(d) {
-  const changes = (d.changes||[]).map(c => `
+  const li = arr => (arr || []).map(r => `<li style="margin-bottom:8px">${escHtml(r)}</li>`).join('');
+  const list = (arr, empty) => (arr && arr.length)
+    ? `<ul style="padding-left:20px;font-size:13.5px;line-height:1.65;color:var(--fg-1)">${li(arr)}</ul>` : `<div class="empty">${empty}</div>`;
+  const changes = (d.changes || []).map(c => `
     <div class="block">
-      <div class="label">Why: ${escHtml(c.why||'')}</div>
-      <div style="font-size:13px;color:var(--red-soft);text-decoration:line-through;margin-bottom:6px;opacity:0.7">${escHtml(c.before||'')}</div>
-      <div style="font-size:13.5px;color:var(--green-soft)">${escHtml(c.after||'')}</div>
+      <div style="font-size:13px;color:var(--fg-3);text-decoration:line-through;margin-bottom:6px">${escHtml(c.before || '')}</div>
+      <div style="font-size:13.5px;color:var(--fg-0)">${escHtml(c.after || '')}</div>
+      ${c.why ? `<div class="label" style="margin-top:6px;color:var(--green-soft)">${escHtml(c.why)}</div>` : ''}
     </div>`).join('');
-  const recs = (d.recommendations||[]).map(r => `<li style="margin-bottom:6px">${escHtml(r)}</li>`).join('');
-  const insights = (d.sectorInsights||[]).map(r => `<li style="margin-bottom:6px">${escHtml(r)}</li>`).join('');
-  const next = (d.nextSteps||[]).map(r => `<li style="margin-bottom:6px">${escHtml(r)}</li>`).join('');
   $('gap-content').innerHTML = `
     <div class="grid-2">
-      <div class="card"><div class="card-h"><h3>Bullet Rewrites</h3></div>${changes || '<div class="empty">None</div>'}</div>
-      <div class="card"><div class="card-h"><h3>Recommendations</h3></div><ul style="padding-left:20px;font-size:13.5px;line-height:1.7;color:var(--fg-1)">${recs}</ul></div>
-      <div class="card"><div class="card-h"><h3>Sector Insights</h3></div><ul style="padding-left:20px;font-size:13.5px;line-height:1.7;color:var(--fg-1)">${insights}</ul></div>
-      <div class="card"><div class="card-h"><h3>Next Steps</h3></div><ul style="padding-left:20px;font-size:13.5px;line-height:1.7;color:var(--fg-1)">${next}</ul></div>
-    </div>`;
+      <div class="card"><div class="card-h"><h3>What a recruiter would flag</h3></div>${list(d.recommendations, 'Nothing significant.')}</div>
+      <div class="card"><div class="card-h"><h3>Requirements you don't show yet</h3><span class="h-sub">never added to your resume</span></div>${list(d.hardSkillsGap, 'You show evidence for every top requirement.')}</div>
+      <div class="card"><div class="card-h"><h3>Next steps</h3></div>${list(d.nextSteps, 'None.')}</div>
+      <div class="card"><div class="card-h"><h3>Keep doing</h3></div>${list(d.sectorInsights, '—')}</div>
+    </div>
+    <div class="card" style="margin-top:var(--s5)"><div class="card-h"><h3>Edits made</h3><span class="h-sub">${(d.changes || []).length} verified</span></div>${changes || '<div class="empty">None</div>'}</div>`;
 }
 
 function renderCoverLetter(letter) {

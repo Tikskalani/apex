@@ -15,8 +15,8 @@ RUN useradd --create-home --uid 10001 apex && mkdir -p /data
 
 WORKDIR /app
 # Code is root-owned and read-only to the app user. .dockerignore admits only
-# these three files, so config.json and apex.db can never end up in the image.
-COPY agent_server.py apex_store.py index.html ./
+# these four files, so config.json and apex.db can never end up in the image.
+COPY agent_server.py apex_store.py apex_engine.py index.html ./
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \

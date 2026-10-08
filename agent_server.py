@@ -35,6 +35,7 @@ from urllib.parse import quote_plus
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import apex_store as store
+import apex_engine as engine
 
 # The startup banner prints ✓ / ⚠. On Windows, stdout redirected to a file or
 # pipe is cp1252 and those characters crash the server before it binds.
@@ -174,7 +175,7 @@ if (PUBLIC_HOST or BIND not in ('', '127.0.0.1', '::1', 'localhost')) and not HO
     exit(1)
 
 # Rough relative cost of each AI-backed route (a full /analyze run is ~12 model calls).
-AI_COSTS = {'/analyze': 10, '/tailor': 2, '/apply-all-recommendations': 2, '/transcribe': 2,
+AI_COSTS = {'/analyze': 10, '/engine/answer': 6, '/tailor': 2, '/apply-all-recommendations': 2, '/transcribe': 2,
             '/bullets': 1, '/negotiate': 1, '/bridge': 1, '/followup': 1, '/drift': 1, '/match': 1,
             '/xray': 1, '/grade-answer': 1, '/velocity': 1, '/draft-cover-letter': 1, '/parse-resume': 1}
 # Features that act with the operator's email account or collect third-party
@@ -1980,6 +1981,85 @@ def estimate_cost(mode="optimize"):
             'tokens_in': s_.get('tokens_in', 0), 'tokens_out': s_.get('tokens_out', 0), 'measured': True}
 
 
+def build_market(cand, listings, job_desc, anti_kw):
+    """Turn the model's candidate requirements into market data whose
+    percentages are measured: the share of postings that mention each one."""
+    anti = {a.lower() for a in anti_kw or []}
+    seen, cands = set(), []
+    for c in (cand.get('candidates') or []):
+        name = str((c or {}).get('name') or '').strip() if isinstance(c, dict) else str(c).strip()
+        if name and name.lower() not in anti and name.lower() not in seen and len(name) <= 60:
+            seen.add(name.lower())
+            cands.append({'name': name, 'kind': (c.get('kind') if isinstance(c, dict) else '') or 'hard'})
+    docs = [_norm(x) for x in listings or []]
+    jd = _norm(job_desc or '')
+    n = len(docs)
+    for c in cands:
+        hits = sum(1 for d in docs if _present(c['name'], d)) if n else 0
+        c['pct'] = round(100 * hits / n) if n >= 8 else None   # too few postings to state a percentage
+        c['in_posting'] = bool(jd) and _present(c['name'], jd)
+    if n >= 8:
+        cands = [c for c in cands if c['pct'] >= 3 or c['in_posting']]
+    cands.sort(key=lambda c: (not c['in_posting'], -(c['pct'] or 0)))
+    for c in cands:
+        c['freq'] = c['pct']
+    pct = lambda c: c['pct'] or 0
+    hard = [c for c in cands if c['kind'] in ('hard', 'tool', 'domain', 'credential')]
+    soft = [c for c in cands if c['kind'] == 'soft']
+    return {
+        'frequency': cands[:30],
+        'hot':  [c for c in cands if pct(c) >= 25 or c['in_posting']][:14],
+        'warm': [c for c in cands if 10 <= pct(c) < 25 and not c['in_posting']][:12],
+        'cold': [c for c in cands if pct(c) < 10 and not c['in_posting']][:8],
+        'hard_skills': hard[:12], 'soft_skills': soft[:8],
+        'emerging': [e for e in (cand.get('emerging') or []) if isinstance(e, dict) and e.get('name')][:6],
+        'salary_skills': [e for e in (cand.get('salary_skills') or []) if isinstance(e, dict) and e.get('name')][:5],
+        'measured': n >= 8,
+        'validation_note': (f'percentages = share of {n} live postings that mention it' if n >= 8
+                            else 'too few live postings to measure; listed without percentages'),
+    }
+
+
+def make_target(job_title, seniority, sector, market, supported, unsupported, job_desc=''):
+    return {'title': job_title, 'seniority': seniority, 'sector': sector, 'job_desc': job_desc or '',
+            'keywords': [{'name': k['name'], 'pct': k.get('pct')} for k in market.get('frequency', [])[:25]],
+            'supported': list(supported or []), 'unsupported': list(unsupported or [])}
+
+
+def engine_payload(result, target):
+    """What the page needs to review edits, toggle them, and ask the questions."""
+    keep = ('changes', 'questions', 'rejected', 'problems', 'strengths', 'summary_verdict', 'order',
+            'section_order', 'score', 'line_scores', 'final')
+    out = {k: result.get(k) for k in keep}
+    out['original'] = chr(10).join(result.get('lines') or [])   # what /engine/render re-assembles from
+    out['target'] = target
+    return out
+
+
+def gap_report(result, market, unsupported):
+    """Gap report from what the engine actually found: real before/after pairs,
+    specific problems with fixes, unmet requirements, and the evidence questions."""
+    by_name = {k['name'].lower(): k for k in market.get('frequency', [])}
+    gaps = []
+    for g in unsupported or []:
+        k = by_name.get(str(g).lower()) or {}
+        gaps.append(f'{g}' + (f' — in {k["pct"]}% of postings' if k.get('pct') is not None else '')
+                    + (' (in your target posting)' if k.get('in_posting') else ''))
+    return {
+        'changes': [{'before': c['before'], 'after': ' / '.join(c['after']), 'why': c.get('why', '')}
+                    for c in result.get('changes') or []],
+        'recommendations': [f'{p.get("issue", "")} → {p.get("fix", "")}' if isinstance(p, dict) else str(p)
+                            for p in result.get('problems') or []],
+        'sectorInsights': [str(x) for x in result.get('strengths') or []],
+        'nextSteps': [f'Answer: {q["question"]}' for q in result.get('questions') or []]
+                     + ([f'Build evidence for: {", ".join(unsupported[:5])}'] if unsupported else []),
+        'hardSkillsGap': gaps, 'softSkillsGap': [],
+        'atsScoreBefore': market.get('atsScoreBefore'), 'atsScoreAfter': market.get('atsScoreAfter'),
+        'recruiterScoreBefore': market.get('recruiterScoreBefore'), 'recruiterScoreAfter': market.get('recruiterScoreAfter'),
+        'scrape_info': market.get('scrape_info'),
+    }
+
+
 # AGENT LOOP
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -2103,38 +2183,29 @@ sector_signals must be real industry jargon (e.g. real_estate: NOI, cap rate, Ya
     log('\n🔑 PHASE 4 — Keyword Intelligence (Hard + Soft Skills)')
     step('heat','running',f'Extracting from {final_count} listings...')
 
-    kw_prompt = f'''Extract keywords from real {sector} job postings for a {job_title} resume.
+    kw_prompt = f'''You are building the requirement list for {job_title} roles ({sector}, {seniority}) from real postings.
+List the skills, tools, methods, domains and qualifications these postings ask for, as short canonical names
+("PyTorch", "RAG", "stakeholder management", "SOC 2"). Prefer what is specific to {job_title} work. Leave out
+generic skills that any job in {sector} lists unless these postings clearly emphasise them. 30-45 candidates.
 EXCLUDE: {", ".join(anti_kw[:8]) if anti_kw else "none"}
-DATA ({final_count} listings):
+{"TARGET POSTING (the most important source):" + chr(10) + job_desc[:4000] + chr(10) if job_desc else ""}
+POSTINGS ({final_count} listings):
 {corpus[:12000]}
 
-Return ONLY this JSON:
-{{
-  "hot":          [{{"name":"skill","freq":85}}],
-  "warm":         [{{"name":"skill","freq":52}}],
-  "cold":         [{{"name":"skill","freq":22}}],
-  "emerging":     [{{"name":"skill","freq":28}}],
-  "frequency":    [{{"name":"skill","pct":85}}],
-  "hard_skills":  [{{"name":"technical skill","freq":80}}],
-  "soft_skills":  [{{"name":"soft skill","freq":65}}],
-  "salary_skills":[{{"name":"premium skill","impact":"high|medium","note":"adds value"}}],
-  "validation_note": "X keywords from Y real listings"
-}}
-hot=65%+(12 items), warm=30-64%(10), cold=<30%(6), emerging=trending(5)
-frequency=top 12 ranked. hard_skills=technical/tools(8). soft_skills=interpersonal(6).
-salary_skills=top 5 skills commanding premium pay in this sector.
-NEVER include: {", ".join(anti_kw[:6]) if anti_kw else "none"}''' if corpus and len(corpus)>200 else f'''
-No live data. Use expert {sector} knowledge for {job_title} 2025.
-EXCLUDE: {", ".join(anti_kw[:8]) if anti_kw else "none"}
-Same JSON structure. validation_note: "model knowledge — limited live data".'''
+Return ONLY JSON:
+{{"candidates": [{{"name": "...", "kind": "hard|soft|tool|domain|credential"}}],
+  "emerging": [{{"name": "..."}}],
+  "salary_skills": [{{"name": "...", "impact": "high|medium", "note": "why it pays more"}}]}}'''
 
     try:
-        market = jparse(gpt('Keyword analyst. ONLY valid JSON. Never include excluded keywords.', kw_prompt, max_tokens=2200, temp=0.2))
-        for k in ('hot','warm','cold','emerging','frequency','hard_skills','soft_skills','salary_skills'):
-            market[k] = [x for x in market.get(k,[]) if x.get('name','').lower() not in anti_kw]
+        cand = jparse(gpt('Requirements analyst for hiring. ONLY valid JSON.', kw_prompt, max_tokens=2200, temp=0.2,
+                          json_mode=True, fast=True))
+        market = build_market(cand, filtered, job_desc, anti_kw)
         market.update({'confidence':confidence,'confidence_pct':conf_pct,'total_jobs_analyzed':final_count,'sector':sector})
-        log(f'  ✓ {len(market.get("hot",[]))} hot | {len(market.get("hard_skills",[]))} hard skills | {len(market.get("soft_skills",[]))} soft skills')
-        if market.get('salary_skills'): log(f'  💰 Salary premium: {", ".join(s.get("name","") for s in market["salary_skills"][:3])}')
+        log(f'  ✓ {len(market.get("frequency",[]))} requirements measured across {final_count} postings'
+            f'{" + your target posting" if job_desc else ""}')
+        top = ', '.join(f'{k["name"]} {k["pct"]}%' for k in market.get('frequency', [])[:6] if k.get('pct') is not None)
+        if top: log(f'  ✓ Most requested: {top}')
     except Exception as e:
         log(f'  ⚠ Keyword error: {e}')
         market = {'hot':[],'warm':[],'cold':[],'emerging':[],'frequency':[],'hard_skills':[],'soft_skills':[],'salary_skills':[],'confidence':confidence,'total_jobs_analyzed':final_count}
@@ -2145,52 +2216,21 @@ Same JSON structure. validation_note: "model knowledge — limited live data".''
     log('\n📊 PHASE 5 — ATS Scoring')
     step('analyze','running','Scoring...')
 
-    all_kw = list(dict.fromkeys(filter(None,
-        [k.get('name','') for k in market.get('hot',[])] +
-        [k.get('name','') for k in market.get('warm',[])] +
-        [k.get('name','') for k in market.get('emerging',[])]
-    )))
-
-    try:
-        analysis = jparse(gpt(
-            f'ATS for {sector}. Honest scoring. ONLY valid JSON.',
-            f'''Target: {job_title} | {sector} | {seniority}
-Market keywords ({final_count} real listings): {", ".join(all_kw[:30])}
-NEVER suggest: {", ".join(anti_kw[:6]) if anti_kw else "none"}
-Resume:
-{resume}
-
-Do NOT output a numeric score — scoring is computed separately. Analyze only.
-
-Return ONLY:
-{{
-  "keywords":[{{"keyword":"<name>","status":"present|missing","priority":"P1|P2|P3","freq":<int>}}],
-  "weakBullets":["<exact verbatim bullet from the resume>"],
-  "missingQuantification":["<exact verbatim bullet from the resume>"],
-  "topGaps":["<skill the market wants that this resume shows NO evidence of — this goes in a report for the candidate, it will NOT be added to the resume>"],
-  "strengths":["<strength>"],
-  "atsRedFlags":["<formatting or structural flag>"]
-}}''',
-            max_tokens=2500, temp=0.2
-        ))
-    except Exception as e:
-        log(f'  ⚠ Scoring error: {e}')
-        analysis = {'atsScoreBefore':50,'atsScoreAfter':72}
+    all_kw = [k['name'] for k in market.get('frequency', []) if k.get('name')][:30]
+    supported, unsupported = classify_keywords(resume, all_kw, sector, job_title)
+    analysis = {'topGaps': unsupported[:8], 'strengths': [], 'supported': supported}
+    log(f'  ✓ Your resume demonstrates {len(supported)} of the top {len(all_kw)} requirements')
+    if unsupported: log(f'  ○ Not demonstrated (reported as gaps, never added): {", ".join(unsupported[:6])}')
 
     _before, _before_bd = ats_score(resume, all_kw)
     market['atsScoreBefore']   = _before
     market['atsScoreAfter']    = _before          # updated after the loop runs
     market['scoreBreakdownBefore'] = _before_bd
-    market['humanReadability'] = analysis.get('humanReadability',0)
-    market['uniquenessScore']  = analysis.get('uniquenessScore',0)
-    market['grammarIssues']    = analysis.get('grammarIssues',[])
-    market['uniquenessFixes']  = analysis.get('uniquenessFixes',[])
-    market['salaryByLocation'] = analysis.get('salaryByLocation',[])
+    market['supported'] = supported
+    market['unsupported'] = unsupported
     market['scrape_info']    = {'sources':active,'jobs_analyzed':final_count,'data_quality':confidence,'sector':sector,'search_term':primary}
 
-    log(f'  ✓ ATS baseline (measured): {market["atsScoreBefore"]}/100 — keyword coverage {_before_bd["keyword_coverage"]}%')
-    if analysis.get('topGaps'): log(f'  ⚠ Gaps: {", ".join(analysis["topGaps"][:3])}')
-    if analysis.get('strengths'): log(f'  ✓ Strong: {", ".join(analysis["strengths"][:2])}')
+    log(f'  ✓ Keyword match (measured): {market["atsScoreBefore"]}/100 — coverage {_before_bd["keyword_coverage"]}%')
 
     step('analyze','done')
     emit({'type':'market_data','data':market})
@@ -2317,72 +2357,36 @@ Return ONLY JSON:
     ]
     for t in gen_threads: t.start()
 
-    # ── PHASE 6: Self-Improvement Loop ────────────────────────────────────────
-    # This is where APEX beats every competitor.
-    # 3 iterations of rewriting — each one graded, only kept if better.
-    step('rewrite','running','Starting self-improvement loop...')
-    optimized_text, final_ats, loop_report = improvement_loop(
-        resume, all_kw, sector, job_title, seniority, analysis, emit
-    )
-
-    # The after-score is the measured score of the text we actually ship.
-    market['atsScoreAfter']       = final_ats
-    market['scoreBreakdownAfter'] = loop_report.get('final_breakdown', {})
-    market['keywordsInjected']    = loop_report.get('supported', [])
-    market['keywordsGapsOnly']    = loop_report.get('unsupported', [])
-    market['iterationsRejected']  = loop_report.get('rejected', 0)
-    market['fabricationsBlocked']  = loop_report.get('rejected_fabrication', 0)
-    market['protectedRestored']   = loop_report.get('restored', [])
-    analysis['topGaps'] = list(dict.fromkeys((analysis.get('topGaps') or []) + loop_report.get('unsupported', [])))[:8]
+    # ── PHASE 6: Evidence Engine (apex_engine) ────────────────────────────────
+    # Recruiter review -> rewrite -> per-bullet verification -> blind judge.
+    log('\n✍ PHASE 6 — Evidence Engine')
+    step('rewrite','running','Recruiter review, rewrite, verification...')
+    target = make_target(job_title, seniority, sector, market, supported, unsupported, job_desc)
+    try:
+        result = engine.optimize(gpt, resume, target, log=log)
+    except Exception as e:
+        log(f'  ⚠ Engine error: {e}')
+        result = {'final': resume, 'changes': [], 'questions': [], 'rejected': [], 'problems': [],
+                  'strengths': [], 'order': [], 'section_order': None, 'score': None, 'line_scores': {},
+                  'lines': resume.replace(chr(13), '').split(chr(10))}
+    optimized_text = result['final']
+    _after, _after_bd = ats_score(optimized_text, all_kw)
+    market['atsScoreAfter'] = _after
+    market['scoreBreakdownAfter'] = _after_bd
+    sc = result.get('score') or {}
+    market['recruiterScoreBefore'] = sc.get('before')
+    market['recruiterScoreAfter'] = sc.get('after')
+    market['editsVerified'] = len(result.get('changes') or [])
+    market['editsReverted'] = len(result.get('rejected') or [])
     emit({'type':'market_data','data':market})
     step('rewrite','done')
-    emit({'type':'resume_data','original':resume,'optimized':optimized_text,'added':analysis.get('addedKeywords',[])})
-    log(f'  ✓ Final ATS: {market["atsScoreAfter"]}/100')
+    emit({'type':'engine_data','data': engine_payload(result, target)})
+    emit({'type':'resume_data','original':resume,'optimized':optimized_text,'added':[]})
 
-    # ── PHASE 7: Gap Report ───────────────────────────────────────────────────
+    # ── PHASE 7: Gap Report (from the engine's findings; no extra model call) ──
     log('\n📋 PHASE 7 — Gap Report')
-    step('report','running','Generating...')
-
-    hard_skills = [k.get('name','') for k in market.get('hard_skills',[])]
-    soft_skills = [k.get('name','') for k in market.get('soft_skills',[])]
-
-    try:
-        rpt = jparse(gpt(
-            f'{sector} resume consultant. ONLY valid JSON.',
-            f'''Target: {job_title} | {sector} | {seniority}
-Live data: {final_count} listings | confidence: {confidence}
-
-Original: {resume[:1800]}
-Optimized: {optimized_text[:1800]}
-
-Return ONLY:
-{{
-  "changes":[{{"before":"exact original","after":"exact rewritten","why":"reason naming keyword"}}],
-  "recommendations":["specific {sector}-appropriate action"],
-  "sectorInsights":["insight about {sector} hiring 2025"],
-  "hardSkillsGap":["missing hard skill"],
-  "softSkillsGap":["missing soft skill"],
-  "salaryInsights":["how this resume could command higher salary"],
-  "nextSteps":["immediately actionable step"]
-}}
-changes=6-8 pairs exact text. recommendations=5 SECTOR-APPROPRIATE actions.
-sectorInsights=3 insights. hardSkillsGap from: {", ".join(hard_skills[:8])}.
-softSkillsGap from: {", ".join(soft_skills[:6])}. salaryInsights=2. nextSteps=3.''',
-            max_tokens=2500, temp=0.3
-        ))
-    except Exception as e:
-        log(f'  ⚠ Report error: {e}')
-        rpt = {'changes':[],'recommendations':[],'sectorInsights':[]}
-
-    rpt['atsScoreBefore'] = market['atsScoreBefore']
-    rpt['atsScoreAfter']  = market['atsScoreAfter']
-    rpt['keywords']             = analysis.get('keywords',[])
-    rpt['certificationRoadmap'] = analysis.get('certificationRoadmap',[])
-    rpt['salaryByLocation']     = analysis.get('salaryByLocation',[])
-    rpt['grammarIssues']        = analysis.get('grammarIssues',[])
-    rpt['uniquenessFixes']      = analysis.get('uniquenessFixes',[])
-    rpt['scrape_info']    = market['scrape_info']
-
+    step('report','running','Compiling...')
+    rpt = gap_report(result, market, unsupported)
     step('report','done')
     emit({'type':'report_data','data':rpt})
 
@@ -4424,6 +4428,40 @@ class Handler(BaseHTTPRequestHandler):
                 })
             except Exception as e:
                 self._send_json(500, {'error': str(e), 'merged': p.get('optimized', '')})
+            return
+
+        # ── ENGINE: re-render with the edits the user kept (no model call) ──────
+        if path == '/engine/render':
+            try:
+                doc = engine.Doc(p.get('resume') or '')
+                edits = {str(k): [str(x) for x in v][:3] for k, v in (p.get('edits') or {}).items()
+                         if k in doc.by_id and isinstance(v, list)}
+                orders = [o for o in (doc.valid_order(x) for x in (p.get('order') or []) if isinstance(x, list)) if o]
+                sec = doc.valid_section_order(p.get('section_order')) if p.get('section_order') else None
+                self._send_json(200, {'text': doc.render(edits, orders, sec)})
+            except Exception as e:
+                self._send_json(400, {'error': str(e)})
+            return
+
+        # ── ENGINE: rewrite again with the candidate's answers (SSE) ──────────
+        if path == '/engine/answer':
+            resume = (p.get('resume') or '').strip()
+            target = p.get('target') if isinstance(p.get('target'), dict) else None
+            answers = p.get('answers') if isinstance(p.get('answers'), dict) else {}
+            if len(resume) < MIN_RESUME_CHARS or not target or not target.get('title'):
+                self._send_json(400, {'error': 'Run the agent first, then answer the questions.'}); return
+            if not any(str(v or '').strip() for v in answers.values()):
+                self._send_json(400, {'error': 'Answer at least one question.'}); return
+            self._sse_start()
+            emit = self._make_emitter()
+            try:
+                emit({'type': 'log', 'msg': '\n✍ Rewriting with your answers'})
+                r = engine.optimize(gpt, resume, target, answers=answers, log=lambda m: emit({'type': 'log', 'msg': m}))
+                emit({'type': 'engine_data', 'data': engine_payload(r, target), 'answers': answers})
+                emit({'type': 'cost_data', 'data': estimate_cost('answers')})
+                emit({'type': 'done', 'msg': f'{len(r.get("changes") or [])} verified edits with your answers'})
+            except Exception as e:
+                emit({'type': 'error', 'msg': str(e)})
             return
 
         if path == '/parse-resume':
