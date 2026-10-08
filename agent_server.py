@@ -1950,87 +1950,16 @@ Return ONLY:
     # Mode routing removed — every run now populates ALL tabs automatically
     # The parallel Phase 8 generator handles cover letter, interview, LinkedIn, outreach
 
-    # ── PHASE 6: Self-Improvement Loop ────────────────────────────────────────
-    # This is where APEX beats every competitor.
-    # 3 iterations of rewriting — each one graded, only kept if better.
-    step('rewrite','running','Starting self-improvement loop...')
-    optimized_text, final_ats, loop_report = improvement_loop(
-        resume, all_kw, sector, job_title, seniority, analysis, emit
-    )
-
-    # The after-score is the measured score of the text we actually ship.
-    market['atsScoreAfter']       = final_ats
-    market['scoreBreakdownAfter'] = loop_report.get('final_breakdown', {})
-    market['keywordsInjected']    = loop_report.get('supported', [])
-    market['keywordsGapsOnly']    = loop_report.get('unsupported', [])
-    market['iterationsRejected']  = loop_report.get('rejected', 0)
-    market['fabricationsBlocked']  = loop_report.get('rejected_fabrication', 0)
-    market['protectedRestored']   = loop_report.get('restored', [])
-    analysis['topGaps'] = list(dict.fromkeys((analysis.get('topGaps') or []) + loop_report.get('unsupported', [])))[:8]
-    emit({'type':'market_data','data':market})
-    step('rewrite','done')
-    emit({'type':'resume_data','original':resume,'optimized':optimized_text,'added':analysis.get('addedKeywords',[])})
-    log(f'  ✓ Final ATS: {market["atsScoreAfter"]}/100')
-
-    # ── PHASE 7: Gap Report ───────────────────────────────────────────────────
-    log('\n📋 PHASE 7 — Gap Report')
-    step('report','running','Generating...')
-
-    hard_skills = [k.get('name','') for k in market.get('hard_skills',[])]
-    soft_skills = [k.get('name','') for k in market.get('soft_skills',[])]
-
-    try:
-        rpt = jparse(gpt(
-            f'{sector} resume consultant. ONLY valid JSON.',
-            f'''Target: {job_title} | {sector} | {seniority}
-Live data: {final_count} listings | confidence: {confidence}
-
-Original: {resume[:1800]}
-Optimized: {optimized_text[:1800]}
-
-Return ONLY:
-{{
-  "changes":[{{"before":"exact original","after":"exact rewritten","why":"reason naming keyword"}}],
-  "recommendations":["specific {sector}-appropriate action"],
-  "sectorInsights":["insight about {sector} hiring 2025"],
-  "hardSkillsGap":["missing hard skill"],
-  "softSkillsGap":["missing soft skill"],
-  "salaryInsights":["how this resume could command higher salary"],
-  "nextSteps":["immediately actionable step"]
-}}
-changes=6-8 pairs exact text. recommendations=5 SECTOR-APPROPRIATE actions.
-sectorInsights=3 insights. hardSkillsGap from: {", ".join(hard_skills[:8])}.
-softSkillsGap from: {", ".join(soft_skills[:6])}. salaryInsights=2. nextSteps=3.''',
-            max_tokens=2500, temp=0.3
-        ))
-    except Exception as e:
-        log(f'  ⚠ Report error: {e}')
-        rpt = {'changes':[],'recommendations':[],'sectorInsights':[]}
-
-    rpt['atsScoreBefore'] = market['atsScoreBefore']
-    rpt['atsScoreAfter']  = market['atsScoreAfter']
-    rpt['keywords']             = analysis.get('keywords',[])
-    rpt['certificationRoadmap'] = analysis.get('certificationRoadmap',[])
-    rpt['salaryByLocation']     = analysis.get('salaryByLocation',[])
-    rpt['grammarIssues']        = analysis.get('grammarIssues',[])
-    rpt['uniquenessFixes']      = analysis.get('uniquenessFixes',[])
-    rpt['scrape_info']    = market['scrape_info']
-
-    step('report','done')
-    emit({'type':'report_data','data':rpt})
-
-    log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    log(f'  ✓ Complete | Sector: {sector} | Confidence: {confidence}')
-    log(f'  ✓ {final_count} listings analyzed | {len(active)} sources active')
-    log(f'  ✓ ATS: {market["atsScoreBefore"]} → {market["atsScoreAfter"]} (+{market["atsScoreAfter"]-market["atsScoreBefore"]})')
-    log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     # ═══════════════════════════════════════════════════════════════════════
     # PHASE 8 — PARALLEL GENERATION: ALL TABS AT ONCE
     # Every tab populates from a single run. No mode switching. Ever.
     # Cover letter, interview prep, LinkedIn, outreach — all fire together.
     # ═══════════════════════════════════════════════════════════════════════
-    log('\n⚡ PHASE 8 — Generating all content in parallel...')
-    emit({'type':'step','id':'report','status':'running','msg':'Generating cover letter, interview prep, LinkedIn & outreach...'})
+    # Started here, before the rewrite loop: these generators read only the
+    # original resume, the market keywords and the analysis, never the
+    # rewrite's output. Running them alongside Phases 6-7 instead of after
+    # them takes their latency off the critical path. Joined after Phase 7.
+    log('\n⚡ PHASE 8 — Cover letter, interview prep, LinkedIn, outreach and velocity (in parallel)...')
 
     company_name = ''  # Can be passed via payload in future
 
@@ -2139,6 +2068,81 @@ Return ONLY JSON:
         threading.Thread(target=gen_velocity,     daemon=True),
     ]
     for t in gen_threads: t.start()
+
+    # ── PHASE 6: Self-Improvement Loop ────────────────────────────────────────
+    # This is where APEX beats every competitor.
+    # 3 iterations of rewriting — each one graded, only kept if better.
+    step('rewrite','running','Starting self-improvement loop...')
+    optimized_text, final_ats, loop_report = improvement_loop(
+        resume, all_kw, sector, job_title, seniority, analysis, emit
+    )
+
+    # The after-score is the measured score of the text we actually ship.
+    market['atsScoreAfter']       = final_ats
+    market['scoreBreakdownAfter'] = loop_report.get('final_breakdown', {})
+    market['keywordsInjected']    = loop_report.get('supported', [])
+    market['keywordsGapsOnly']    = loop_report.get('unsupported', [])
+    market['iterationsRejected']  = loop_report.get('rejected', 0)
+    market['fabricationsBlocked']  = loop_report.get('rejected_fabrication', 0)
+    market['protectedRestored']   = loop_report.get('restored', [])
+    analysis['topGaps'] = list(dict.fromkeys((analysis.get('topGaps') or []) + loop_report.get('unsupported', [])))[:8]
+    emit({'type':'market_data','data':market})
+    step('rewrite','done')
+    emit({'type':'resume_data','original':resume,'optimized':optimized_text,'added':analysis.get('addedKeywords',[])})
+    log(f'  ✓ Final ATS: {market["atsScoreAfter"]}/100')
+
+    # ── PHASE 7: Gap Report ───────────────────────────────────────────────────
+    log('\n📋 PHASE 7 — Gap Report')
+    step('report','running','Generating...')
+
+    hard_skills = [k.get('name','') for k in market.get('hard_skills',[])]
+    soft_skills = [k.get('name','') for k in market.get('soft_skills',[])]
+
+    try:
+        rpt = jparse(gpt(
+            f'{sector} resume consultant. ONLY valid JSON.',
+            f'''Target: {job_title} | {sector} | {seniority}
+Live data: {final_count} listings | confidence: {confidence}
+
+Original: {resume[:1800]}
+Optimized: {optimized_text[:1800]}
+
+Return ONLY:
+{{
+  "changes":[{{"before":"exact original","after":"exact rewritten","why":"reason naming keyword"}}],
+  "recommendations":["specific {sector}-appropriate action"],
+  "sectorInsights":["insight about {sector} hiring 2025"],
+  "hardSkillsGap":["missing hard skill"],
+  "softSkillsGap":["missing soft skill"],
+  "salaryInsights":["how this resume could command higher salary"],
+  "nextSteps":["immediately actionable step"]
+}}
+changes=6-8 pairs exact text. recommendations=5 SECTOR-APPROPRIATE actions.
+sectorInsights=3 insights. hardSkillsGap from: {", ".join(hard_skills[:8])}.
+softSkillsGap from: {", ".join(soft_skills[:6])}. salaryInsights=2. nextSteps=3.''',
+            max_tokens=2500, temp=0.3
+        ))
+    except Exception as e:
+        log(f'  ⚠ Report error: {e}')
+        rpt = {'changes':[],'recommendations':[],'sectorInsights':[]}
+
+    rpt['atsScoreBefore'] = market['atsScoreBefore']
+    rpt['atsScoreAfter']  = market['atsScoreAfter']
+    rpt['keywords']             = analysis.get('keywords',[])
+    rpt['certificationRoadmap'] = analysis.get('certificationRoadmap',[])
+    rpt['salaryByLocation']     = analysis.get('salaryByLocation',[])
+    rpt['grammarIssues']        = analysis.get('grammarIssues',[])
+    rpt['uniquenessFixes']      = analysis.get('uniquenessFixes',[])
+    rpt['scrape_info']    = market['scrape_info']
+
+    step('report','done')
+    emit({'type':'report_data','data':rpt})
+
+    log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    log(f'  ✓ Complete | Sector: {sector} | Confidence: {confidence}')
+    log(f'  ✓ {final_count} listings analyzed | {len(active)} sources active')
+    log(f'  ✓ ATS: {market["atsScoreBefore"]} → {market["atsScoreAfter"]} (+{market["atsScoreAfter"]-market["atsScoreBefore"]})')
+    log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     for t in gen_threads: t.join(timeout=60)
 
     emit({'type':'step','id':'report','status':'done'})
@@ -3708,13 +3712,15 @@ class Handler(BaseHTTPRequestHandler):
     def _make_emitter(self):
         """Return a thread-safe SSE emit function."""
         alive = [True]
+        lock = threading.Lock()   # Phase 8 emits from 5 threads at once; frames must not interleave
         def emit(ev):
             if not alive[0]:
                 return
             try:
                 data = json.dumps(ev, ensure_ascii=False)
-                self.wfile.write(f'data: {data}\n\n'.encode('utf-8'))
-                self.wfile.flush()
+                with lock:
+                    self.wfile.write(f'data: {data}\n\n'.encode('utf-8'))
+                    self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
                 alive[0] = False
             except Exception as ex:

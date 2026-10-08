@@ -94,3 +94,29 @@ def test_sse_stream_ends_when_the_handler_finishes(app):
     body = r.read()          # returns only when the server closes the stream
     assert time.time() - t < 15
     assert b'"followup_data"' in body and b'"done"' in body
+
+
+def test_full_analyze_run_streams_every_tab_and_records_the_score(app, fixture_resume):
+    """The Launch flow end to end against the stub model (job-board scraping is
+    live; sources are allowed to fail individually). Checks every tab's event
+    arrives, frames are well-formed under concurrent emits, the stream ends,
+    and the run's ATS score becomes the drift baseline."""
+    title = 'Senior Data Analyst ' + uuid.uuid4().hex[:6]
+    c = http.client.HTTPConnection('127.0.0.1', app.port, timeout=300)
+    c.request('POST', '/analyze', body=json.dumps({'jobTitle': title, 'industry': 'general', 'seniority': 'senior',
+                                                   'resume': fixture_resume}),
+              headers={'Host': f'localhost:{app.port}', 'Content-Type': 'application/json'})
+    r = c.getresponse()
+    assert r.status == 200
+    frames = [f for f in r.read().split(b'\n\n') if f.strip()]
+    events = []
+    for f in frames:
+        assert f.startswith(b'data: '), f[:80]
+        events.append(json.loads(f[6:]))
+    types = [e.get('type') for e in events]
+    for want in ('market_data', 'resume_data', 'report_data', 'cover_letter_data', 'interview_data',
+                 'linkedin_data', 'outreach_data', 'velocity_data', 'cost_data'):
+        assert want in types, f'{want} missing; got {sorted(set(types))}'
+    assert types[-1] == 'done'
+    st, j = call(app, 'GET', '/api/scores/latest?jobTitle=' + title.replace(' ', '%20'))
+    assert st == 200 and j['score'] and j['score']['score_after'] is not None
