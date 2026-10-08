@@ -33,6 +33,8 @@ from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 from urllib.parse import quote_plus
 import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import apex_store as store
 
 # The startup banner prints ✓ / ⚠. On Windows, stdout redirected to a file or
 # pipe is cp1252 and those characters crash the server before it binds.
@@ -2221,6 +2223,27 @@ behavioral=5 questions. technical=4 sector-specific questions. situational=3. qu
 # Patent-worthy: no competitor does this.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+def normalize_drift(result, baseline_score):
+    """Make a model's drift answer safe to render: the delta is computed here
+    from the two scores (never trusted from the model), lists are clamped to
+    strings, urgency is one of three values."""
+    if not isinstance(result, dict) or not result:
+        raise Exception('the model returned no usable JSON')
+    current = store._score(result.get('current_score'))
+    if current is None:
+        raise Exception('the model returned no current score')
+    out = {'current_score': current, 'baseline_score': baseline_score, 'drift': current - baseline_score}
+    out['drifted'] = abs(out['drift']) >= 3
+    for k in ('new_keywords', 'faded_keywords'):
+        v = result.get(k)
+        out[k] = [str(x) for x in (v if isinstance(v, list) else []) if isinstance(x, (str, int, float))][:15]
+    out['verdict'] = str(result.get('verdict') or '')[:500]
+    u = result.get('urgency')
+    out['urgency'] = u if u in ('high', 'medium', 'low') else (
+        'high' if out['drift'] <= -10 else 'medium' if out['drift'] < 0 else 'low')
+    return out
+
+
 def drift_check(job_title, sector, resume, baseline_score, emit):
     """
     Re-scrape live market for a role and compare current keyword
@@ -2270,9 +2293,9 @@ Return ONLY JSON:
 }}''',
             max_tokens=600, temp=0.2
         )
-        result = jparse(result_raw)
+        result = normalize_drift(jparse(result_raw), baseline_score)
         emit({'type':'drift_data','data':result,'role':job_title})
-        emit({'type':'done','msg':f'Drift check complete — score moved {result.get("drift",0):+d} pts'})
+        emit({'type':'done','msg':f'Drift check complete — score moved {result["drift"]:+d} pts'})
     except Exception as e:
         emit({'type':'error','msg':f'Drift check error: {e}'})
 
@@ -3526,6 +3549,8 @@ class Handler(BaseHTTPRequestHandler):
         qs = parse_qs(u.query or '')
         err = self._guard(path)
         if err: self._refuse(err); return
+        if path.startswith('/api/'):
+            self._api('GET', path, qs, None); return
 
         # ── STATIC FILES ──────────────────────────────────────────────────────
         # Serve index.html from the server so the page and the API share one
@@ -3629,6 +3654,43 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send_json(404, {'error': 'not found'})
 
+    # ── LOCAL DATA API (apex_store) ───────────────────────────────────────────
+    def _api(self, method, path, qs, body):
+        b = body if isinstance(body, dict) else {}
+        q = lambda k: (qs.get(k) or [''])[0]
+        try:
+            if method == 'GET':
+                if path == '/api/applications':
+                    self._send_json(200, {'applications': store.list_applications(), 'summary': store.summary()}); return
+                if path == '/api/application':
+                    self._send_json(200, {'application': store.get_application(q('id'), with_history=True)}); return
+                if path == '/api/scores/latest':
+                    self._send_json(200, {'score': store.latest_score(q('jobTitle'))}); return
+            else:
+                if path == '/api/applications':
+                    a, created = store.create_application(b)
+                    self._send_json(201 if created else 200, {'application': a, 'created': created}); return
+                if path == '/api/applications/update':
+                    changes = {k: v for k, v in b.items() if k != 'id'}
+                    self._send_json(200, {'application': store.update_application(b.get('id', ''), changes)}); return
+                if path == '/api/applications/delete':
+                    store.delete_application(b.get('id', ''))
+                    self._send_json(200, {'deleted': True}); return
+                if path == '/api/applications/import':
+                    src = b.get('source') if b.get('source') in ('import', 'gmail') else 'import'
+                    self._send_json(200, store.import_applications(b.get('items'), source=src)); return
+                if path == '/api/applications/artifact':
+                    aid = store.add_artifact(b.get('id', ''), b.get('kind', ''), b.get('content'))
+                    self._send_json(201, {'artifact_id': aid}); return
+                if path == '/api/applications/followup-sent':
+                    self._send_json(200, {'application': store.record_followup_sent(b.get('id', ''))}); return
+            self._send_json(404, {'error': 'not found'})
+        except store.StoreError as e:
+            self._send_json(404 if 'not found' in str(e) else 400, {'error': str(e)})
+        except Exception as e:
+            traceback.print_exc()
+            self._send_json(500, {'error': f'internal error ({type(e).__name__}); see the server window'})
+
     def _sse_start(self):
         """Send SSE response headers."""
         self.send_response(200)
@@ -3676,6 +3738,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         path = self.path
+        if path.startswith('/api/'):
+            self._api('POST', path.split('?', 1)[0], {}, p); return
 
         # ── JOB-SPECIFIC TAILORING ───────────────────────────────────────────
         if path == '/tailor':
@@ -3758,7 +3822,15 @@ class Handler(BaseHTTPRequestHandler):
                                                'Paste the full resume text before launching.'}); return
 
             self._sse_start()
-            emit = self._make_emitter()
+            raw_emit = self._make_emitter()
+            def emit(ev, _title=p.get('jobTitle', '').strip(), _sector=p.get('industry', 'general').strip()):
+                if isinstance(ev, dict) and ev.get('type') == 'report_data':
+                    d = ev.get('data') or {}
+                    try:
+                        store.record_score(_title, _sector, d.get('atsScoreBefore'), d.get('atsScoreAfter'))
+                    except Exception as ex:
+                        print(f'  ⚠ score not recorded: {ex}')
+                raw_emit(ev)
             try:
                 agent_loop(
                     job_title = p.get('jobTitle', '').strip(),
@@ -3781,16 +3853,22 @@ class Handler(BaseHTTPRequestHandler):
 
         # ── DRIFT CHECK ──────────────────────────────────────────────────────
         if path == '/drift':
+            job_title = (p.get('jobTitle') or '').strip()
+            if not job_title:
+                self._send_json(400, {'error': 'Enter a target job title.'}); return
+            if len((p.get('resume') or '').strip()) < MIN_RESUME_CHARS:
+                self._send_json(400, {'error': 'Paste your resume in Launch first.'}); return
+            baseline = store._score(p.get('baselineScore'))
+            if baseline is None:
+                last = store.latest_score(job_title)
+                if not last:
+                    self._send_json(400, {'error': f'No baseline for "{job_title}" yet. Run the agent once for this '
+                                                    'job title; drift is measured against that run.'}); return
+                baseline = last['score_after']
             self._sse_start()
             emit = self._make_emitter()
             try:
-                drift_check(
-                    p.get('jobTitle', ''),
-                    p.get('sector',   'general'),
-                    p.get('resume',   ''),
-                    p.get('baselineScore', 50),
-                    emit,
-                )
+                drift_check(job_title, p.get('sector', 'general'), p.get('resume', ''), baseline, emit)
             except Exception as e:
                 try: emit({'type': 'error', 'msg': str(e)})
                 except Exception: pass
@@ -4194,6 +4272,7 @@ class _ThreadingHTTPServerV6(ThreadingHTTPServer):
 
 
 def run():
+    store.init()
     # 'localhost' resolves to ::1 before 127.0.0.1 on Windows. Listening on
     # IPv4 only made every new connection wait ~2s for the refused IPv6 attempt.
     # Listen on both loopback addresses (still loopback only, never 0.0.0.0).

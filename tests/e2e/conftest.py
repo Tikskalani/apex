@@ -41,7 +41,7 @@ def fake_openai():
 def app(tmp_path_factory, fake_openai):
     """Start agent_server.py on a free port. Yields an object with .url, .port, .log."""
     d = tmp_path_factory.mktemp('apex')
-    for name in ('agent_server.py', 'index.html'):
+    for name in ('agent_server.py', 'apex_store.py', 'index.html'):
         shutil.copy(ROOT / name, d / name)
     (d / 'config.json').write_text(json.dumps({'OPENAI_KEY': 'sk-test-stub-not-a-real-key', 'JSEARCH_KEY': ''}))
     port = _free_port()

@@ -40,3 +40,7 @@ desktop.ini
 
 # ── Test runs ───────────────────────────────────────────
 .pytest_cache/
+
+# ── Local data (your job pipeline) ──────────────────────
+apex.db
+apex.db-*
