@@ -19,9 +19,12 @@ Local resume-optimization and job-search agent app. Single developer, runs local
   Binds `localhost:7842` only. Serves `index.html` at `/` so page and API share
   one origin. Calls OpenAI for parsing/optimization/cover letters and scrapes
   live job postings (JSearch optional).
-- **Vendor libs** loaded from `cdnjs.cloudflare.com` at pinned versions:
+- **Vendor libs** pinned by version and SRI hash (`integrity="sha384-…"`):
   pdf.js 3.11.174, mammoth 1.6.0, html2pdf 0.10.1, jsPDF 2.5.1 (registers as
-  `window.jspdf`), docx 8.5.0.
+  `window.jspdf`) from cdnjs; docx 8.5.0 from jsDelivr
+  (`cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js`) because cdnjs does
+  not carry docx at all. Bumping a version means recomputing its hash.
+  html2pdf is loaded but unused (Test 1 still checks it).
 - **Keys:** `config.json` beside the server (`OPENAI_KEY`, `JSEARCH_KEY`,
   optional `SMTP_*`), falling back to env vars `OPENAI_API_KEY` /
   `JSEARCH_API_KEY`. `config.json` is gitignored. There is no `.env`.
@@ -82,10 +85,16 @@ python agent_server.py
 
 - `python tests/run_all.py` — regression suites (stdlib; `r4_export` needs node,
   `r7_e2e` needs pdfplumber + a fixture PDF; both skip cleanly).
-- `pytest tests/e2e` — Playwright browser suite for TESTS.md 1, 4, 6, 8, plus
-  static-serving security. Needs `pip install -r requirements-dev.txt` and
-  `python -m playwright install chromium`. Starts its own server with a stub
-  config and an offline OpenAI stub; it never uses your real keys.
+- `.venv\Scripts\python -m pytest` — Playwright browser suite (`tests/e2e`)
+  for TESTS.md 1, 4, 6, 8, plus security. Setup once:
+  `py -3.12 -m venv .venv`, `.venv\Scripts\python -m pip install -r requirements-dev.txt`,
+  `.venv\Scripts\python -m playwright install chromium`. Starts its own server
+  copy (env `APEX_PORT`, `APEX_OPENAI_BASE`) with a stub config and an offline
+  OpenAI stub; never uses the real keys or credits. Needs network for the CDN
+  libs. ~1.5–2.5 min, most of it in Chromium shutdown on Windows.
+- Not automated: TESTS.md 2, 3, 5, 7 need real OpenAI + live job scraping
+  (non-deterministic and paid). Test 4's manual text-selection check *is*
+  automated (pdfplumber extracts text and checks glyph positions).
 
 ## Working agreements
 
