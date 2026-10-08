@@ -80,3 +80,17 @@ def test_drift_without_baseline_explains_itself(app, fixture_resume):
 def test_unknown_api_route_is_json_404(app):
     st, j = call(app, 'GET', '/api/nope')
     assert st == 404 and j == {'error': 'not found'}
+
+
+def test_sse_stream_ends_when_the_handler_finishes(app):
+    """Regression: SSE was keep-alive with no length, so readers never saw EOF."""
+    import time
+    c = http.client.HTTPConnection('127.0.0.1', app.port, timeout=20)
+    c.request('POST', '/followup', body=json.dumps({'company': 'Acme', 'role': 'Analyst', 'daysSince': 8}),
+              headers={'Host': f'localhost:{app.port}', 'Content-Type': 'application/json'})
+    r = c.getresponse()
+    assert r.status == 200 and r.getheader('Connection') == 'close'
+    t = time.time()
+    body = r.read()          # returns only when the server closes the stream
+    assert time.time() - t < 15
+    assert b'"followup_data"' in body and b'"done"' in body

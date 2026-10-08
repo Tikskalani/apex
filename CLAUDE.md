@@ -1,4 +1,4 @@
-# APEX v10
+# APEX v10.1
 
 Local resume-optimization and job-search agent app. Single developer, runs locally on Windows from the project folder.
 
@@ -11,14 +11,26 @@ Local resume-optimization and job-search agent app. Single developer, runs local
   `cl` Cover Letter · `iv` Interview · `linkedin` LinkedIn · `outreach` Outreach ·
   `velocity` Velocity · `bullets` Bullets · `tailor` Tailor · `match` Match ·
   `weakness` Weakness X-Ray · `negotiate` Negotiate · `bridge` Career Bridge ·
-  `tracker` Tracker.
+  `tracker` Tracker (the job pipeline).
+  All clickable controls use `data-action` / `data-arg`, routed by one
+  delegated listener (`ACTIONS` in index.html). Inline `on*=` handlers are
+  forbidden by the CSP and a test fails if one appears.
   "Launch" is not a tab: it is the drawer opened by the **Launch** button top right
   (`#open-drawer`).
 - **Backend:** `agent_server.py` — pure Python stdlib (`http.server`
   `ThreadingHTTPServer` + `BaseHTTPRequestHandler`). No pip dependencies.
   Binds `localhost:7842` only. Serves `index.html` at `/` so page and API share
   one origin. Calls OpenAI for parsing/optimization/cover letters and scrapes
-  live job postings (JSearch optional).
+  live job postings (JSearch optional). Listens on 127.0.0.1 and ::1.
+  Sends a strict CSP with a per-load nonce on `index.html`.
+- **Storage:** `apex_store.py` (stdlib sqlite3) → `apex.db` beside the server
+  (gitignored; override with `APEX_DB`). Applications (saved → applied →
+  interview → offer / rejected / withdrawn), an append-only event timeline,
+  artifacts (apply kit: tailored resume, cover letter, follow-ups), and
+  score history (every `/analyze` run's before/after ATS score, used as the
+  drift baseline). Validation lives in the store (`StoreError` → HTTP 400).
+  Browser `localStorage['apex_apps']` from older versions is migrated once on
+  page load (kept as `apex_apps_backup`).
 - **Vendor libs** pinned by version and SRI hash (`integrity="sha384-…"`):
   pdf.js 3.11.174, mammoth 1.6.0, jsPDF 2.5.1 (registers as
   `window.jspdf`) from cdnjs; docx 8.5.0 from jsDelivr
@@ -44,8 +56,11 @@ Local resume-optimization and job-search agent app. Single developer, runs local
    "Skill 1") surviving into a rendered view are a bug.
 
 4. **Nothing is done until it is verified.** Run `python tests/run_all.py`
-   (unit/regression) and `pytest tests/e2e` (browser) before calling a change
-   fixed.
+   and `.venv\Scripts\python -m pytest` before calling a change fixed.
+
+6. **SSE responses close their connection.** Streams have no
+   Content-Length; closing is the only end-of-stream signal. `_sse_start()`
+   sends `Connection: close`. Don't change it back to keep-alive.
 
 5. **The server is reachable by every web page you have open.** Any site in
    your browser can send requests to `localhost`. So: no wildcard CORS, no
@@ -63,11 +78,17 @@ POST (v10 additions marked *): `/analyze` (SSE, the full 8-phase run),
 `/apply-all-recommendations`*, `/parse-resume`*, `/render-resume`,
 `/alerts/*`.
 
+Local data API (v10.1, `apex_store`): GET `/api/applications`,
+`/api/application?id=`, `/api/scores/latest?jobTitle=`; POST
+`/api/applications`, `/api/applications/update`, `/api/applications/delete`,
+`/api/applications/import`, `/api/applications/artifact`,
+`/api/applications/followup-sent`.
+
 ## Known gaps — do NOT "fix" these
 
-- **Drift and Followup** have working endpoints but no tab and no trigger.
-  Velocity *does* have a tab; it is filled by Phase 8 of `/analyze`.
-  Documented in CHANGELOG.
+- **Velocity** has no trigger of its own; it is filled by Phase 8 of
+  `/analyze`. (Drift and Followup are wired as of v10.1: Market Intel →
+  "Check drift now"; Tracker → Open → "Draft follow-up".)
 - **SMTP is off.** Optional, affects email alerts only.
 - **Some job sources return zero results.** Sources fail independently by
   design. Only a problem if the total scraped across all sources is 0.
@@ -84,8 +105,9 @@ python agent_server.py
 
 - `python tests/run_all.py` — regression suites (stdlib; `r4_export` needs node,
   `r7_e2e` needs pdfplumber + a fixture PDF; both skip cleanly).
-- `.venv\Scripts\python -m pytest` — Playwright browser suite (`tests/e2e`)
-  for TESTS.md 1, 4, 6, 8, plus security. Setup once:
+- `.venv\Scripts\python -m pytest` — store/drift unit tests (`tests/test_*.py`)
+  plus the Playwright suite (`tests/e2e`): TESTS.md 1, 4, 6, 8, security/CSP,
+  local API, pipeline, follow-ups, apply kit, drift. Setup once:
   `py -3.12 -m venv .venv`, `.venv\Scripts\python -m pip install -r requirements-dev.txt`,
   `.venv\Scripts\python -m playwright install chromium`. Starts its own server
   copy (env `APEX_PORT`, `APEX_OPENAI_BASE`) with a stub config and an offline

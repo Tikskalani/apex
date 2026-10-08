@@ -126,6 +126,21 @@ class _Handler(BaseHTTPRequestHandler):
             content = json.dumps(longform() if 'LONGFORM' in user else MARCUS)
         elif 'cover letters' in system:
             content = COVER_LETTER
+        elif 'job search strategist' in system:          # /followup
+            content = json.dumps({
+                'week_1_email': {'subject': 'Following up on the Senior Data Analyst role',
+                                 'body': 'Hi team, I applied last week and wanted to share FOLLOWUPMARKER.',
+                                 'send_time': 'Tuesday 9am'},
+                'week_2_email': {'subject': 'Quick check-in', 'body': 'Still very interested.', 'send_time': 'Thursday'},
+                'linkedin_note': 'Hi, I applied for the analyst role and would love to connect.',
+                'value_add': 'Share a one-page KPI dashboard mock-up.',
+                'when_to_give_up': 'After three weeks with no reply.',
+                'personalization_tips': ['Mention their clinical ops team'],
+            })
+        elif 'resume market analyst' in system:          # /drift
+            content = json.dumps({'current_score': '71', 'drift': 999, 'new_keywords': ['dbt', 'Looker'],
+                                  'faded_keywords': ['Access'], 'verdict': 'Postings now ask for dbt.',
+                                  'urgency': 'bogus'})
         elif 'merge resume edits' in system:
             content = ("MARCUS DELGADO\nHouston, TX\n\nEXPERIENCE\n" +
                        "- Built SQL reporting for the management team\n" * 8)

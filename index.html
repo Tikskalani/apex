@@ -542,7 +542,7 @@ a:hover { color: var(--acc-soft); }
 .btn-danger:hover { background: var(--red-soft); }
 
 /* ─── Inputs ─── */
-input[type="text"], input[type="email"], input[type="password"], select, textarea {
+input[type="text"], input[type="email"], input[type="password"], input[type="date"], select, textarea {
   width: 100%; padding: 12px 14px;
   background: var(--bg-2); border: 1px solid var(--line-2);
   border-radius: var(--r2); color: var(--fg-0);
@@ -1021,6 +1021,42 @@ label {
   border-bottom: 1px solid var(--line);
 }
 
+/* ─── Pipeline ─── */
+.grid-5 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s4); }
+.pipe-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: var(--s4); }
+.pipe-filters .btn.active { border-color: var(--acc); color: var(--fg-0); background: var(--acc-bg); }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tracker-table .sub { font-size: 11px; color: var(--fg-3); margin-top: 2px; }
+.tracker-table .mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--fg-3); white-space: nowrap; }
+.tracker-table a { color: var(--fg-0); text-decoration: none; border-bottom: 1px dotted var(--line-3); }
+.tracker-table a:hover { color: var(--acc-soft); }
+.tracker-table tr.due td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+.tracker-table .trk-status { padding: 6px 10px; width: auto; min-width: 118px; font-size: 12px; }
+.due-pill, .kit-pill { display: inline-block; padding: 3px 10px; border-radius: var(--r-pill); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.due-pill { background: rgba(255,170,0,0.12); color: var(--amber); }
+.kit-pill { background: var(--acc-bg); color: var(--acc-soft); }
+.due-banner { display: flex; align-items: center; gap: var(--s3); justify-content: space-between; flex-wrap: wrap;
+  padding: var(--s4) var(--s5); border: 1px solid rgba(255,170,0,0.35); background: rgba(255,170,0,0.06);
+  border-radius: var(--r3); margin-bottom: var(--s5); color: var(--fg-1); }
+.pp-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); margin: var(--s3) 0 var(--s4); }
+.pp-timeline { list-style: none; padding: 0; margin: 0; font-size: 12px; }
+.pp-timeline li { padding: 8px 0; border-bottom: 1px solid var(--line); color: var(--fg-2); display: flex; gap: 12px; }
+.pp-timeline time { font-family: 'JetBrains Mono', monospace; color: var(--fg-3); min-width: 96px; flex-shrink: 0; }
+.kit-item { border: 1px solid var(--line); border-radius: var(--r2); padding: var(--s3) var(--s4); margin-bottom: var(--s3); background: var(--bg-2); }
+.kit-item .kit-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.kit-item .kit-h .sub { font-size: 11px; color: var(--fg-3); font-family: 'JetBrains Mono', monospace; }
+.kit-item pre { white-space: pre-wrap; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.6;
+  color: var(--fg-1); max-height: 200px; overflow: auto; margin-top: var(--s3); }
+.kit-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.drift-row { display: flex; align-items: baseline; gap: var(--s5); flex-wrap: wrap; margin: var(--s3) 0; }
+.drift-num { font-size: 44px; font-weight: 300; letter-spacing: -0.02em; line-height: 1; }
+.drift-delta.up { color: var(--green-soft); } .drift-delta.down { color: var(--red-soft); } .drift-delta.flat { color: var(--fg-3); }
+@media (max-width: 640px) {
+  .pp-fields { grid-template-columns: 1fr; }
+  .tracker-table th:nth-child(4), .tracker-table td:nth-child(4),
+  .tracker-table th:nth-child(6), .tracker-table td:nth-child(6) { display: none; }
+}
+
 /* ─── Hide / utility ─── */
 .hidden { display: none !important; }
 .copy-btn {
@@ -1196,6 +1232,12 @@ label {
             <div class="view-eyebrow">01 · Intelligence</div>
             <h2 class="view-title">Market <strong>Intel</strong></h2>
             <p class="view-subtitle">Live keyword extraction from real job postings, ranked by demand.</p>
+          </div>
+          <div class="card" id="drift-card" style="margin-bottom:var(--s5)">
+            <div class="card-h"><h3>Market drift</h3><span class="h-sub" id="drift-base">No baseline yet</span></div>
+            <div id="drift-out" style="color:var(--fg-2);font-size:13px">Postings change. Once you've run the agent for a job title, check back any time:
+              APEX re-scores your resume against today's postings and shows what moved since that run.</div>
+            <button class="btn" id="drift-run" style="margin-top:var(--s4)">Check drift now</button>
           </div>
           <div id="market-content">
             <div class="empty">Launch the agent to scan your market.</div>
@@ -1543,21 +1585,42 @@ label {
             <h2 class="view-title">Application <strong>Tracker</strong></h2>
             <p class="view-subtitle">Every application logged. Watch your conversion rate as you optimize.</p>
           </div>
-          <div class="grid-4" style="margin-bottom:var(--s5)">
+          <div class="grid-5" style="margin-bottom:var(--s5)">
+            <div class="tile"><div class="v" id="trk-saved">0</div><div class="l">Saved</div></div>
             <div class="tile"><div class="v" id="trk-total">0</div><div class="l">Applied</div></div>
             <div class="tile"><div class="v" id="trk-iv">0</div><div class="l">Interviews</div></div>
             <div class="tile"><div class="v" id="trk-of">0</div><div class="l">Offers</div></div>
-            <div class="tile"><div class="v" id="trk-rate">—</div><div class="l">Conv. Rate</div></div>
+            <div class="tile"><div class="v" id="trk-rate">—</div><div class="l">Response rate</div></div>
+          </div>
+          <div class="due-banner hidden" id="trk-due">
+            <span><strong id="trk-due-n">0 follow-ups are due</strong> · applications with no reply after a week</span>
+            <button class="btn btn-sm" data-action="pipeFilter" data-arg="due">Show them</button>
           </div>
           <div class="card">
+            <div class="card-h"><h3>Pipeline</h3><span class="h-sub">Saved locally in apex.db · never leaves this machine</span></div>
+            <div class="pipe-filters" id="trk-filters" role="group" aria-label="Filter applications">
+              <button class="btn btn-sm" data-action="pipeFilter" data-arg="active" data-filter="active">Active</button>
+              <button class="btn btn-sm" data-action="pipeFilter" data-arg="due" data-filter="due">Follow-up due</button>
+              <button class="btn btn-sm" data-action="pipeFilter" data-arg="closed" data-filter="closed">Closed</button>
+              <button class="btn btn-sm" data-action="pipeFilter" data-arg="all" data-filter="all">All</button>
+            </div>
+            <div class="table-wrap">
+              <table class="tracker-table">
+                <thead><tr><th>Company</th><th>Role</th><th>Status</th><th>Applied</th><th>Next</th><th>Kit</th><th></th></tr></thead>
+                <tbody id="trk-tbody"><tr><td colspan="7" class="empty" style="padding:var(--s5)">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card" style="margin-top:var(--s5)">
             <div class="card-h"><h3>Add application</h3></div>
             <div class="alert-form">
-              <input type="text" id="trk-co" placeholder="Company">
-              <input type="text" id="trk-role" placeholder="Role">
-              <input type="text" id="trk-date" placeholder="Date YYYY-MM-DD">
-              <select id="trk-status"><option value="applied">Applied</option><option value="interview">Interview</option><option value="offer">Offer</option><option value="rejected">Rejected</option></select>
+              <div><label for="trk-co">Company</label><input type="text" id="trk-co" placeholder="Meridian Health Systems" autocomplete="organization"></div>
+              <div><label for="trk-role">Role</label><input type="text" id="trk-role" placeholder="Senior Data Analyst"></div>
+              <div><label for="trk-url">Job link (optional)</label><input type="text" id="trk-url" placeholder="https://…" inputmode="url"></div>
+              <div><label for="trk-status">Status</label><select id="trk-status"><option value="saved">Saved</option><option value="applied" selected>Applied</option><option value="interview">Interview</option><option value="offer">Offer</option><option value="rejected">Rejected</option></select></div>
+              <div><label for="trk-date">Applied on</label><input type="date" id="trk-date"></div>
             </div>
-            <button class="btn btn-primary" id="trk-add" style="margin-top:var(--s4)">Add</button>
+            <button class="btn btn-primary" id="trk-add">Add to pipeline</button>
             <!-- ─── Gmail Inbox Scanner ─── -->
             <div class="card" style="margin-top:var(--s5); border-color:rgba(62,158,255,0.20); background:linear-gradient(180deg, rgba(62,158,255,0.03), var(--bg-1))">
               <div class="card-h">
@@ -1584,10 +1647,6 @@ label {
               <div id="ix-results" style="margin-top:var(--s4)"></div>
             </div>
 
-            <table class="tracker-table" style="margin-top:var(--s5)">
-              <thead><tr><th>Company</th><th>Role</th><th>Date</th><th>Status</th><th></th></tr></thead>
-              <tbody id="trk-tbody"><tr><td colspan="5" class="empty" style="padding:var(--s5)">No applications yet.</td></tr></tbody>
-            </table>
           </div>
         </section>
 
@@ -1676,6 +1735,48 @@ label {
 </aside>
 
 
+<!-- ═══════════════════════ APPLICATION DETAIL MODAL ═══════════════════════ -->
+<div class="modal-scrim" id="pp-scrim"></div>
+<aside class="modal" id="pp-modal" role="dialog" aria-modal="true" aria-labelledby="pp-title">
+  <div class="modal-header">
+    <div>
+      <h2 id="pp-title">Application</h2>
+      <div class="h-sub" id="pp-meta">—</div>
+    </div>
+    <button class="icon-btn" id="pp-close" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></svg>
+    </button>
+  </div>
+  <div class="modal-body">
+    <div class="modal-cols">
+      <div class="modal-col">
+        <h4>Details</h4>
+        <div class="pp-fields">
+          <div><label for="pp-next-date">Next action</label><input type="date" id="pp-next-date"></div>
+          <div><label for="pp-url">Job link</label><input type="text" id="pp-url" placeholder="https://…" inputmode="url"></div>
+        </div>
+        <label for="pp-notes">Notes</label>
+        <textarea id="pp-notes" rows="5" placeholder="Recruiter, interview dates, salary range, what they asked…"></textarea>
+        <button class="btn" id="pp-save" style="margin-top:var(--s3)">Save details</button>
+        <h4 style="margin-top:var(--s6)">Timeline</h4>
+        <ol class="pp-timeline" id="pp-timeline"></ol>
+      </div>
+      <div class="modal-col">
+        <h4>Apply kit</h4>
+        <div id="pp-kit"></div>
+        <h4 style="margin-top:var(--s6)">Follow-up</h4>
+        <div id="pp-followup"><div class="empty" style="padding:var(--s4)">Draft a follow-up sequence tailored to this application.</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-primary" id="pp-followup-btn">Draft follow-up</button>
+    <button class="btn" id="pp-sent">Mark follow-up sent</button>
+    <span style="flex:1"></span>
+    <button class="btn btn-danger" id="pp-delete">Delete</button>
+  </div>
+</aside>
+
 <!-- ═══════════════════════ TAILOR + APPLY MODAL ═══════════════════════ -->
 <div class="modal-scrim" id="ta-scrim"></div>
 <aside class="modal" id="ta-modal" role="dialog" aria-labelledby="ta-modal-title">
@@ -1716,7 +1817,7 @@ label {
     </a>
     <button class="btn" id="ta-save-tracker">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg>
-      Save to Tracker
+      Save kit to Pipeline
     </button>
     <span style="flex:1"></span>
     <span style="font-size:11px;color:var(--fg-3);font-family:'JetBrains Mono',monospace" id="ta-status">Ready</span>
@@ -1752,7 +1853,6 @@ const toScore = (v, lo = 0, hi = 100) => { const n = Math.round(Number(v)); retu
 let state = {
   resumeStruct: null, selectedTemplate: 'modern', templates: [],
   marketKeywords: [], sector: 'general',
-  applications: JSON.parse(localStorage.getItem('apex_apps') || '[]'),
   // Buffers populated as agent emits each tab's data — used by "Apply All" merge
   rec: {
     original: '', optimized: '',
@@ -1799,6 +1899,10 @@ const ACTIONS = {
   ixAddOne:    el => ixAddOne(Number(el.dataset.arg)),
   trkRemove:   el => trkRemove(Number(el.dataset.arg)),
   viNext:      () => viNextQuestion(),
+  pipeOpen:    el => pipeOpen(el.dataset.arg),
+  pipeFilter:  el => { PIPE.filter = el.dataset.arg; renderPipeline(); $('trk-filters').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); },
+  clip:        el => copyText(CLIP.get(el.dataset.arg)),
+  kitExport:   el => kitExport(el),
 };
 document.addEventListener('click', ev => {
   const el = ev.target.closest('[data-action]');
@@ -1812,7 +1916,7 @@ function switchTab(view) {
   $$('.dock-item').forEach(t => t.classList.toggle('active', t.dataset.view === view));
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
   if (view === 'templates') initTemplatesTab();
-  if (view === 'tracker') renderTracker();
+  if (view === 'tracker') loadPipeline();
   // scroll canvas to top
   document.querySelector('.canvas').scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -1930,6 +2034,40 @@ async function streamSSE(path, payload, onEvent) {
   }
 }
 
+// ─── Market drift ───
+async function refreshDriftBaseline() {
+  const title = $('job-title').value.trim();
+  if (!title) { $('drift-base').textContent = 'No baseline yet'; return null; }
+  try {
+    const { score } = await api('/api/scores/latest?jobTitle=' + encodeURIComponent(title));
+    $('drift-base').textContent = score ? 'Baseline ' + score.score_after + ' · ' + title + ' · ' + fmtWhen(score.created_at) : 'No baseline for ' + title + ' yet';
+    return score;
+  } catch (e) { return null; }
+}
+function renderDrift(d, role) {
+  const delta = toScore(d.drift, -100, 100);
+  const cls = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat';
+  const chips = (arr, label) => Array.isArray(arr) && arr.length
+    ? '<div style="margin-top:var(--s3)"><div class="label">' + label + '</div><div class="kw-row">' + arr.map(k => '<span class="kw">' + escHtml(k) + '</span>').join('') + '</div></div>' : '';
+  $('drift-out').innerHTML =
+    '<div class="drift-row"><div><div class="drift-num">' + toScore(d.current_score) + '</div><div class="label">Today</div></div>' +
+    '<div><div class="drift-num drift-delta ' + cls + '">' + (delta > 0 ? '+' : '') + delta + '</div><div class="label">vs baseline ' + toScore(d.baseline_score) + '</div></div></div>' +
+    (d.verdict ? '<p style="color:var(--fg-1)">' + escHtml(d.verdict) + '</p>' : '') +
+    chips(d.new_keywords, 'Rising in postings') + chips(d.faded_keywords, 'Fading');
+  addLog('Market drift for ' + (role || 'role') + ': ' + (delta >= 0 ? '+' : '') + delta + ' pts', delta < 0 ? 'warn' : 'ok');
+  toast(delta < 0 ? 'Your fit dropped ' + Math.abs(delta) + ' pts since your last run. Re-optimize.' : 'Drift check complete (' + (delta >= 0 ? '+' : '') + delta + ' pts)', delta < 0 ? 'err' : 'ok');
+}
+$('drift-run').addEventListener('click', async ev => {
+  const jobTitle = $('job-title').value.trim(), resume = $('resume-text').value.trim();
+  if (!jobTitle || resume.length < MIN_RESUME_CHARS) return toast('Open Launch, set the job title and paste your resume first', 'err');
+  const btn = ev.currentTarget; btn.disabled = true;
+  $('drift-out').innerHTML = '<span class="spinner"></span>Scanning today\'s postings…';
+  try { await streamSSE('/drift', { jobTitle, sector: state.sector, resume }, handleEvent); }
+  catch (e) { $('drift-out').textContent = e.message; }
+  finally { btn.disabled = false; }
+});
+$('job-title').addEventListener('change', refreshDriftBaseline);
+
 // ─── LAUNCH ───
 $('run-btn').addEventListener('click', async () => {
   const jobTitle = $('job-title').value.trim();
@@ -1972,6 +2110,7 @@ function handleEvent(ev) {
   }
   else if (ev.type === 'report_data') {
     if (ev.data && Array.isArray(ev.data.changes)) state.rec.changes = ev.data.changes;
+    setTimeout(refreshDriftBaseline, 300);   // the server just recorded this run's score
     renderGapReport(ev.data);
   }
   else if (ev.type === 'cover_letter_data') renderCoverLetter(ev.letter);
@@ -1990,23 +2129,7 @@ function handleEvent(ev) {
   else if (ev.type === 'bridge_data') renderBridge(ev.data);
   else if (ev.type === 'xray_data') renderWeakness(ev.data);
   else if (ev.type === 'cost_data') { $('foot-cost').textContent = '~' + ev.data.est_cents + '¢'; addLog('Cost: ~' + ev.data.est_cents + '¢', 'dim'); }
-  else if (ev.type === 'drift_data') {
-    // Server emits this from /drift; previously it was dropped on the floor.
-    const d = ev.data || {};
-    const delta = typeof d.drift === 'number' ? d.drift : 0;
-    state.drift = d;
-    addLog('Market drift for ' + (ev.role || 'role') + ': ' + (delta >= 0 ? '+' : '') + delta + ' pts', delta < 0 ? 'warn' : 'ok');
-    if (Array.isArray(d.new_keywords) && d.new_keywords.length) {
-      addLog('  New market keywords: ' + d.new_keywords.slice(0, 8).join(', '), 'dim');
-    }
-    if (Array.isArray(d.faded_keywords) && d.faded_keywords.length) {
-      addLog('  Fading: ' + d.faded_keywords.slice(0, 8).join(', '), 'dim');
-    }
-    toast(delta < 0
-      ? 'Market drift: your score dropped ' + Math.abs(delta) + ' pts — re-optimize'
-      : 'Market drift check complete (' + (delta >= 0 ? '+' : '') + delta + ' pts)',
-      delta < 0 ? 'err' : 'ok');
-  }
+  else if (ev.type === 'drift_data') renderDrift(ev.data || {}, ev.role);
   else if (ev.type === 'error') { toast(ev.msg, 'err'); addLog('✗ ' + ev.msg, 'fail'); }
   else if (ev.type === 'done') addLog('━━ ' + ev.msg, 'ok');
 }
@@ -2666,9 +2789,10 @@ async function openTailorApplyModal(job) {
           posting: posting, resume: resume, sector: state.sector,
         })
       });
-      const j = await r.json();
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ('server returned ' + r.status));
       window._taCover = j.letter || '';
-      $('ta-cover-body').textContent = window._taCover || '(no result)';
+      $('ta-cover-body').textContent = window._taCover || '✗ The model returned an empty letter. Try again.';
     } catch (e) {
       $('ta-cover-body').textContent = '✗ ' + e.message;
     }
@@ -2717,19 +2841,31 @@ $('ta-download').addEventListener('click', (ev) => taExport('pdf', ev));
 $('ta-download-docx').addEventListener('click', (ev) => taExport('docx', ev));
 $('ta-download-txt').addEventListener('click', (ev) => taExport('txt', ev));
 
-// Save to tracker
-$('ta-save-tracker').addEventListener('click', () => {
+// Save the job and its apply kit (tailored resume + cover letter) to the pipeline.
+$('ta-save-tracker').addEventListener('click', async (ev) => {
   const j = window._taJob;
   if (!j) return;
-  state.applications.push({
-    company: j.company || 'Unknown',
-    role: j.title || 'Unknown',
-    date: new Date().toISOString().slice(0,10),
-    status: 'applied'
-  });
-  localStorage.setItem('apex_apps', JSON.stringify(state.applications));
-  renderTracker();
-  toast('Added to tracker', 'ok');
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  try {
+    const url = safeUrl(j.url);
+    const r = await api('/api/applications', {
+      company: j.company || '', role: j.title || '', url: url === '#' ? '' : url,
+      location: j.location || '', status: 'saved', source: 'tailor'
+    });
+    const id = r.application.id;
+    let docs = 0;
+    if (window._taResume) { await api('/api/applications/artifact', { id, kind: 'tailored_resume', content: window._taResume }); docs++; }
+    if (window._taCover)  { await api('/api/applications/artifact', { id, kind: 'cover_letter', content: window._taCover }); docs++; }
+    const msg = (r.created ? 'Saved to pipeline' : 'Already in pipeline · kit updated') + (docs ? ` with ${docs} document${docs > 1 ? 's' : ''}` : '');
+    $('ta-status').textContent = msg;
+    toast(msg, 'ok');
+    loadPipeline();
+  } catch (e) {
+    toast('Could not save: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 window.copyText = (txt) => {
@@ -3395,21 +3531,266 @@ $('br-run').addEventListener('click', async () => {
   await streamSSE('/bridge', { resume: $('resume-text').value, fromRole: fromR, toRole: toR, sector: state.sector }, handleEvent);
 });
 
-// ─── Tracker ───
-$('trk-add').addEventListener('click', () => {
-  const co = $('trk-co').value.trim(), role = $('trk-role').value.trim();
-  if (!co || !role) return toast('Need company and role', 'err');
-  state.applications.push({ company: co, role, date: $('trk-date').value || new Date().toISOString().slice(0,10), status: $('trk-status').value });
-  localStorage.setItem('apex_apps', JSON.stringify(state.applications));
-  $('trk-co').value = ''; $('trk-role').value = ''; $('trk-date').value = '';
-  renderTracker();
+// ═══════════════════════ PIPELINE (apex.db via /api) ═══════════════════════
+const PIPE = { apps: [], summary: null, filter: 'active', detail: null };
+const STATUS_LABELS = { saved: 'Saved', applied: 'Applied', interview: 'Interview', offer: 'Offer', rejected: 'Rejected', withdrawn: 'Withdrawn' };
+const KIT_LABELS = { tailored_resume: 'Tailored resume', cover_letter: 'Cover letter', followup: 'Follow-up sequence', outreach: 'Outreach', note: 'Note' };
+
+// JSON call to the local API. Throws Error(message) on any non-2xx.
+async function api(path, body) {
+  const r = await fetch(SERVER + path, body === undefined ? {} : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+
+// Text for copy buttons rendered from data: stored here, referenced by key.
+const CLIP = new Map();
+function clipKey(text) { const k = 'c' + CLIP.size; CLIP.set(k, String(text || '')); return k; }
+
+async function loadPipeline() {
+  try {
+    const j = await api('/api/applications');
+    PIPE.apps = j.applications || [];
+    PIPE.summary = j.summary || null;
+    renderPipeline();
+  } catch (e) {
+    $('trk-tbody').innerHTML = '<tr><td colspan="7" class="empty" style="padding:var(--s5)">Could not load your pipeline: ' + escHtml(e.message) + '</td></tr>';
+  }
+}
+
+function pipeRows() {
+  const f = PIPE.filter;
+  return PIPE.apps.filter(a =>
+    f === 'all' ? true :
+    f === 'active' ? ['saved', 'applied', 'interview'].includes(a.status) :
+    f === 'due' ? a.followup_due :
+    ['offer', 'rejected', 'withdrawn'].includes(a.status));
+}
+
+function renderPipeline() {
+  const s = PIPE.summary || { by_status: {} };
+  const by = s.by_status || {};
+  $('trk-saved').textContent = by.saved || 0;
+  $('trk-total').textContent = s.sent || 0;
+  $('trk-iv').textContent = (by.interview || 0) + (by.offer || 0);
+  $('trk-of').textContent = by.offer || 0;
+  $('trk-rate').textContent = s.response_rate == null ? '—' : s.response_rate + '%';
+  const due = s.followups_due || 0;
+  $('trk-due').classList.toggle('hidden', !due);
+  $('trk-due-n').textContent = due + (due === 1 ? ' follow-up is due' : ' follow-ups are due');
+  $$('#trk-filters [data-filter]').forEach(b => b.classList.toggle('active', b.dataset.filter === PIPE.filter));
+
+  const rows = pipeRows();
+  if (!rows.length) {
+    $('trk-tbody').innerHTML = '<tr><td colspan="7" class="empty" style="padding:var(--s5)">' + (PIPE.apps.length
+      ? 'Nothing in this view.'
+      : 'No applications yet. Add one below, save one from Tailor &amp; Apply, or import from Gmail.') + '</td></tr>';
+    return;
+  }
+  const opts = cur => Object.entries(STATUS_LABELS).map(([v, l]) =>
+    '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + l + '</option>').join('');
+  $('trk-tbody').innerHTML = rows.map(a => `
+    <tr class="${a.followup_due ? 'due' : ''}">
+      <td><strong>${a.url ? `<a href="${escHtml(safeUrl(a.url))}" target="_blank" rel="noopener noreferrer">${escHtml(a.company)}</a>` : escHtml(a.company)}</strong>${a.location ? `<div class="sub">${escHtml(a.location)}</div>` : ''}</td>
+      <td>${escHtml(a.role)}</td>
+      <td><select class="trk-status" data-change="status" data-id="${escHtml(a.id)}" aria-label="Status for ${escHtml(a.company)}">${opts(a.status)}</select></td>
+      <td class="mono">${escHtml(a.applied_on || '—')}</td>
+      <td class="mono">${a.followup_due ? '<span class="due-pill">Follow up</span>' : escHtml(a.next_action_on || '—')}</td>
+      <td>${a.artifact_count ? `<span class="kit-pill">${a.artifact_count} doc${a.artifact_count > 1 ? 's' : ''}</span>` : '<span class="sub">—</span>'}</td>
+      <td><button class="btn btn-sm" data-action="pipeOpen" data-arg="${escHtml(a.id)}">Open</button></td>
+    </tr>`).join('');
+}
+
+// Status changes straight from the table.
+document.addEventListener('change', async ev => {
+  const el = ev.target.closest('[data-change="status"]');
+  if (!el) return;
+  el.disabled = true;
+  try {
+    await api('/api/applications/update', { id: el.dataset.id, status: el.value });
+    toast('Moved to ' + STATUS_LABELS[el.value], 'ok');
+    await loadPipeline();
+    if (PIPE.detail && PIPE.detail.id === el.dataset.id) pipeOpen(el.dataset.id);
+  } catch (e) {
+    toast('Could not update: ' + e.message, 'err');
+    loadPipeline();
+  }
 });
 
-window.trkRemove = (i) => {
-  state.applications.splice(i, 1);
-  localStorage.setItem('apex_apps', JSON.stringify(state.applications));
-  renderTracker();
-};
+$('trk-add').addEventListener('click', async () => {
+  // Same rules as the server (which stays authoritative); checked here for an instant answer.
+  if (!$('trk-co').value.trim()) { $('trk-co').focus(); return toast('company is required', 'err'); }
+  if (!$('trk-role').value.trim()) { $('trk-role').focus(); return toast('role is required', 'err'); }
+  try {
+    const r = await api('/api/applications', {
+      company: $('trk-co').value, role: $('trk-role').value, url: $('trk-url').value.trim(),
+      status: $('trk-status').value, applied_on: $('trk-date').value
+    });
+    toast(r.created ? 'Added to pipeline' : 'That application is already in your pipeline', r.created ? 'ok' : '');
+    if (r.created) ['trk-co', 'trk-role', 'trk-url', 'trk-date'].forEach(id => $(id).value = '');
+    await loadPipeline();
+  } catch (e) { toast(e.message, 'err'); }
+});
+
+// ─── Detail modal ───
+function fmtWhen(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function describeEvent(e) {
+  const d = e.detail || {};
+  if (e.kind === 'created') return 'Added as ' + (STATUS_LABELS[d.status] || d.status) + (d.source && d.source !== 'manual' ? ' (from ' + d.source + ')' : '');
+  if (e.kind === 'status') return (STATUS_LABELS[d.frm] || d.frm) + ' → ' + (STATUS_LABELS[d.to] || d.to);
+  if (e.kind === 'note') return 'Notes updated';
+  if (e.kind === 'artifact') return (KIT_LABELS[d.artifact] || 'Document') + ' saved';
+  if (e.kind === 'followup_sent') return 'Follow-up sent · next check ' + (d.next_action_on || '');
+  return e.kind;
+}
+
+async function pipeOpen(id) {
+  try {
+    const { application: a } = await api('/api/application?id=' + encodeURIComponent(id));
+    PIPE.detail = a;
+    $('pp-title').textContent = a.role + ' · ' + a.company;
+    $('pp-meta').textContent = [STATUS_LABELS[a.status], a.applied_on ? 'applied ' + a.applied_on : 'not applied yet', a.location].filter(Boolean).join(' · ');
+    $('pp-notes').value = a.notes || '';
+    $('pp-next-date').value = a.next_action_on || '';
+    $('pp-url').value = a.url || '';
+    $('pp-timeline').innerHTML = a.events.slice().reverse().map(e =>
+      '<li><time>' + escHtml(fmtWhen(e.at)) + '</time><span>' + escHtml(describeEvent(e)) + '</span></li>').join('');
+    renderKit(a);
+    $('pp-sent').disabled = !['applied', 'interview'].includes(a.status);
+    $('pp-scrim').classList.add('open');
+    $('pp-modal').classList.add('open');
+  } catch (e) { toast('Could not open: ' + e.message, 'err'); }
+}
+
+function renderKit(a) {
+  CLIP.clear();   // keys only need to live as long as the buttons that use them
+  const docs = (a.artifacts || []).filter(x => x.kind !== 'followup');
+  $('pp-kit').innerHTML = docs.length ? docs.map(x => `
+    <div class="kit-item">
+      <div class="kit-h"><span><strong>${escHtml(KIT_LABELS[x.kind] || x.kind)}</strong> <span class="sub">${escHtml(fmtWhen(x.created_at))}</span></span>
+        <span class="kit-actions">
+          <button class="copy-btn" data-action="clip" data-arg="${clipKey(x.content)}">Copy</button>
+          ${x.kind === 'tailored_resume' ? `<button class="copy-btn" data-action="kitExport" data-arg="pdf" data-artifact="${x.id}">PDF</button><button class="copy-btn" data-action="kitExport" data-arg="docx" data-artifact="${x.id}">DOCX</button>` : ''}
+        </span></div>
+      <pre>${escHtml(x.content)}</pre>
+    </div>`).join('')
+    : '<div class="empty" style="padding:var(--s4)">No documents yet. Use <strong>Tailor For This</strong> on a job in Live Jobs, then <strong>Save kit to Pipeline</strong>.</div>';
+  const fu = (a.artifacts || []).find(x => x.kind === 'followup');
+  if (fu) {
+    let d = null; try { d = JSON.parse(fu.content); } catch (e) {}
+    if (d) renderFollowup(d, fu.created_at);
+  } else {
+    $('pp-followup').innerHTML = '<div class="empty" style="padding:var(--s4)">Draft a follow-up sequence tailored to this application.</div>';
+  }
+}
+
+function renderFollowup(d, when) {
+  const email = (title, e) => !e ? '' : `
+    <div class="kit-item">
+      <div class="kit-h"><span><strong>${escHtml(title)}</strong> <span class="sub">${escHtml(e.send_time || '')}</span></span>
+        <button class="copy-btn" data-action="clip" data-arg="${clipKey('Subject: ' + (e.subject || '') + '\n\n' + (e.body || ''))}">Copy</button></div>
+      <pre>Subject: ${escHtml(e.subject || '')}\n\n${escHtml(e.body || '')}</pre>
+    </div>`;
+  const line = (title, text) => !text ? '' : `
+    <div class="kit-item">
+      <div class="kit-h"><strong>${escHtml(title)}</strong><button class="copy-btn" data-action="clip" data-arg="${clipKey(text)}">Copy</button></div>
+      <pre>${escHtml(text)}</pre>
+    </div>`;
+  $('pp-followup').innerHTML =
+    (when ? '<div class="sub" style="margin-bottom:var(--s3);font-size:11px;color:var(--fg-3)">Drafted ' + escHtml(fmtWhen(when)) + '</div>' : '') +
+    email('First follow-up', d.week_1_email) + email('Second follow-up', d.week_2_email) +
+    line('LinkedIn note', d.linkedin_note) + line('Add value', d.value_add) + line('When to move on', d.when_to_give_up);
+}
+
+function closePipeModal() { $('pp-scrim').classList.remove('open'); $('pp-modal').classList.remove('open'); PIPE.detail = null; }
+$('pp-close').addEventListener('click', closePipeModal);
+$('pp-scrim').addEventListener('click', closePipeModal);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('pp-modal').classList.contains('open')) closePipeModal(); });
+
+$('pp-save').addEventListener('click', async () => {
+  const a = PIPE.detail; if (!a) return;
+  try {
+    await api('/api/applications/update', { id: a.id, notes: $('pp-notes').value, next_action_on: $('pp-next-date').value, url: $('pp-url').value.trim() });
+    toast('Saved', 'ok');
+    await loadPipeline(); pipeOpen(a.id);
+  } catch (e) { toast(e.message, 'err'); }
+});
+
+$('pp-delete').addEventListener('click', async () => {
+  const a = PIPE.detail; if (!a) return;
+  if (!confirm('Delete ' + a.role + ' at ' + a.company + '? Its timeline and saved documents go with it.')) return;
+  try { await api('/api/applications/delete', { id: a.id }); closePipeModal(); toast('Deleted', 'ok'); loadPipeline(); }
+  catch (e) { toast(e.message, 'err'); }
+});
+
+$('pp-sent').addEventListener('click', async () => {
+  const a = PIPE.detail; if (!a) return;
+  try {
+    const r = await api('/api/applications/followup-sent', { id: a.id });
+    toast('Logged · next check on ' + r.application.next_action_on, 'ok');
+    await loadPipeline(); pipeOpen(a.id);
+  } catch (e) { toast(e.message, 'err'); }
+});
+
+$('pp-followup-btn').addEventListener('click', async ev => {
+  const a = PIPE.detail; if (!a) return;
+  const btn = ev.currentTarget, id = a.id;
+  const since = a.applied_on ? Math.max(0, Math.round((Date.now() - new Date(a.applied_on + 'T00:00:00')) / 864e5)) : 0;
+  btn.disabled = true;
+  $('pp-followup').innerHTML = '<div class="empty" style="padding:var(--s4)"><span class="spinner"></span>Drafting…</div>';
+  let got = null, failed = null;
+  try {
+    await streamSSE('/followup', {
+      company: a.company, role: a.role, daysSince: since,
+      resumeSummary: $('resume-text').value.trim().slice(0, 800)
+    }, ev2 => {
+      if (ev2.type === 'followup_data') got = ev2.data;
+      else if (ev2.type === 'error') failed = ev2.msg;
+    });
+    if (failed) throw new Error(failed);
+    if (!got || !(got.week_1_email || got.linkedin_note)) throw new Error('the model returned nothing usable');
+    await api('/api/applications/artifact', { id, kind: 'followup', content: JSON.stringify(got) });
+    if (PIPE.detail && PIPE.detail.id === id) pipeOpen(id);
+    loadPipeline();
+  } catch (e) {
+    $('pp-followup').innerHTML = '<div class="empty" style="padding:var(--s4)">Could not draft a follow-up: ' + escHtml(e.message) + '</div>';
+  } finally { btn.disabled = false; }
+});
+
+// Export a saved tailored resume through the same ATS text-layer engine.
+async function kitExport(el) {
+  const a = PIPE.detail; if (!a) return;
+  const art = (a.artifacts || []).find(x => String(x.id) === el.dataset.artifact);
+  if (!art) return;
+  try {
+    const st = await api('/parse-resume', { resume: art.content });
+    if (!st.struct || !st.struct.name) throw new Error('could not find a name in the saved resume');
+    await atsExport(el.dataset.arg, st.struct, 'tailored_' + a.company.replace(/[^A-Za-z0-9]/g, '_'), el);
+  } catch (e) { toast('Export failed: ' + e.message, 'err'); }
+}
+
+// One-time move of applications kept in this browser (pre-v10.1) into apex.db.
+async function migrateLocalApplications() {
+  let old = [];
+  try { old = JSON.parse(localStorage.getItem('apex_apps') || '[]'); } catch (e) { old = []; }
+  if (!Array.isArray(old) || !old.length) return;
+  const PLACEHOLDER = /^(unknown|\(unknown\)|\(from email\))$/i;
+  const clean = v => (v && !PLACEHOLDER.test(String(v).trim())) ? v : '';
+  try {
+    const r = await api('/api/applications/import', { source: 'import', items: old.map(a => ({
+      company: clean(a.company), role: clean(a.role), applied_on: a.date, status: a.status })) });
+    localStorage.setItem('apex_apps_backup', localStorage.getItem('apex_apps'));
+    localStorage.removeItem('apex_apps');
+    toast('Moved ' + r.created + ' saved application' + (r.created === 1 ? '' : 's') + ' into your local database' +
+          (r.skipped.length ? ' · ' + r.skipped.length + ' without a company or role kept as a backup' : ''), 'ok');
+  } catch (e) { toast('Could not move saved applications: ' + e.message, 'err'); }
+}
 
 // ─── Gmail Inbox Scanner ───
 $('ix-prefill').addEventListener('click', async () => {
@@ -3454,8 +3835,8 @@ $('ix-scan').addEventListener('click', async () => {
       j.rows.map((r, i) =>
         '<div class="alert-card">' +
           '<div class="alert-info">' +
-            '<div class="t">' + escHtml(r.company || '(unknown company)') + (r.role ? ' — ' + escHtml(r.role) : '') + '</div>' +
-            '<div class="m">' + escHtml(r.subject||'').slice(0,90) + ' · from ' + escHtml(r.from||'').slice(0,40) + ' · ' + escHtml(r.date||'').slice(0,16) + '</div>' +
+            '<div class="t">' + (r.company ? escHtml(r.company) : '<em>company not found</em>') + (r.role ? ' — ' + escHtml(r.role) : '') + '</div>' +
+            '<div class="m">' + escHtml((r.subject||'').slice(0,90)) + ' · from ' + escHtml((r.from||'').slice(0,40)) + ' · ' + escHtml((r.date||'').slice(0,16)) + '</div>' +
           '</div>' +
           '<span class="alert-freq" style="color:' + statusColor(r.status) + '; background:rgba(255,255,255,0.04)">' + escHtml(r.status||'').replace(/_/g, ' ') + '</span>' +
           '<button class="btn btn-sm" data-action="ixAddOne" data-arg="' + i + '">Add</button>' +
@@ -3467,47 +3848,30 @@ $('ix-scan').addEventListener('click', async () => {
   }
 });
 
-window.ixAddOne = (i) => {
-  const r = window._ixRows[i];
-  if (!r) return;
+function ixItem(r) {
   const status = r.status === 'offer' ? 'offer'
               : r.status === 'rejected' ? 'rejected'
               : r.status === 'interview_invite' || r.status === 'interview_followup' ? 'interview'
               : 'applied';
-  state.applications.push({
-    company: r.company || '(from email)',
-    role: r.role || '(unknown)',
-    date: (r.date || new Date().toISOString()).slice(0,10),
-    status,
-  });
-  localStorage.setItem('apex_apps', JSON.stringify(state.applications));
-  renderTracker();
-  toast('Added: ' + (r.company || 'application'), 'ok');
-};
-
-window.ixAddAll = () => {
-  let n = 0;
-  (window._ixRows || []).forEach((r, i) => { window.ixAddOne(i); n++; });
-  toast('Added ' + n + ' applications to tracker', 'ok');
-};
-
-function renderTracker() {
-  const apps = state.applications;
-  $('trk-total').textContent = apps.length;
-  $('trk-iv').textContent = apps.filter(a => a.status === 'interview' || a.status === 'offer').length;
-  $('trk-of').textContent = apps.filter(a => a.status === 'offer').length;
-  $('trk-rate').textContent = apps.length ? Math.round(apps.filter(a => a.status === 'interview' || a.status === 'offer').length / apps.length * 100) + '%' : '—';
-  if (!apps.length) { $('trk-tbody').innerHTML = '<tr><td colspan="5" class="empty" style="padding:var(--s5)">No applications yet.</td></tr>'; return; }
-  $('trk-tbody').innerHTML = apps.map((a, i) => `
-    <tr>
-      <td><strong>${escHtml(a.company)}</strong></td>
-      <td>${escHtml(a.role)}</td>
-      <td style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg-3)">${escHtml(a.date)}</td>
-      <td><span class="alert-freq" style="background:${a.status==='offer'?'rgba(0,217,126,0.10)':a.status==='rejected'?'rgba(232,33,39,0.10)':a.status==='interview'?'rgba(139,92,246,0.10)':'rgba(62,158,255,0.08)'};color:${a.status==='offer'?'var(--green-soft)':a.status==='rejected'?'var(--red-soft)':a.status==='interview'?'#b39bff':'var(--acc-soft)'};border-color:transparent">${escHtml(a.status)}</span></td>
-      <td><button class="btn btn-sm" data-action="trkRemove" data-arg="${i}">×</button></td>
-    </tr>`).join('');
+  const d = new Date(r.date || '');
+  return { company: r.company || '', role: r.role || '', status,
+           applied_on: isNaN(d) ? '' : d.toISOString().slice(0, 10),
+           notes: r.subject ? 'From email: ' + r.subject : '' };
 }
-renderTracker();
+async function ixImport(rows) {
+  try {
+    const r = await api('/api/applications/import', { source: 'gmail', items: rows.map(ixItem) });
+    const parts = [r.created + ' added'];
+    if (r.duplicates) parts.push(r.duplicates + ' already tracked');
+    if (r.skipped.length) parts.push(r.skipped.length + ' skipped (no company or role in the email)');
+    toast(parts.join(' · '), r.created ? 'ok' : '');
+    loadPipeline();
+  } catch (e) { toast('Import failed: ' + e.message, 'err'); }
+}
+window.ixAddOne = i => { const r = (window._ixRows || [])[i]; if (r) ixImport([r]); };
+window.ixAddAll = () => ixImport(window._ixRows || []);
+
+migrateLocalApplications().then(loadPipeline);
 
 // ═══════════════════════ VOICE INTERVIEW SIMULATOR ═══════════════════════
 const VI = {
