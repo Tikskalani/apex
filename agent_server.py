@@ -3157,7 +3157,8 @@ def _alert_job_row(job):
     location = _esc(job.get('location','Remote'))
     source = _esc(job.get('source',''))
     posted = _esc(job.get('posted',''))
-    url = _esc(job.get('url','#'))
+    raw_url = (job.get('url') or '').strip()
+    url = _esc(raw_url if raw_url.lower().startswith(('http://', 'https://')) else '#')
     salary = _esc(job.get('salary',''))
     snippet = _esc((job.get('snippet','') or '')[:160])
     salary_html = ('<div style="font-size:12px;color:#16a34a;margin-top:2px">'+salary+'</div>') if salary else ''

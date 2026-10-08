@@ -1736,6 +1736,14 @@ const SERVER = location.protocol.startsWith('http') ? location.origin : 'http://
 const $  = id => document.getElementById(id);
 const $$ = sel => document.querySelectorAll(sel);
 const escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Links built from scraped job data: escHtml stops attribute breakout but not
+// a javascript: scheme. Only http(s) survives.
+const safeUrl = u => {
+  try { const p = new URL(String(u || ''), location.href); return (p.protocol === 'http:' || p.protocol === 'https:') ? p.href : '#'; }
+  catch (e) { return '#'; }
+};
+// LLM "scores" are untrusted text until coerced. Clamp to an integer range.
+const toScore = (v, lo = 0, hi = 100) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : lo; };
 
 let state = {
   resumeStruct: null, selectedTemplate: 'modern', templates: [],
@@ -1962,7 +1970,7 @@ function handleEvent(ev) {
 
 // ─── Tesla speedometer gauge ───
 function gauge(score, label, primary=true, delta=null) {
-  const s = Math.max(0, Math.min(100, score));
+  const s = toScore(score);
   // arc from -135° to +135° (270° sweep)
   const start = -135, end = 135;
   const sweep = end - start;
@@ -2078,7 +2086,7 @@ function kwBlock(title, items, cls, subtitle) {
   const tags = items.map(k => {
     const name = escHtml(k.name || k);
     const freq = k.freq || k.pct;
-    return `<span class="kw ${cls}">${name}${freq ? ` <span class="freq">${freq}</span>` : ''}</span>`;
+    return `<span class="kw ${cls}">${name}${freq ? ` <span class="freq">${escHtml(freq)}</span>` : ''}</span>`;
   }).join('');
   return `<div class="card" style="margin-bottom:var(--s4)">
     <div class="card-h">
@@ -2275,14 +2283,14 @@ function renderVelocity(d) {
     <div class="hero">
       <div class="hero-content">
         <div class="hero-mega-label">Velocity Score</div>
-        <div class="hero-mega-num">${d.velocity_score||0}<span class="small">/100</span></div>
+        <div class="hero-mega-num">${toScore(d.velocity_score)}<span class="small">/100</span></div>
         <div class="hero-meta">
           <div class="hero-meta-item"><div class="v">${escHtml(d.trajectory||'—')}</div><div class="l">Trajectory</div></div>
-          <div class="hero-meta-item"><div class="v">${d.years_to_next_level||'—'}y</div><div class="l">To Next Level</div></div>
+          <div class="hero-meta-item"><div class="v">${d.years_to_next_level == null ? '—' : toScore(d.years_to_next_level, 0, 50)}y</div><div class="l">To Next Level</div></div>
           <div class="hero-meta-item"><div class="v">${escHtml(d.market_position||'—')}</div><div class="l">vs Peers</div></div>
         </div>
       </div>
-      ${gauge(d.velocity_score||0, 'Velocity', true)}
+      ${gauge(toScore(d.velocity_score), 'Velocity', true)}
     </div>
     <div class="card">
       <div class="card-h"><h3>Next Level: ${escHtml(d.next_level_title||'—')}</h3></div>
@@ -2297,7 +2305,7 @@ function renderTailor(d) {
   window._tailored = d.tailored_resume || '';
   $('tailor-out').innerHTML = `
     <div class="card">
-      <div class="card-h"><h3>Tailored Resume</h3><span class="h-sub">${d.match_score_before||0} → ${d.match_score_after||0}</span></div>
+      <div class="card-h"><h3>Tailored Resume</h3><span class="h-sub">${toScore(d.match_score_before)} → ${toScore(d.match_score_after)}</span></div>
       <pre class="diff-pre opt">${escHtml(d.tailored_resume||'')}</pre>
       <button class="btn btn-primary" onclick="copyText(window._tailored)" style="margin-top:var(--s4)">Copy</button>
     </div>`;
@@ -2309,13 +2317,13 @@ function renderMatch(d) {
     <div class="hero">
       <div class="hero-content">
         <div class="hero-mega-label">Match Score</div>
-        <div class="hero-mega-num">${d.match_pct||0}<span class="small">%</span></div>
+        <div class="hero-mega-num">${toScore(d.match_pct)}<span class="small">%</span></div>
         <div class="hero-meta">
           <div class="hero-meta-item"><div class="v">${d.should_apply ? 'YES' : 'PASS'}</div><div class="l">Apply?</div></div>
           <div class="hero-meta-item"><div class="v">${escHtml(d.estimated_competition||'—')}</div><div class="l">Competition</div></div>
         </div>
       </div>
-      ${gauge(d.match_pct||0, 'Match', true)}
+      ${gauge(toScore(d.match_pct), 'Match', true)}
     </div>
     <div class="card">
       <p style="color:var(--fg-1);font-size:15px;font-weight:500;line-height:1.6">${escHtml(d.verdict||'')}</p>
@@ -2327,8 +2335,8 @@ function renderBullets(d) {
   const rows = (d.ranked_bullets||[]).map(b => `
     <div class="block">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:1px;color:var(--fg-3)">#${b.rank}</span>
-        <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:${b.score>=70?'var(--green-soft)':b.score>=50?'var(--amber)':'var(--red-soft)'}">${b.score}/100</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:1px;color:var(--fg-3)">#${toScore(b.rank, 0, 999)}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:${toScore(b.score)>=70?'var(--green-soft)':toScore(b.score)>=50?'var(--amber)':'var(--red-soft)'}">${toScore(b.score)}/100</span>
       </div>
       <div style="color:var(--fg-0);font-size:13.5px;line-height:1.7;margin-bottom:8px">${escHtml(b.text||'')}</div>
       ${b.rewrite ? `<div style="color:var(--green-soft);font-size:12.5px;border-top:1px solid var(--line);padding-top:8px;line-height:1.7">→ ${escHtml(b.rewrite)}</div>` : ''}
@@ -2360,10 +2368,10 @@ function renderBridge(d) {
     <div class="hero">
       <div class="hero-content">
         <div class="hero-mega-label">Transition Score</div>
-        <div class="hero-mega-num">${d.transition_score||0}<span class="small">/100</span></div>
+        <div class="hero-mega-num">${toScore(d.transition_score)}<span class="small">/100</span></div>
         <div class="hero-meta"><div class="hero-meta-item"><div class="v" style="font-size:16px">${escHtml(d.transition_verdict||'')}</div><div class="l">Verdict</div></div></div>
       </div>
-      ${gauge(d.transition_score||0, 'Transition', true)}
+      ${gauge(toScore(d.transition_score), 'Transition', true)}
     </div>
     <div class="card">
       <div class="card-h"><h3>Skill Translations</h3></div>
@@ -2380,8 +2388,8 @@ function renderWeakness(d) {
     </div>`).join('');
   $('weak-out').innerHTML = `
     <div class="grid-3" style="margin-bottom:var(--s5)">
-      <div class="tile"><div class="v">${d.first_impression_score||0}<span class="unit">/100</span></div><div class="l">First Impression</div></div>
-      <div class="tile"><div class="v">${d.formatting_score||0}<span class="unit">/100</span></div><div class="l">Formatting</div></div>
+      <div class="tile"><div class="v">${toScore(d.first_impression_score)}<span class="unit">/100</span></div><div class="l">First Impression</div></div>
+      <div class="tile"><div class="v">${toScore(d.formatting_score)}<span class="unit">/100</span></div><div class="l">Formatting</div></div>
       <div class="tile"><div class="v">${(d.killer_bullets||[]).length}</div><div class="l">Killer Bullets</div></div>
     </div>
     <div class="card" style="margin-bottom:var(--s4)">
@@ -2535,7 +2543,7 @@ function renderJobsList(jobs) {
       snip +
       sharedHtml +
       '<div class="job-actions">' +
-        '<a class="btn btn-primary btn-sm" href="' + escHtml(j.url || '#') + '" target="_blank" rel="noopener">View &amp; Apply ' + '→' + '</a>' +
+        '<a class="btn btn-primary btn-sm" href="' + escHtml(safeUrl(j.url)) + '" target="_blank" rel="noopener">View &amp; Apply ' + '→' + '</a>' +
         '<button class="btn btn-sm" onclick="quickMatch(' + idx + ')">Deep Match</button>' +
         '<button class="btn btn-sm" onclick="quickTailor(' + idx + ')">Tailor For This</button>' +
       '</div>' +
@@ -2569,7 +2577,7 @@ async function openTailorApplyModal(job) {
   $('ta-job-meta').textContent = (job.company || '') + (job.location ? ' · ' + job.location : '') + (job.source ? ' · via ' + job.source : '');
   $('ta-resume-body').textContent = 'Tailoring resume…';
   $('ta-cover-body').textContent = 'Drafting cover letter…';
-  $('ta-open').href = job.url || '#';
+  $('ta-open').href = safeUrl(job.url);
   $('ta-status').textContent = 'Generating…';
   // Match badge
   const ms = job.match_score;
@@ -3288,8 +3296,10 @@ async function loadMyAlerts(email) {
             <div class="m">${escHtml(s.location || 'Anywhere')} · Created ${new Date(s.created*1000).toLocaleDateString()}</div>
           </div>
           <span class="alert-freq">${escHtml(s.frequency)}</span>
-          <button class="btn btn-sm" onclick="unsubAlert('${s.id}', '${email}')">Remove</button>
+          <button class="btn btn-sm" data-unsub="${escHtml(s.id)}">Remove</button>
         </div>`).join('');
+    $('al-list-out').querySelectorAll('[data-unsub]').forEach(b =>
+      b.addEventListener('click', () => unsubAlert(b.dataset.unsub, email)));
   } catch(e) { toast('Error: ' + e.message, 'err'); }
 }
 
@@ -3636,7 +3646,7 @@ async function viOnStop(mime) {
 }
 
 function viRenderGrade(d) {
-  const score = d.score || 0;
+  const score = toScore(d.score);
   const cls = score >= 75 ? 'strong' : score >= 55 ? 'good' : 'weak';
   const strengths = (d.strengths || []).map(s => '<li>' + escHtml(s) + '</li>').join('');
   const weaknesses = (d.weaknesses || []).map(s => '<li>' + escHtml(s) + '</li>').join('');

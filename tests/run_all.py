@@ -18,7 +18,7 @@ try:
 except Exception:
     pass
 PY_TESTS = ['r1_scorer', 'r2_protected', 'r3_loop', 'r5_ranking', 'r7_e2e', 'r8_weak', 'r10_final']
-JS_TESTS = ['r4_export']
+JS_TESTS = ['check_js_syntax', 'r4_export']
 
 fails, skipped = [], []
 
