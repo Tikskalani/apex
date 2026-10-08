@@ -40,12 +40,14 @@ def fake_openai():
 class ServerProcess:
     """A copy of the app in a temp dir, started with the given extra env."""
 
-    def __init__(self, tmp_path_factory, fake_openai, extra_env=None, config=True):
+    def __init__(self, tmp_path_factory, fake_openai, extra_env=None, config=True, config_json=None):
         d = tmp_path_factory.mktemp('apex')
         for name in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'index.html'):
             shutil.copy(ROOT / name, d / name)
         env = dict(os.environ, APEX_OPENAI_BASE=fake_openai.url)
-        if config:
+        if config_json is not None:
+            (d / 'config.json').write_text(json.dumps(config_json))
+        elif config:
             (d / 'config.json').write_text(json.dumps({'OPENAI_KEY': 'sk-test-stub-not-a-real-key', 'JSEARCH_KEY': ''}))
         else:
             env['OPENAI_API_KEY'] = 'sk-test-stub-not-a-real-key'     # how a container gets its key

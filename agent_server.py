@@ -87,6 +87,9 @@ CSP_TEMPLATE = '; '.join([
 STATIC_RE = re.compile(r'^/(?:assets/)?[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.(?P<ext>' +
                        '|'.join(STATIC_TYPES) + r')$', re.IGNORECASE)
 
+ANTHROPIC_WORKSPACE = ''
+
+
 def load_config():
     """Keys from config.json beside the server, else environment variables.
     Returns (openai_key, jsearch_key, anthropic_key). At least one model key
@@ -99,8 +102,15 @@ def load_config():
             cfg = json.load(open(config_path, encoding='utf-8'))
         except Exception as e:
             print(f'  ⚠ config.json error: {e}')
-    get = lambda k, env: (str(cfg.get(k) or '').strip() or os.environ.get(env, '').strip())
+    # People write key names many ways (ANTHROPIC_KEY, Anthropic_API-Key, anthropic api key):
+    # compare letters only, case-insensitively, with or without "API".
+    letters = lambda k: re.sub(r'[^A-Z]', '', str(k).upper()).replace('API', '')
+    norm = {letters(k): v for k, v in cfg.items() if not str(k).startswith('_')}
+    get = lambda name, env: (str(norm.get(letters(name)) or '').strip() or os.environ.get(env, '').strip())
     ok, js, ak = get('OPENAI_KEY', 'OPENAI_API_KEY'), get('JSEARCH_KEY', 'JSEARCH_API_KEY'), get('ANTHROPIC_KEY', 'ANTHROPIC_API_KEY')
+    global ANTHROPIC_WORKSPACE
+    # Organisation-level Anthropic keys must name a workspace on every request.
+    ANTHROPIC_WORKSPACE = get('ANTHROPIC_WORKSPACE_ID', 'ANTHROPIC_WORKSPACE_ID')
     if ok or ak:
         print(f'  ✓ Keys loaded ({", ".join(n for n, v in (("OpenAI", ok), ("Anthropic", ak), ("JSearch", js)) if v)})'
               + (f' from {config_path}' if cfg else ' from environment'))
@@ -125,8 +135,10 @@ def _model_setting(name, default):
     return v or default
 
 # MODEL writes and judges; MODEL_FAST does extraction and classification.
-MODEL      = _model_setting('MODEL', 'gpt-4o')
-MODEL_FAST = _model_setting('MODEL_FAST', MODEL)
+# Defaults follow the key you have: Anthropic-only -> Claude, otherwise OpenAI.
+_CLAUDE_ONLY = bool(ANTHROPIC_KEY) and not OPENAI_KEY
+MODEL      = _model_setting('MODEL', 'claude-opus-5-5' if _CLAUDE_ONLY else 'gpt-4o')
+MODEL_FAST = _model_setting('MODEL_FAST', 'claude-haiku-5-5' if _CLAUDE_ONLY else MODEL)
 
 # USD per 1M tokens (input, output), standard tier, from OpenAI's pricing page
 # (checked 2026-10-08). Unknown models are costed at the most expensive known
@@ -458,8 +470,9 @@ def _claude_client():
                 raise Exception('Claude models need the Anthropic SDK: run  pip install -r requirements.txt')
             if not ANTHROPIC_KEY:
                 raise Exception('Claude models need an Anthropic key (ANTHROPIC_KEY in config.json).')
-            _anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_KEY, base_url=ANTHROPIC_BASE,
-                                                    timeout=GPT_TIMEOUT, max_retries=GPT_RETRIES)
+            _anthropic_client = anthropic.Anthropic(
+                api_key=ANTHROPIC_KEY, base_url=ANTHROPIC_BASE, timeout=GPT_TIMEOUT, max_retries=GPT_RETRIES,
+                default_headers={'anthropic-workspace-id': ANTHROPIC_WORKSPACE} if ANTHROPIC_WORKSPACE else None)
         return _anthropic_client
 
 
@@ -483,6 +496,10 @@ def _claude(model, system, user, max_tokens, effort):
         raise Exception(f'Anthropic rate limit after retries: {e.message}')
     except anthropic.APIStatusError as e:
         msg = str(getattr(e, 'message', '') or e)
+        if 'not scoped to a workspace' in msg:
+            raise Exception('This Anthropic key belongs to your organisation, not a workspace. Either create a key '
+                            'inside a workspace in console.anthropic.com, or add "ANTHROPIC_WORKSPACE_ID": "wrkspc_..." '
+                            'to config.json.')
         if 'credit balance' in msg.lower():
             raise Exception('Your Anthropic account has no credits left. Add credits at '
                             'console.anthropic.com → Plans & Billing, then run again.')
@@ -3709,6 +3726,8 @@ def classify_inbox_emails(emails):
 def transcribe_audio_bytes(audio_bytes, mime="audio/webm"):
     """Send audio to OpenAI Whisper. Returns transcript text or error string."""
     if not audio_bytes: return ""
+    if not OPENAI_KEY:
+        return 'Voice answers use OpenAI speech-to-text, which needs an OpenAI key. Type your answer instead.'
     boundary = "----APEXBoundary" + str(int(time.time()))
     parts = []
     parts.append(("--" + boundary).encode())
@@ -4379,6 +4398,8 @@ class Handler(BaseHTTPRequestHandler):
         # ── TRANSCRIBE (Whisper) ──────────────────────────────────────────────
         # Voice-interview practice posts base64 audio here. Was missing server-side.
         if path == '/transcribe':
+            if not OPENAI_KEY:     # Anthropic has no speech-to-text; say so instead of failing
+                self._send_json(400, {'error': 'Voice answers use OpenAI speech-to-text, which needs an OpenAI key. Type your answer instead.', 'text': ''}); return
             try:
                 b64 = p.get('audio_b64') or ''
                 if not b64:

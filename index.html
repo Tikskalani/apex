@@ -4205,6 +4205,12 @@ async function viOnStop(mime) {
         body: JSON.stringify({ audio_b64: b64, mime: mime.split(';')[0] })
       });
       const tj = await tr.json();
+      if (!tr.ok) {     // e.g. no OpenAI key: voice needs OpenAI speech-to-text
+        $('vi-transcript-text').textContent = tj.error || 'Could not transcribe that answer.';
+        $('vi-grade').innerHTML = '';
+        toast(tj.error || 'Could not transcribe that answer', 'err');
+        return;
+      }
       const transcript = tj.text || '(no transcript)';
       $('vi-transcript-text').textContent = transcript;
       // 2. Grade the answer (existing endpoint)

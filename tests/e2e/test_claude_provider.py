@@ -41,3 +41,27 @@ def test_claude_parse_failure_is_reported(claude_app):
     r = c.getresponse()
     j = json.loads(r.read())
     assert r.status == 500 and 'Anthropic 400' in j['error'] and 'stubbed failure' in j['error']
+
+
+def test_anthropic_only_config_with_a_creative_key_name(tmp_path_factory, fake_openai, fixture_resume):
+    """The owner's real setup: only an Anthropic key, written as "Anthropic_API_KEy".
+    APEX must find it, default to Claude, and explain that voice needs OpenAI."""
+    from conftest import ServerProcess
+    app = ServerProcess(tmp_path_factory, fake_openai, config_json={'Anthropic_API_KEy': 'sk-ant-test-stub'},
+                        extra_env={'APEX_ANTHROPIC_BASE': fake_openai.url})
+    try:
+        assert 'Keys loaded (Anthropic)' in app.log()
+        before = len(fake_openai.calls)
+        c = http.client.HTTPConnection('127.0.0.1', app.port, timeout=300)
+        c.request('POST', '/parse-resume', body=json.dumps({'resume': fixture_resume}),
+                  headers={'Host': f'localhost:{app.port}', 'Content-Type': 'application/json'})
+        r = c.getresponse(); r.read()
+        assert r.status == 200
+        assert {x['model'] for x in fake_openai.calls[before:]} == {'claude-opus-5-5'}
+        c = http.client.HTTPConnection('127.0.0.1', app.port, timeout=30)
+        c.request('POST', '/transcribe', body=json.dumps({'audio_b64': 'AAAA'}),
+                  headers={'Host': f'localhost:{app.port}', 'Content-Type': 'application/json'})
+        r = c.getresponse(); j = json.loads(r.read())
+        assert r.status == 400 and 'needs an OpenAI key' in j['error']
+    finally:
+        app.stop()
