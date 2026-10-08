@@ -1,0 +1,26 @@
+JORDAN REYES
+Houston, TX | jordan.reyes@email.com | (713) 555-0199 | linkedin.com/in/jreyes
+
+SUMMARY
+Data analyst with 5 years of experience in reporting and analytics. Skilled in SQL, Excel and Tableau.
+
+EXPERIENCE
+Data Analyst - Gulf Coast Health Partners, Houston TX
+Jan 2022 - Present
+- Developed Tableau dashboards for the operations team
+- Wrote SQL queries to pull data from the data warehouse
+- Analyzed patient wait-time data and presented findings to leadership
+- Maintained weekly KPI reports used by 12 clinic managers
+- Collaborated with IT on data quality issues
+
+Reporting Analyst - Lone Star Freight, Houston TX
+Jun 2019 - Dec 2021
+- Created Excel reports for the finance department
+- Automated monthly reporting with Python scripts, saving 6 hours per month
+- Supported the migration from Access to SQL Server
+
+EDUCATION
+B.S. Statistics, Texas A&M University, 2019
+
+SKILLS
+SQL, Tableau, Excel, Python, Access, SQL Server

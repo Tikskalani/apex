@@ -1,7 +1,8 @@
-# Allowlist: the image gets exactly the four files the app runs from.
+# Allowlist: the image gets exactly the files the app runs from.
 # Keeps config.json (your keys), apex.db (your data), .git, .venv and tests out.
 *
 !agent_server.py
 !apex_store.py
 !apex_engine.py
 !index.html
+!requirements.txt

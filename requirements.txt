@@ -1,23 +1,22 @@
 # APEX — Career Intelligence Platform
 # ---------------------------------------------------------------
-# ZERO pip packages required. The backend is pure Python stdlib.
-# Python 3.8+ is the only requirement (3.12 recommended).
+# Python 3.12 recommended (3.10+ required by the Anthropic SDK).
 #
-#   python --version      # verify 3.8 or higher
+#   pip install -r requirements.txt
 #   python agent_server.py
 #
-# Everything below is stdlib and ships with Python:
-#   json, time, re, socket, threading, traceback, base64, uuid,
-#   os, smtplib, hashlib, imaplib, email,
-#   xml.etree.ElementTree, html, http.server, urllib
+# The backend is pure Python stdlib EXCEPT one optional package:
+#   anthropic  — only needed when APEX_MODEL / MODEL is a Claude model
+#                (claude-...). With OpenAI models nothing is imported.
 #
 # Frontend libraries load from CDN at runtime (no install):
 #   pdf.js 3.11.174    — read uploaded PDF resumes
 #   mammoth 1.6.0      — read uploaded DOCX resumes
-#   (html2pdf removed in v10.4: it rasterised to an image; exports use jsPDF text)
 #   jsPDF 2.5.1        — ATS text-layer PDF export
 #   docx 8.5.0         — DOCX export
 #
 # External services requiring API keys (see config.example.json):
-#   1. OpenAI   → https://platform.openai.com/api-keys
-#   2. JSearch  → https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch
+#   1. OpenAI     → https://platform.openai.com/api-keys        (OPENAI_KEY)
+#   2. Anthropic  → https://console.anthropic.com/settings/keys (ANTHROPIC_KEY)
+#   3. JSearch    → https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch (optional)
+anthropic==1.12.1

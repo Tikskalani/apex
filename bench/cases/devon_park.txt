@@ -1,0 +1,26 @@
+DEVON PARK
+Austin, TX | devon.park@email.com | github.com/devpark
+
+SUMMARY
+Senior software engineer with 8 years building backend systems. I have worked on payments, APIs and data pipelines and I care about reliability and mentoring.
+
+EXPERIENCE
+Senior Software Engineer, Ledgerly (fintech), Austin TX
+2021 - Present
+- Worked on the payments service that processes card and ACH transactions, written in Go and running on Kubernetes
+- Led the migration of the ledger from a monolith to an event-driven architecture using Kafka, over 9 months with a team of 4
+- Reduced p99 latency of the authorization API from 480ms to 120ms by adding caching and fixing N+1 queries
+- On-call for payments; wrote runbooks and helped cut pages by about 40%
+- Mentored 3 junior engineers and ran the backend interview loop
+
+Software Engineer, ShipFast Logistics, Dallas TX
+2017 - 2021
+- Built REST APIs in Python (Django) for shipment tracking used by 2,000+ business customers
+- Created ETL jobs in Airflow moving data into Snowflake for the analytics team
+- Participated in the move from EC2 to Docker and ECS
+
+EDUCATION
+B.S. Computer Science, University of Texas at Dallas, 2017
+
+SKILLS
+Go, Python, PostgreSQL, Kafka, Kubernetes, Docker, AWS (ECS, RDS, SQS), Airflow, Snowflake, Redis, gRPC

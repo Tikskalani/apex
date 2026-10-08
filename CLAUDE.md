@@ -17,8 +17,9 @@ Local resume-optimization and job-search agent app. Single developer, runs local
   forbidden by the CSP and a test fails if one appears.
   "Launch" is not a tab: it is the drawer opened by the **Launch** button top right
   (`#open-drawer`).
-- **Backend:** `agent_server.py` — pure Python stdlib (`http.server`
-  `ThreadingHTTPServer` + `BaseHTTPRequestHandler`). No pip dependencies.
+- **Backend:** `agent_server.py` — Python stdlib (`http.server`
+  `ThreadingHTTPServer` + `BaseHTTPRequestHandler`). One optional package:
+  `anthropic` (pinned in requirements.txt), imported only for Claude models.
   Binds `localhost:7842` only. Serves `index.html` at `/` so page and API share
   one origin. Calls OpenAI for parsing/optimization/cover letters and scrapes
   live job postings (JSearch optional). Listens on 127.0.0.1 and ::1.
@@ -87,10 +88,21 @@ findings (no extra model call). The page lets the user untick edits
    "Keyword match" number only; it is blind to writing quality and was the
    reason v10 shipped resumes unchanged.
 
-Models: `APEX_MODEL` / `APEX_MODEL_FAST` (env or config.json; default gpt-4o).
-`gpt()` adapts to reasoning models (max_completion_tokens, no temperature,
-reasoning_effort), uses JSON mode, retries 429/5xx, fails fast when out of
-credits, and meters real cost per run.
+Models: `APEX_MODEL` / `APEX_MODEL_FAST` (env or config.json `MODEL` /
+`MODEL_FAST`; default gpt-4o). Any `gpt-...` model goes to OpenAI, any
+`claude-...` model to Anthropic via the official SDK (`ANTHROPIC_KEY`).
+`gpt()` adapts to OpenAI reasoning models (max_completion_tokens, no
+temperature, reasoning_effort), uses JSON mode, retries 429/5xx, fails fast
+when out of credits, and meters real cost per run for both providers. Claude
+calls set `output_config.effort`, never temperature, and use server-side
+refusal fallback (`fallbacks="default"`) on Opus/Sonnet 5.5.
+
+**Choosing a model: measure, don't guess.** `python tools/benchmark.py`
+runs the engine per model on bench/cases (+ bench/private, gitignored, for
+real resumes), cross-judges every output with every judge model (same-provider
+scores shown separately), counts invented claims, cost and time, and includes
+`chat:<model>` = the plain "improve my resume" chatbot baseline APEX must beat.
+It stops at `--budget`. Results go to bench/runs/ (gitignored).
 
 ## Hosted demo mode (Fly.io; see DEPLOY.md)
 

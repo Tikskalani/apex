@@ -1,0 +1,24 @@
+{
+ "name": "devon_park",
+ "title": "Staff Backend Engineer",
+ "seniority": "staff",
+ "sector": "tech",
+ "resume": "devon_park.txt",
+ "keywords": [
+  "Go",
+  "Python",
+  "distributed systems",
+  "Kafka",
+  "Kubernetes",
+  "PostgreSQL",
+  "AWS",
+  "event-driven architecture",
+  "system design",
+  "mentoring",
+  "on-call",
+  "observability",
+  "payments",
+  "gRPC",
+  "Terraform"
+ ]
+}

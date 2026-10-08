@@ -92,6 +92,17 @@ def app(tmp_path_factory, fake_openai):
     a.stop()
 
 
+@pytest.fixture(scope='session')
+def claude_app(tmp_path_factory, fake_openai):
+    """The app configured for Claude models, talking to the same offline stub
+    through the official anthropic SDK (APEX_ANTHROPIC_BASE)."""
+    a = ServerProcess(tmp_path_factory, fake_openai, extra_env={
+        'APEX_MODEL': 'claude-sonnet-5-5', 'APEX_MODEL_FAST': 'claude-haiku-5-5',
+        'APEX_ANTHROPIC_BASE': fake_openai.url, 'ANTHROPIC_API_KEY': 'sk-ant-test-stub'})
+    yield a
+    a.stop()
+
+
 HOSTED_CODE = 'correct-horse-battery-staple'
 HOSTED_HOST = 'apex-demo.example.test'
 

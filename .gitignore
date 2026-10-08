@@ -44,3 +44,7 @@ desktop.ini
 # ── Local data (your job pipeline) ──────────────────────
 apex.db
 apex.db-*
+
+# ── Benchmarks ──────────────────────────────────────────
+bench/private/
+bench/runs/

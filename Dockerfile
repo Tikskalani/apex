@@ -1,4 +1,4 @@
-# APEX hosted demo. Pure-stdlib Python: nothing to pip install.
+# APEX hosted demo. Stdlib Python plus the pinned Anthropic SDK (requirements.txt).
 # Build:  docker build -t apex .
 # Local:  docker run --rm -p 8080:8080 -e OPENAI_API_KEY=... -e APEX_ACCESS_CODE=... \
 #           -e APEX_SESSION_SECRET=... -v apex_data:/data apex
@@ -14,8 +14,11 @@ ENV PYTHONUNBUFFERED=1 \
 RUN useradd --create-home --uid 10001 apex && mkdir -p /data
 
 WORKDIR /app
+# The one third-party package (anthropic, used only for Claude models), pinned.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 # Code is root-owned and read-only to the app user. .dockerignore admits only
-# these four files, so config.json and apex.db can never end up in the image.
+# these files, so config.json and apex.db can never end up in the image.
 COPY agent_server.py apex_store.py apex_engine.py index.html ./
 
 EXPOSE 8080

@@ -51,6 +51,12 @@ fly secrets set --app apex-yourname `
 
 Optional: `JSEARCH_API_KEY="..."` for the JSearch job source.
 
+Models: set `APEX_MODEL` / `APEX_MODEL_FAST` in `[env]` of `fly.toml` (e.g.
+`gpt-6.1-sol` / `gpt-6-luna`, or `claude-sonnet-5-5` / `claude-haiku-5-5`).
+For Claude models also set `ANTHROPIC_API_KEY` with `fly secrets set`, and give
+that Anthropic workspace a monthly spend limit in the Anthropic console, the
+same way as step 2.
+
 ## 5. Deploy (one machine)
 
 ```powershell

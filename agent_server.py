@@ -88,29 +88,28 @@ STATIC_RE = re.compile(r'^/(?:assets/)?[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.(?P<
                        '|'.join(STATIC_TYPES) + r')$', re.IGNORECASE)
 
 def load_config():
+    """Keys from config.json beside the server, else environment variables.
+    Returns (openai_key, jsearch_key, anthropic_key). At least one model key
+    (OpenAI or Anthropic) is required; JSearch is optional."""
     import os
     config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
+    cfg = {}
     if os.path.exists(config_path):
         try:
-            cfg = json.load(open(config_path))
-            ok  = cfg.get('OPENAI_KEY','').strip()
-            js  = cfg.get('JSEARCH_KEY','').strip()
-            if ok:
-                print(f'  ✓ Config loaded from {config_path}')
-                return ok, js
+            cfg = json.load(open(config_path, encoding='utf-8'))
         except Exception as e:
             print(f'  ⚠ config.json error: {e}')
-    # env fallback
-    ok = __import__('os').environ.get('OPENAI_API_KEY','').strip()
-    js = __import__('os').environ.get('JSEARCH_API_KEY','').strip()
-    if ok:
-        print('  ✓ Keys from environment variables')
-        return ok, js
-    print('\n  ERROR: No config.json found and no env vars set.')
-    print('  Create config.json with OPENAI_KEY and JSEARCH_KEY.')
+    get = lambda k, env: (str(cfg.get(k) or '').strip() or os.environ.get(env, '').strip())
+    ok, js, ak = get('OPENAI_KEY', 'OPENAI_API_KEY'), get('JSEARCH_KEY', 'JSEARCH_API_KEY'), get('ANTHROPIC_KEY', 'ANTHROPIC_API_KEY')
+    if ok or ak:
+        print(f'  ✓ Keys loaded ({", ".join(n for n, v in (("OpenAI", ok), ("Anthropic", ak), ("JSearch", js)) if v)})'
+              + (f' from {config_path}' if cfg else ' from environment'))
+        return ok, js, ak
+    print('\n  ERROR: No model key found.')
+    print('  Put OPENAI_KEY and/or ANTHROPIC_KEY in config.json (see config.example.json).')
     exit(1)
 
-OPENAI_KEY, JSEARCH_KEY = load_config()
+OPENAI_KEY, JSEARCH_KEY, ANTHROPIC_KEY = load_config()
 
 
 def _model_setting(name, default):
@@ -138,6 +137,9 @@ MODEL_PRICES = {
     'gpt-5.6-luna': (0.20, 1.20), 'gpt-5.5': (5.00, 30.00), 'gpt-5.4': (2.50, 15.00),
     'gpt-5.4-mini': (0.75, 4.50), 'gpt-5.1': (1.25, 10.00), 'gpt-5': (1.25, 10.00),
     'gpt-5-mini': (0.25, 2.00), 'gpt-4.1': (2.00, 8.00), 'gpt-4o': (2.50, 10.00), 'gpt-4o-mini': (0.15, 0.60),
+    # Anthropic, first-party API rates (checked 2026-10-08)
+    'claude-fable-5-1': (10.00, 50.00), 'claude-opus-5-5': (4.00, 20.00), 'claude-sonnet-5-5': (2.00, 10.00),
+    'claude-haiku-5-5': (0.10, 0.50),
 }
 def model_price(model):
     if model in MODEL_PRICES:
@@ -360,13 +362,18 @@ _MODEL_QUIRKS = {}
 _LEGACY = ('gpt-4', 'gpt-3.5')     # accept max_tokens + temperature
 
 
-def gpt(system, user, max_tokens=3000, temp=0.3, *, json_mode=False, fast=False, effort=None):
+def gpt(system, user, max_tokens=3000, temp=0.3, *, json_mode=False, fast=False, effort=None, model=None):
     """One chat completion. Returns the message text.
     json_mode: ask the API for a JSON object (more reliable than prompt-only JSON).
     fast:      use MODEL_FAST (cheap extraction / classification).
     effort:    reasoning effort for reasoning models ('minimal'|'low'|'medium'|'high').
+    model:     explicit model id (benchmarks); default MODEL / MODEL_FAST.
     Retries timeouts, 429 and 5xx with backoff; adapts to each model's parameters."""
-    model = MODEL_FAST if fast else MODEL
+    model = model or (MODEL_FAST if fast else MODEL)
+    if model.startswith('claude-'):
+        return _claude(model, system, user, max_tokens, effort)
+    if not OPENAI_KEY:
+        raise Exception(f'Model {model} needs an OpenAI key (OPENAI_KEY in config.json).')
     q = _MODEL_QUIRKS.setdefault(model, {'legacy': model.startswith(_LEGACY)})
     last = None
     for attempt in range(GPT_RETRIES + 1):
@@ -429,6 +436,76 @@ def gpt(system, user, max_tokens=3000, temp=0.3, *, json_mode=False, fast=False,
             if attempt < GPT_RETRIES:
                 time.sleep(2 ** (attempt + 1))
     raise Exception(f'OpenAI failed after {GPT_RETRIES + 1} attempts: {last}')
+
+# ── Anthropic Claude ─────────────────────────────────────────────────────────
+# Uses the official `anthropic` SDK (the only third-party package APEX uses, and
+# only when a claude- model is configured). Tests point APEX_ANTHROPIC_BASE at a stub.
+ANTHROPIC_BASE = os.environ.get('APEX_ANTHROPIC_BASE', '').strip() or None
+# Claude Opus 5.5 / Sonnet 5.5 may decline under safety classifiers; server-side
+# fallback re-runs the request on a suitable model inside the same call.
+_CLAUDE_FALLBACK = ('claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1')
+_anthropic_client = None
+_anthropic_lock = threading.Lock()
+
+
+def _claude_client():
+    global _anthropic_client
+    with _anthropic_lock:
+        if _anthropic_client is None:
+            try:
+                import anthropic
+            except ImportError:
+                raise Exception('Claude models need the Anthropic SDK: run  pip install -r requirements.txt')
+            if not ANTHROPIC_KEY:
+                raise Exception('Claude models need an Anthropic key (ANTHROPIC_KEY in config.json).')
+            _anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_KEY, base_url=ANTHROPIC_BASE,
+                                                    timeout=GPT_TIMEOUT, max_retries=GPT_RETRIES)
+        return _anthropic_client
+
+
+def _claude(model, system, user, max_tokens, effort):
+    """One Claude Messages call. Thinking is adaptive by default on current
+    models; `effort` sets its depth. No temperature (rejected on current models)."""
+    import anthropic
+    client = _claude_client()
+    kw = dict(model=model, max_tokens=max_tokens + 8000, system=system,
+              messages=[{'role': 'user', 'content': user}],
+              output_config={'effort': effort or 'low'})
+    t0 = time.time()
+    try:
+        if model in _CLAUDE_FALLBACK and not ANTHROPIC_BASE:
+            resp = client.beta.messages.create(betas=['server-side-fallback-2026-07-01'], fallbacks='default', **kw)
+        else:
+            resp = client.messages.create(**kw)
+    except anthropic.AuthenticationError:
+        raise Exception('Anthropic rejected the API key (ANTHROPIC_KEY in config.json).')
+    except anthropic.RateLimitError as e:
+        raise Exception(f'Anthropic rate limit after retries: {e.message}')
+    except anthropic.APIStatusError as e:
+        msg = str(getattr(e, 'message', '') or e)
+        if 'credit balance' in msg.lower():
+            raise Exception('Your Anthropic account has no credits left. Add credits at '
+                            'console.anthropic.com → Plans & Billing, then run again.')
+        raise Exception(f'Anthropic {e.status_code}: {msg}')
+    except anthropic.APIConnectionError as e:
+        raise Exception(f'Could not reach Anthropic: {e}')
+    u = resp.usage
+    tin = int((u.input_tokens or 0) + (getattr(u, 'cache_creation_input_tokens', 0) or 0)
+              + (getattr(u, 'cache_read_input_tokens', 0) or 0))
+    tout = int(u.output_tokens or 0)
+    served = getattr(resp, 'model', None) or model
+    TOTAL_METER.add(served, tin, tout)
+    m = _RUN_METER.get()
+    if m is not None:
+        m.add(served, tin, tout)
+    print(f'  [claude] {served} in={tin} out={tout} {time.time() - t0:.1f}s', flush=True)
+    if resp.stop_reason == 'refusal':
+        raise Exception('The model declined this request. Try again, or switch APEX_MODEL.')
+    text = ''.join(getattr(b, 'text', '') for b in resp.content if getattr(b, 'type', '') == 'text')
+    if not text.strip() and resp.stop_reason == 'max_tokens':
+        raise Exception('model ran out of tokens before answering')
+    return text
+
 
 def jparse(text):
     if not text: return {}

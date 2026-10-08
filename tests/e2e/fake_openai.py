@@ -117,11 +117,38 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or b'{}')
         msgs = body.get('messages', [])
-        system = next((m['content'] for m in msgs if m.get('role') == 'system'), '')
+        claude = self.path.startswith('/v1/messages')        # Anthropic Messages API shape
+        if claude:
+            system = body.get('system') or ''
+            if isinstance(system, list):
+                system = ' '.join(b.get('text', '') for b in system if isinstance(b, dict))
+        else:
+            system = next((m['content'] for m in msgs if m.get('role') == 'system'), '')
         user = next((m['content'] for m in msgs if m.get('role') == 'user'), '')
-        _Handler.calls.append({'path': self.path, 'system': system[:80]})
+        if isinstance(user, list):
+            user = ' '.join(b.get('text', '') for b in user if isinstance(b, dict))
+        _Handler.calls.append({'path': self.path, 'system': system[:80], 'model': body.get('model'),
+                               'provider': 'anthropic' if claude else 'openai', 'body_keys': sorted(body)})
         if 'FAILPARSE' in user:
-            self._send(400, {'error': {'message': 'stubbed failure'}}); return   # 400: not retried
+            err = {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'stubbed failure'}}                 if claude else {'error': {'message': 'stubbed failure'}}
+            self._send(400, err); return   # 400: not retried
+        content = self._answer(system, user)
+        if claude:
+            self._send(200, {'id': 'msg_stub', 'type': 'message', 'role': 'assistant', 'model': body.get('model'),
+                             'content': [{'type': 'text', 'text': content}], 'stop_reason': 'end_turn',
+                             'stop_sequence': None, 'usage': {'input_tokens': 100, 'output_tokens': 50}})
+        else:
+            self._send(200, {'choices': [{'message': {'role': 'assistant', 'content': content}}],
+                             'usage': {'prompt_tokens': 100, 'completion_tokens': 50}})
+
+    @staticmethod
+    def _answer(system, user):
+        if user.startswith('Improve my resume for a'):      # benchmark: plain chatbot baseline
+            return '\n'.join([
+                'MARCUS DELGADO', 'Houston, TX', '', 'SUMMARY',
+                'Results-driven analyst who increased reporting efficiency by 35% using Tableau and Snowflake.',
+                '', 'EXPERIENCE', 'Data Analyst - Brightline Logistics', '- Built dashboards for 40 managers',
+                '', 'EDUCATION', 'B.S. Business Administration, University of Houston, 2019'])
         if 'resume parser' in system:
             content = json.dumps(longform() if 'LONGFORM' in user else MARCUS)
         elif 'cover letters' in system:
@@ -185,7 +212,7 @@ class _Handler(BaseHTTPRequestHandler):
                        "- Built SQL reporting for the management team\n" * 8)
         else:
             content = '{}'
-        self._send(200, {'choices': [{'message': {'role': 'assistant', 'content': content}}]})
+        return content
 
 
 class FakeOpenAI:
