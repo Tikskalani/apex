@@ -1,4 +1,4 @@
-# APEX v10.1
+# APEX v10.4
 
 Local resume-optimization and job-search agent app. Single developer, runs locally on Windows from the project folder.
 
@@ -78,7 +78,7 @@ POST (v10 additions marked *): `/analyze` (SSE, the full 8-phase run),
 `/apply-all-recommendations`*, `/parse-resume`*, `/render-resume`,
 `/alerts/*`.
 
-Local data API (v10.1, `apex_store`): GET `/api/applications`,
+Local data API (v10.4, `apex_store`): GET `/api/applications`,
 `/api/application?id=`, `/api/scores/latest?jobTitle=`; POST
 `/api/applications`, `/api/applications/update`, `/api/applications/delete`,
 `/api/applications/import`, `/api/applications/artifact`,
@@ -87,7 +87,7 @@ Local data API (v10.1, `apex_store`): GET `/api/applications`,
 ## Known gaps — do NOT "fix" these
 
 - **Velocity** has no trigger of its own; it is filled by Phase 8 of
-  `/analyze`. (Drift and Followup are wired as of v10.1: Market Intel →
+  `/analyze`. (Drift and Followup are wired as of v10.4: Market Intel →
   "Check drift now"; Tracker → Open → "Draft follow-up".)
 - **SMTP is off.** Optional, affects email alerts only.
 - **Some job sources return zero results.** Sources fail independently by

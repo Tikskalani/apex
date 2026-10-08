@@ -3795,7 +3795,7 @@ async function kitExport(el) {
   } catch (e) { toast('Export failed: ' + e.message, 'err'); }
 }
 
-// One-time move of applications kept in this browser (pre-v10.1) into apex.db.
+// One-time move of applications kept in this browser (pre-v10.4) into apex.db.
 async function migrateLocalApplications() {
   let old = [];
   try { old = JSON.parse(localStorage.getItem('apex_apps') || '[]'); } catch (e) { old = []; }

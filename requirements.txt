@@ -14,7 +14,7 @@
 # Frontend libraries load from CDN at runtime (no install):
 #   pdf.js 3.11.174    — read uploaded PDF resumes
 #   mammoth 1.6.0      — read uploaded DOCX resumes
-#   (html2pdf removed in v10.1: it rasterised to an image; exports use jsPDF text)
+#   (html2pdf removed in v10.4: it rasterised to an image; exports use jsPDF text)
 #   jsPDF 2.5.1        — ATS text-layer PDF export
 #   docx 8.5.0         — DOCX export
 #

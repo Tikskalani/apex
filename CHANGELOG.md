@@ -4,6 +4,44 @@ All notable changes to APEX. Newest first.
 
 ---
 
+## v10.4 — 2026-10-08
+
+Security lockdown, a real job pipeline, and the test suite that found the bugs below. Run `python tests/run_all.py` and `.venv\Scripts\python -m pytest` after any change (setup in CLAUDE.md).
+
+### Fixed — security
+
+- **Any web page could read the OpenAI key.** The static route blocked `config.json` by exact name, but Windows opens `config.json.` and `config.json::$DATA` as the same file, and every response carried `Access-Control-Allow-Origin: *`. Static serving is now an allowlist of asset types.
+- **Any web page could act as you.** POST routes (`/config/smtp`, `/alerts/test`, `/analyze`) accepted cross-site requests, including `text/plain` POSTs that skip CORS preflight. A Host / Origin / Sec-Fetch-Site guard now runs before every route.
+- **`/config` returned the JSearch key.** It now reports presence only.
+- **Scraped job links could carry `javascript:` URLs**, and several model-generated "scores" went into `innerHTML` unescaped. Links are http(s)-only; scores are coerced to numbers.
+- **Strict Content-Security-Policy** with a per-load nonce: no inline script or handlers, no eval, `connect-src 'self'`, no framing. All 29 inline `onclick` handlers moved to delegated `data-action` routing. Every CDN script is pinned by SRI hash.
+
+### Fixed — correctness
+
+- **DOCX export never worked.** docx 8.5.0 is not on cdnjs (404). Now loaded from jsDelivr.
+- **Exports could contain placeholder content.** When parsing failed or the resume was short, "Your Name" / "Recent Company" / "Skill 1" were silently substituted and exported. Failures are now reported; nothing is substituted.
+- **Every streamed feature hung after finishing.** SSE responses were keep-alive with no length, so the browser never saw end-of-stream; Launch, Tailor, Bullets, Negotiate, Bridge, Drift and Followup awaited until a 300 s socket timeout.
+- **Long title/company, degree and project lines ran off the PDF page** instead of wrapping.
+- **`/analyze` spent credits on a 1-character resume**, and its 400 left the UI on "Running…". Both fixed.
+- **~2 s added to every new connection**: `localhost` resolves to IPv6 first on Windows; the server listened on IPv4 only.
+- **Server crashed at startup** when its output was redirected (cp1252 console encoding).
+- `/config/smtp/test` used an undefined variable and always failed. Phase 8's five threads wrote to the stream unsynchronised.
+
+### Added
+
+- **Pipeline** (Tracker tab) on a local SQLite database (`apex.db`, stdlib only): saved → applied → interview → offer / rejected / withdrawn, changed inline; job link, notes, next-action date; timeline of every change; follow-ups-due banner and filter; response rate. Older browser-stored applications migrate automatically.
+- **Apply kit.** Tailor & Apply → "Save kit to Pipeline" stores the job with its tailored resume and cover letter; re-export the saved resume as ATS PDF/DOCX any time.
+- **Follow-ups.** Draft a follow-up sequence for any application (saved to it); "Mark follow-up sent" schedules the next check.
+- **Market drift.** Every run records its ATS score; Market Intel → "Check drift now" re-scores against today's postings and shows the change since that run, with rising and fading keywords.
+- **Faster runs.** Cover letter, interview, LinkedIn, outreach and velocity now generate alongside the rewrite loop instead of after it.
+- **Test suite**: 79 pytest tests (store, drift, HTTP API, security/CSP, Playwright browser flows incl. PDF text-layer extraction and export→upload round trips) on an offline OpenAI stub.
+
+### Removed
+
+- html2pdf (unused; it rasterised to an image) and the dead html2canvas export path; a duplicate unreachable `/draft-cover-letter` route.
+
+---
+
 ## v10.3 — 2026-09-07
 
 Ten rounds of test-driven hardening. Every fix below came from a test that failed first. The suite ships in `tests/` — run `python tests/run_all.py` after any change.
