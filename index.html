@@ -1870,6 +1870,10 @@ async function streamSSE(path, payload, onEvent) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
+  if (!resp.ok) {
+    const j = await resp.json().catch(() => ({}));
+    throw new Error(j.error || ('Server returned ' + resp.status));
+  }
   if (!resp.body) throw new Error('No stream');
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
@@ -1894,6 +1898,7 @@ $('run-btn').addEventListener('click', async () => {
   const resume   = $('resume-text').value.trim();
   if (!jobTitle) return toast('Enter a job title', 'err');
   if (!resume) return toast('Paste your resume', 'err');
+  if (resume.length < MIN_RESUME_CHARS) return toast(`That resume is ${resume.length} characters. Paste the full text (at least ${MIN_RESUME_CHARS}).`, 'err');
 
   $('run-btn').disabled = true;
   $('run-btn-text').innerHTML = '<span class="spinner"></span>Running…';
@@ -2652,8 +2657,10 @@ async function taStruct() {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ resume: window._taResume })
   });
-  const parsed = (await pr.json()).struct || {};
-  if (!parsed.name) parsed.name = (state.resumeStruct && state.resumeStruct.name) || 'Resume';
+  const data = await pr.json().catch(() => ({}));
+  const parsed = data.struct || {};
+  if (!pr.ok || !Object.keys(parsed).length) { toast('Could not parse the tailored resume: ' + (data.error || 'empty result'), 'err'); return null; }
+  if (!parsed.name && state.resumeStruct) parsed.name = state.resumeStruct.name;
   window._taStructCache = parsed;
   return parsed;
 }
@@ -2715,47 +2722,55 @@ function renderTemplateGrid() {
   loadTemplatePreviews();
 }
 
-async function loadTemplatePreviews() {
-  if (!state.resumeStruct) {
-    const resume = $('resume-text').value.trim();
-    if (resume.length > 100) {
-      toast('Parsing resume for previews…');
-      try {
-        const r = await fetch(SERVER + '/parse-resume', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ resume })
-        });
-        const data = await r.json();
-        state.resumeStruct = data.struct && Object.keys(data.struct).length ? data.struct : sampleStruct();
-      } catch(e) { state.resumeStruct = sampleStruct(); }
-    } else {
-      state.resumeStruct = sampleStruct();
-    }
+// The parsed resume is the only thing an export may contain. If parsing fails
+// or there is no resume, say so; never substitute sample content.
+const MIN_RESUME_CHARS = 100;   // matches the server's MIN_RESUME_CHARS
+
+async function ensureResumeStruct({ quiet = false } = {}) {
+  if (state.resumeStruct) return true;
+  const resume = $('resume-text').value.trim();
+  if (resume.length < MIN_RESUME_CHARS) {
+    if (!quiet) toast(resume
+      ? `That resume is ${resume.length} characters. Paste the full text in Launch first.`
+      : 'Open Launch and paste your resume first', 'err');
+    return false;
   }
+  if (!quiet) toast('Parsing resume…');
+  try {
+    const r = await fetch(SERVER + '/parse-resume', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resume })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.struct || !data.struct.name) throw new Error(data.error || 'the parser returned no name');
+    state.resumeStruct = data.struct;
+    return true;
+  } catch (e) {
+    toast('Could not parse your resume: ' + e.message, 'err');
+    return false;
+  }
+}
+
+function previewEmptyState(msg) {
+  return '<!doctype html><body style="margin:0;display:grid;place-items:center;height:100vh;'
+    + 'font:14px system-ui,sans-serif;color:#64748b;text-align:center;padding:24px">' + escHtml(msg) + '</body>';
+}
+
+async function loadTemplatePreviews() {
+  const ok = await ensureResumeStruct({ quiet: true });
   for (const t of state.templates) {
+    const iframe = $('prev-' + t.id);
+    if (!iframe) continue;
+    if (!ok) { iframe.srcdoc = previewEmptyState('Paste your resume in Launch to preview it in this template.'); continue; }
     try {
       const r = await fetch(SERVER + '/render-resume', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ template: t.id, struct: state.resumeStruct })
       });
       const j = await r.json();
-      const iframe = $('prev-' + t.id);
-      if (iframe) iframe.srcdoc = j.html || '';
-    } catch(e) {}
+      iframe.srcdoc = j.html || previewEmptyState('Preview unavailable.');
+    } catch (e) { iframe.srcdoc = previewEmptyState('Preview unavailable: ' + e.message); }
   }
-}
-
-function sampleStruct() {
-  return {
-    name: 'Your Name', title: 'Your Target Role',
-    email: 'you@example.com', phone: '+1 555 123 4567', location: 'Your City',
-    linkedin: 'linkedin.com/in/you',
-    summary: 'Paste your resume in the Launch panel, then click "Re-parse" to see your real content here.',
-    experience: [{ title: 'Recent Role', company: 'Recent Company', location: 'City', start: '2022', end: 'Present',
-      bullets: ['Bullet 1 — what you did and the measurable result', 'Bullet 2', 'Bullet 3'] }],
-    education: [{ degree: 'Your Degree', school: 'University', year: '20XX' }],
-    skills: { technical: ['Skill 1','Skill 2','Skill 3'], tools: ['Tool 1','Tool 2'], soft: ['Leadership','Communication'] }
-  };
 }
 
 function selectTemplate(id) {
@@ -3143,20 +3158,20 @@ async function downloadResumeAsPdf(html, filename) {
 // Text-layer exports. The old path rendered through html2canvas, which produced
 // an image-only PDF that applicant tracking systems parse as a blank document.
 $('tpl-download').addEventListener('click', async (ev) => {
-  if (!state.resumeStruct) await loadTemplatePreviews();
+  if (!(await ensureResumeStruct())) return;
   await atsExport('pdf', state.resumeStruct, state.selectedTemplate, ev.currentTarget);
 });
 $('tpl-download-docx').addEventListener('click', async (ev) => {
-  if (!state.resumeStruct) await loadTemplatePreviews();
+  if (!(await ensureResumeStruct())) return;
   await atsExport('docx', state.resumeStruct, state.selectedTemplate, ev.currentTarget);
 });
 $('tpl-download-txt').addEventListener('click', async (ev) => {
-  if (!state.resumeStruct) await loadTemplatePreviews();
+  if (!(await ensureResumeStruct())) return;
   await atsExport('txt', state.resumeStruct, state.selectedTemplate, ev.currentTarget);
 });
 
 $('tpl-preview').addEventListener('click', async () => {
-  if (!state.resumeStruct) await loadTemplatePreviews();
+  if (!(await ensureResumeStruct())) return;
   const r = await fetch(SERVER + '/render-resume', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ template: state.selectedTemplate, struct: state.resumeStruct })
@@ -3168,7 +3183,7 @@ $('tpl-preview').addEventListener('click', async () => {
 
 $('tpl-reparse').addEventListener('click', async () => {
   state.resumeStruct = null;
-  toast('Re-parsing resume…');
+  if (!(await ensureResumeStruct())) { await loadTemplatePreviews(); return; }
   await loadTemplatePreviews();
   toast('Previews refreshed', 'ok');
 });

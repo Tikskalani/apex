@@ -50,6 +50,9 @@ GPT_RETRIES   = 2
 MIN_LISTINGS  = 5
 MAX_CORPUS    = 16000
 LOOP_ITERS    = 3   # self-improvement iterations
+MIN_RESUME_CHARS = 100   # shorter than this is not a resume; refuse before spending credits
+# Tests point this at a local stub so they never spend real credits.
+OPENAI_BASE   = os.environ.get('APEX_OPENAI_BASE', 'https://api.openai.com').rstrip('/')
 
 # Static files the server may hand out: plain names in the app root or assets/,
 # asset extensions only. Anything else (config.json, *.py, *.json data, dotfiles,
@@ -140,7 +143,7 @@ def gpt(system, user, max_tokens=3000, temp=0.3):
     last = None
     for attempt in range(GPT_RETRIES + 1):
         try:
-            req = Request('https://api.openai.com/v1/chat/completions', data=body,
+            req = Request(OPENAI_BASE + '/v1/chat/completions', data=body,
                 headers={'Content-Type':'application/json','Authorization':f'Bearer {OPENAI_KEY}'}, method='POST')
             with urlopen(req, timeout=GPT_TIMEOUT) as r:
                 return json.loads(r.read())['choices'][0]['message']['content']
@@ -2747,10 +2750,13 @@ Return ONLY this JSON (use empty string/array if missing):
 }}''',
             max_tokens=3200, temp=0.1
         )
-        return jparse(raw)
     except Exception as e:
         print(f'  Parse error: {e}')
-        return {}
+        raise Exception(f'Resume parsing failed: {e}')
+    struct = jparse(raw)
+    if not struct:
+        raise Exception('Resume parsing failed: the model returned no usable JSON. Try again.')
+    return struct
 
 
 def _esc(s):
@@ -2759,8 +2765,8 @@ def _esc(s):
 
 
 def _render_modern(d):
-    name  = _esc(d.get('name','Your Name'))
-    title = _esc(d.get('title','Professional Title'))
+    name  = _esc(d.get('name',''))
+    title = _esc(d.get('title',''))
     contact = ' &nbsp;·&nbsp; '.join(filter(None, [_esc(d.get('email','')), _esc(d.get('phone','')), _esc(d.get('location','')), _esc(d.get('linkedin','')), _esc(d.get('website',''))]))
     exp_html = ''
     for e in d.get('experience', []):
@@ -2813,7 +2819,7 @@ __CERTS__
 
 
 def _render_classic(d):
-    name  = _esc(d.get('name','Your Name'))
+    name  = _esc(d.get('name',''))
     contact = ' | '.join(filter(None, [_esc(d.get('email','')), _esc(d.get('phone','')), _esc(d.get('location','')), _esc(d.get('linkedin',''))]))
     exp_html = ''
     for e in d.get('experience', []):
@@ -2858,8 +2864,8 @@ __CERTS__
 
 
 def _render_tech(d):
-    name  = _esc(d.get('name','Your Name'))
-    title = _esc(d.get('title','Software Engineer'))
+    name  = _esc(d.get('name',''))
+    title = _esc(d.get('title',''))
     contact = ' &nbsp;·&nbsp; '.join(filter(None, [_esc(d.get('email','')), _esc(d.get('phone','')), _esc(d.get('location','')), _esc(d.get('linkedin','')), _esc(d.get('website',''))]))
     exp_html = ''
     for e in d.get('experience', []):
@@ -2911,8 +2917,8 @@ __TOOLS__
 
 
 def _render_executive(d):
-    name  = _esc(d.get('name','Your Name')).upper()
-    title = _esc(d.get('title','Executive Title'))
+    name  = _esc(d.get('name','')).upper()
+    title = _esc(d.get('title',''))
     contact = ' • '.join(filter(None, [_esc(d.get('email','')), _esc(d.get('phone','')), _esc(d.get('location','')), _esc(d.get('linkedin',''))]))
     exp_html = ''
     for e in d.get('experience', []):
@@ -2953,8 +2959,8 @@ def _render_executive(d):
 
 
 def _render_creative(d):
-    name  = _esc(d.get('name','Your Name'))
-    title = _esc(d.get('title','Creative Professional'))
+    name  = _esc(d.get('name',''))
+    title = _esc(d.get('title',''))
     contact = '<br>'.join(filter(None, [_esc(d.get('email','')), _esc(d.get('phone','')), _esc(d.get('location','')), _esc(d.get('linkedin','')), _esc(d.get('website',''))]))
     exp_html = ''
     for e in d.get('experience', []):
@@ -2998,7 +3004,7 @@ def _render_creative(d):
 
 
 def _render_minimal(d):
-    name  = _esc(d.get('name','Your Name'))
+    name  = _esc(d.get('name',''))
     title = _esc(d.get('title',''))
     contact = '  ·  '.join(filter(None, [_esc(d.get('email','')), _esc(d.get('phone','')), _esc(d.get('location','')), _esc(d.get('linkedin',''))]))
     exp_html = ''
@@ -3363,7 +3369,7 @@ def transcribe_audio_bytes(audio_bytes, mime="audio/webm"):
     parts.append(b"")
     payload = b"\r\n".join(parts)
     req = Request(
-        "https://api.openai.com/v1/audio/transcriptions",
+        OPENAI_BASE + "/v1/audio/transcriptions",
         data=payload,
         headers={"Authorization": "Bearer " + OPENAI_KEY, "Content-Type": "multipart/form-data; boundary=" + boundary},
         method="POST",
@@ -3614,7 +3620,7 @@ class Handler(BaseHTTPRequestHandler):
                 struct = {}
             self._send_html(200, render_template(tpl_id, struct))
             return
-        self.send_response(404); self.end_headers()
+        self._send_json(404, {'error': 'not found'})
 
     def _sse_start(self):
         """Send SSE response headers."""
@@ -3659,11 +3665,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             p = self._read_json_body()
         except Exception as e:
-            self.send_response(400)
-            self.cors()
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': f'Bad JSON: {e}'}).encode())
+            self._send_json(400, {'error': f'Bad JSON: {e}'})
             return
 
         path = self.path
@@ -3741,13 +3743,12 @@ class Handler(BaseHTTPRequestHandler):
 
         # ── MAIN AGENT ROUTE ─────────────────────────────────────────────────
         if path == '/analyze':
-            if not p.get('jobTitle') or not p.get('resume'):
-                self.send_response(400)
-                self.cors()
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'error': 'jobTitle and resume required'}).encode())
-                return
+            if not (p.get('jobTitle') or '').strip():
+                self._send_json(400, {'error': 'Enter a target job title.'}); return
+            resume_len = len((p.get('resume') or '').strip())
+            if resume_len < MIN_RESUME_CHARS:
+                self._send_json(400, {'error': f'That resume is {resume_len} characters. Paste the full resume text '
+                                               f'(at least {MIN_RESUME_CHARS} characters) before launching.'}); return
 
             self._sse_start()
             emit = self._make_emitter()
@@ -3880,7 +3881,7 @@ class Handler(BaseHTTPRequestHandler):
                 body = pre + audio + mid
 
                 req = Request(
-                    'https://api.openai.com/v1/audio/transcriptions',
+                    OPENAI_BASE + '/v1/audio/transcriptions',
                     data=body,
                     headers={'Content-Type': f'multipart/form-data; boundary={boundary}',
                              'Authorization': f'Bearer {OPENAI_KEY}'},
@@ -4192,8 +4193,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         # ── UNKNOWN ROUTE ────────────────────────────────────────────────────
-        self.send_response(404)
-        self.end_headers()
+        self._send_json(404, {'error': 'not found'})
 
 
 def run():
