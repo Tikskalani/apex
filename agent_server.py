@@ -62,6 +62,25 @@ STATIC_TYPES = {
     'png':'image/png', 'jpg':'image/jpeg', 'jpeg':'image/jpeg', 'webp':'image/webp',
     'svg':'image/svg+xml', 'ico':'image/x-icon', 'woff2':'font/woff2',
 }
+# Content-Security-Policy for index.html. Scripts: the page's own (by nonce)
+# and the two pinned CDNs. pdf.js runs its worker from a blob: that imports
+# from cdnjs. connect-src 'self' means even a script that slipped through
+# cannot send data anywhere but this server. No framing (clickjacking).
+CSP_TEMPLATE = '; '.join([
+    "default-src 'none'",
+    "script-src 'nonce-{nonce}' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net",
+    "worker-src blob: https://cdnjs.cloudflare.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src https://fonts.gstatic.com data:",
+    "img-src 'self' data: blob:",
+    "media-src 'self' blob:",
+    "connect-src 'self'",
+    "frame-src 'self' blob: data:",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+])
 STATIC_RE = re.compile(r'^/(?:assets/)?[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.(?P<ext>' +
                        '|'.join(STATIC_TYPES) + r')$', re.IGNORECASE)
 
@@ -3242,27 +3261,8 @@ def alerts_background_loop():
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# v8.4 NEW AGENTS: standalone cover letter, Gmail inbox scan, audio transcribe
+# v8.4 NEW AGENTS: Gmail inbox scan, audio transcribe
 # ────────────────────────────────────────────────────────────────────────────
-
-def standalone_cover_letter(job_title, company, posting, resume, sector="general"):
-    """Tailored cover letter for a single job posting. Synchronous."""
-    try:
-        return gpt(
-            "Expert cover letter writer for " + sector + " sector. Output ONLY the letter text — no subject line, no preamble.",
-            "Write a compelling 3-paragraph cover letter for this exact role.\n\n" +
-            "Role: " + job_title + "\n" +
-            "Company: " + (company or "the hiring company") + "\n" +
-            "Job posting:\n" + posting[:2500] + "\n\n" +
-            "Candidate resume:\n" + resume[:2500] + "\n\n" +
-            "Rules: 1) Hook (P1): pull a specific detail from the posting. " +
-            "2) Value (P2): 2-3 quantified achievements that map to the posting needs. " +
-            "3) CTA (P3): concrete next step. Inject keywords naturally. Output only the letter.",
-            max_tokens=900, temp=0.5
-        )
-    except Exception as e:
-        return "[cover letter error: " + str(e) + "]"
-
 
 # ── Gmail inbox scanner via IMAP (uses Gmail App Password, no OAuth) ──
 import imaplib, email as _email
@@ -3539,10 +3539,18 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(404, {'error': 'index.html not found beside agent_server.py'}); return
                 with open(target, 'rb') as fh:
                     body = fh.read()
+                # Fresh nonce per page load: only <script> tags shipped in
+                # index.html run. Injected markup (an XSS) can't carry it.
+                nonce = base64.b64encode(os.urandom(16)).decode()
+                body = body.replace(b'<script', b'<script nonce="' + nonce.encode() + b'"')
                 self.send_response(200); self.cors()
                 self.send_header('Content-Type', 'text/html; charset=utf-8')
                 self.send_header('Content-Length', str(len(body)))
                 self.send_header('Cache-Control', 'no-store')
+                self.send_header('Content-Security-Policy', CSP_TEMPLATE.format(nonce=nonce))
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.send_header('Referrer-Policy', 'no-referrer')
+                self.send_header('X-Frame-Options', 'DENY')
                 self.end_headers()
                 self.wfile.write(body)
             except Exception as e:
@@ -3611,7 +3619,6 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {'subscriptions': list_alerts(email if email else None)})
             return
         if path == '/render-resume':
-            import base64
             tpl_id = qs.get('template',['modern'])[0]
             d_raw = qs.get('data',[''])[0]
             try:
@@ -4116,19 +4123,6 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {'error': str(e)})
             return
 
-        # ── ONE-CLICK COVER LETTER (standalone, fast) ────────────────────────
-        if path == "/draft-cover-letter":
-            try:
-                letter = standalone_cover_letter(
-                    p.get("jobTitle",""), p.get("company",""),
-                    p.get("posting",""), p.get("resume",""),
-                    p.get("sector","general"),
-                )
-                self._send_json(200, {"letter": letter})
-            except Exception as e:
-                self._send_json(500, {"error": str(e)})
-            return
-
         # ── INBOX SCAN: IMAP fetch + GPT classify ────────────────────────────
         if path == "/inbox/scan":
             try:
@@ -4163,7 +4157,6 @@ class Handler(BaseHTTPRequestHandler):
         # ── TRANSCRIBE AUDIO (Whisper) ───────────────────────────────────────
         if path == "/transcribe":
             try:
-                import base64
                 b64 = p.get("audio_b64", "")
                 mime = p.get("mime", "audio/webm")
                 if not b64:

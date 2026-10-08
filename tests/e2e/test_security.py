@@ -92,3 +92,35 @@ def test_browser_on_another_origin_cannot_read_the_api(browser, app, fake_openai
     assert out == {'/config': 'blocked', '/health': 'blocked', '/config.json.': 'blocked'}, out
     cfg = json.loads((app.dir / 'config.json').read_text())
     assert 'SMTP_USER' not in cfg, 'cross-site text/plain POST overwrote SMTP settings'
+
+
+def _csp(headers):
+    return {d.split(' ', 1)[0]: d.split(' ', 1)[1] if ' ' in d else ''
+            for d in (x.strip() for x in headers['content-security-policy'].split(';')) if d}
+
+
+def test_page_ships_a_strict_csp_with_fresh_nonce(app):
+    import re
+    s1, h1, body1 = req(app, 'GET', '/')
+    s2, h2, _ = req(app, 'GET', '/')
+    assert s1 == s2 == 200
+    csp1, csp2 = _csp(h1), _csp(h2)
+    assert "'unsafe-inline'" not in csp1['script-src'] and "'unsafe-eval'" not in csp1['script-src']
+    n1 = re.search(r"'nonce-([^']+)'", csp1['script-src']).group(1)
+    n2 = re.search(r"'nonce-([^']+)'", csp2['script-src']).group(1)
+    assert n1 != n2, 'nonce must change on every page load'
+    assert csp1['connect-src'] == "'self'"
+    assert csp1['frame-ancestors'] == "'none'" and csp1['object-src'] == "'none'"
+    html = body1.decode('utf-8')
+    tags = re.findall(r'<script\b[^>]*>', html)
+    assert tags and all(f'nonce="{n1}"' in t for t in tags), 'a <script> tag is missing the nonce'
+    assert h1.get('x-content-type-options') == 'nosniff'
+
+
+def test_index_has_no_inline_event_handlers():
+    """CSP blocks on*= attributes; one slipping back in would be a dead button."""
+    import re
+    from conftest import ROOT
+    html = (ROOT / 'index.html').read_text(encoding='utf-8')
+    found = re.findall(r'<[^>]*\son[a-z]+\s*=\s*["\'][^>]*>', html)
+    assert not found, found[:5]

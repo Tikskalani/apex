@@ -20,11 +20,10 @@ Local resume-optimization and job-search agent app. Single developer, runs local
   one origin. Calls OpenAI for parsing/optimization/cover letters and scrapes
   live job postings (JSearch optional).
 - **Vendor libs** pinned by version and SRI hash (`integrity="sha384-…"`):
-  pdf.js 3.11.174, mammoth 1.6.0, html2pdf 0.10.1, jsPDF 2.5.1 (registers as
+  pdf.js 3.11.174, mammoth 1.6.0, jsPDF 2.5.1 (registers as
   `window.jspdf`) from cdnjs; docx 8.5.0 from jsDelivr
   (`cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js`) because cdnjs does
   not carry docx at all. Bumping a version means recomputing its hash.
-  html2pdf is loaded but unused (Test 1 still checks it).
 - **Keys:** `config.json` beside the server (`OPENAI_KEY`, `JSEARCH_KEY`,
   optional `SMTP_*`), falling back to env vars `OPENAI_API_KEY` /
   `JSEARCH_API_KEY`. `config.json` is gitignored. There is no `.env`.

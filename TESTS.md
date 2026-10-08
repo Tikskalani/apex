@@ -72,7 +72,7 @@ Change nothing. Report only.
    script loads from `cdnjs.cloudflare.com`.
 3. Run in console and report exact output:
    ```js
-   ['jspdf','docx','html2pdf','pdfjsLib','mammoth']
+   ['jspdf','docx','pdfjsLib','mammoth']
      .map(k => k + ': ' + (typeof window[k] !== 'undefined' ? 'LOADED' : 'MISSING'))
      .join('\n')
    ```
@@ -80,7 +80,7 @@ Change nothing. Report only.
    `window.jsPDF` depending on the build. Check both before calling it MISSING.
 4. Count the navigation tabs and list their names.
 
-**PASS** if the badge is green, there are no console errors, and all five
+**PASS** if the badge is green, there are no console errors, and all four
 libraries report LOADED. Otherwise FAIL, naming the exact check that failed.
 
 *Why:* `jspdf` and `docx` are new in v10. If either is MISSING, every export

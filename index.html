@@ -1094,7 +1094,7 @@ label {
 
   <!-- ═══════════════════════ TOP BAR ═══════════════════════ -->
   <header class="topbar">
-    <div class="brand" onclick="switchTab('home')">
+    <div class="brand" data-action="tab" data-arg="home">
       <div class="brand-mark">
         <svg viewBox="0 0 32 32" fill="none">
           <defs>
@@ -1169,14 +1169,14 @@ label {
             <h1>The world's most <strong>capable</strong><br>resume agent.</h1>
             <p>Real-time market scraping across 11 free job boards. Self-improving rewrites. 6 designer-grade PDF templates. Email job alerts. Fully responsive. Built to be unbeatable — and free.</p>
             <div class="welcome-cta">
-              <button class="btn btn-primary btn-big" onclick="$('open-drawer').click()">
+              <button class="btn btn-primary btn-big" data-action="launch">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                 Launch Agent
               </button>
-              <button class="btn btn-big" onclick="switchTab('templates')">
+              <button class="btn btn-big" data-action="tab" data-arg="templates">
                 Browse PDF Templates
               </button>
-              <button class="btn btn-big" onclick="switchTab('jobs')">
+              <button class="btn btn-big" data-action="tab" data-arg="jobs">
                 Live Jobs Feed
               </button>
             </div>
@@ -1268,14 +1268,14 @@ label {
             </div>
             <div style="margin-bottom:var(--s3); display:flex; gap:6px; flex-wrap:wrap; align-items:center">
               <span style="font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--fg-3); font-family:'JetBrains Mono',monospace; margin-right:4px">QUICK:</span>
-              <button class="btn btn-sm" onclick="quickLoc('Remote')">Remote</button>
-              <button class="btn btn-sm" onclick="quickLoc('San Francisco')">SF</button>
-              <button class="btn btn-sm" onclick="quickLoc('New York')">NYC</button>
-              <button class="btn btn-sm" onclick="quickLoc('Austin')">Austin</button>
-              <button class="btn btn-sm" onclick="quickLoc('Houston')">Houston</button>
-              <button class="btn btn-sm" onclick="quickLoc('Seattle')">Seattle</button>
-              <button class="btn btn-sm" onclick="quickLoc('Denver')">Denver</button>
-              <button class="btn btn-sm" onclick="quickLoc('')">Anywhere</button>
+              <button class="btn btn-sm" data-action="loc" data-arg="Remote">Remote</button>
+              <button class="btn btn-sm" data-action="loc" data-arg="San Francisco">SF</button>
+              <button class="btn btn-sm" data-action="loc" data-arg="New York">NYC</button>
+              <button class="btn btn-sm" data-action="loc" data-arg="Austin">Austin</button>
+              <button class="btn btn-sm" data-action="loc" data-arg="Houston">Houston</button>
+              <button class="btn btn-sm" data-action="loc" data-arg="Seattle">Seattle</button>
+              <button class="btn btn-sm" data-action="loc" data-arg="Denver">Denver</button>
+              <button class="btn btn-sm" data-action="loc" data-arg="">Anywhere</button>
             </div>
             <div style="margin-bottom:var(--s4); display:flex; gap:var(--s3); flex-wrap:wrap; align-items:center; padding:var(--s3) var(--s4); background:var(--bg-2); border:1px solid var(--line); border-radius:var(--r2)">
               <span style="font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--fg-3); font-family:'JetBrains Mono',monospace">FILTER:</span>
@@ -1694,11 +1694,11 @@ label {
   <div class="modal-body">
     <div class="modal-cols">
       <div class="modal-col">
-        <h4>Tailored Resume <button class="copy-btn" onclick="copyText(window._taResume||'')">Copy</button></h4>
+        <h4>Tailored Resume <button class="copy-btn" data-action="copy" data-arg="taResume">Copy</button></h4>
         <pre class="modal-col-body" id="ta-resume-body">Loading…</pre>
       </div>
       <div class="modal-col">
-        <h4>Cover Letter <button class="copy-btn" onclick="copyText(window._taCover||'')">Copy</button></h4>
+        <h4>Cover Letter <button class="copy-btn" data-action="copy" data-arg="taCover">Copy</button></h4>
         <pre class="modal-col-body" id="ta-cover-body">Loading…</pre>
       </div>
     </div>
@@ -1731,7 +1731,6 @@ label {
      cdnjs (the old cdnjs URL was a 404), so it comes from jsDelivr's npm mirror. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js" integrity="sha384-nFoSjZIoH3CCp8W639jJyQkuPHinJ2NHe7on1xvlUA7SuGfJAfvMldrsoAVm6ECz" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha384-Yv5O+t3uE3hunW8uyrbpPW3iw6/5/Y7HitWJBLgqfMoA36NogMmy+8wWZMpn3HWc" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js" integrity="sha384-4xaIisuLEy2lo2HkB2C4rEf7v8jbTb2kuogX6TkuEt9feTWKBSFSOzsqNNbV+sKh" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
@@ -1774,6 +1773,40 @@ function toast(msg, type='') {
 
 // ─── Dock navigation ───
 $$('.dock-item').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.view)));
+
+// ─── Delegated actions ───
+// The page's Content-Security-Policy forbids inline on*= handlers, so every
+// clickable control declares data-action (+ data-arg) and is routed here.
+const COPY_SOURCES = {
+  taResume:    () => window._taResume || '',
+  taCover:     () => window._taCover || '',
+  optResume:   () => window._optResume,
+  coverLetter: () => window._coverLetter,
+  liHeadline:  () => window._li && window._li.headline,
+  liAbout:     () => window._li && window._li.about,
+  tailored:    () => window._tailored,
+  or:          el => window._or && window._or[el.dataset.key],
+};
+const ACTIONS = {
+  tab:         el => switchTab(el.dataset.arg),
+  launch:      () => $('open-drawer').click(),
+  loc:         el => quickLoc(el.dataset.arg),
+  copy:        el => { const get = COPY_SOURCES[el.dataset.arg]; copyText(get ? get(el) : ''); },
+  applyAll:    () => applyAllSuggestions(),
+  quickMatch:  el => quickMatch(Number(el.dataset.arg)),
+  quickTailor: el => quickTailor(Number(el.dataset.arg)),
+  ixAddAll:    () => ixAddAll(),
+  ixAddOne:    el => ixAddOne(Number(el.dataset.arg)),
+  trkRemove:   el => trkRemove(Number(el.dataset.arg)),
+  viNext:      () => viNextQuestion(),
+};
+document.addEventListener('click', ev => {
+  const el = ev.target.closest('[data-action]');
+  if (!el) return;
+  const fn = ACTIONS[el.dataset.action];
+  if (fn) fn(el, ev);
+  else console.warn('APEX: no handler for data-action', el.dataset.action);
+});
 
 function switchTab(view) {
   $$('.dock-item').forEach(t => t.classList.toggle('active', t.dataset.view === view));
@@ -2129,11 +2162,11 @@ function renderResume(orig, opt, added=[]) {
           <p style="color:var(--fg-2);font-size:14px;line-height:1.55">One click merges <b>every</b> recommendation — the optimized resume, the Gap Report bullet rewrites, the Bullet Ranker fixes, and all missing keywords — into a single final resume. Then we re-parse it and prep your PDF.</p>
         </div>
         <div style="display:flex; gap:var(--s2); flex-wrap:wrap">
-          <button class="btn btn-primary btn-big" onclick="applyAllSuggestions()">
+          <button class="btn btn-primary btn-big" data-action="applyAll">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><polyline points="20 6 9 17 4 12"/></svg>
             Apply All Suggestions
           </button>
-          <button class="btn" onclick="switchTab('templates')">Skip to PDF</button>
+          <button class="btn" data-action="tab" data-arg="templates">Skip to PDF</button>
         </div>
       </div>
     </div>
@@ -2142,7 +2175,7 @@ function renderResume(orig, opt, added=[]) {
       <div class="card-h">
         <h3>Before · After</h3>
         <span class="h-sub">${(added||[]).length} keywords injected</span>
-        <button class="copy-btn" onclick="copyText(window._optResume)">Copy Optimized</button>
+        <button class="copy-btn" data-action="copy" data-arg="optResume">Copy Optimized</button>
       </div>
       <div class="diff-grid">
         <div class="diff-col"><h4>Original</h4><pre class="diff-pre">${escHtml(orig)}</pre></div>
@@ -2221,7 +2254,7 @@ function renderCoverLetter(letter) {
   window._coverLetter = letter;
   $('cl-content').innerHTML = `
     <div class="card">
-      <div class="card-h"><h3>Letter</h3><button class="copy-btn" onclick="copyText(window._coverLetter)">Copy</button></div>
+      <div class="card-h"><h3>Letter</h3><button class="copy-btn" data-action="copy" data-arg="coverLetter">Copy</button></div>
       <div class="block"><div class="text">${escHtml(letter)}</div></div>
     </div>`;
 }
@@ -2252,11 +2285,11 @@ function renderLinkedIn(d) {
   const skills = (d.skills||[]).map(s => `<span class="kw">${escHtml(s)}</span>`).join('');
   $('li-content').innerHTML = `
     <div class="card" style="margin-bottom:var(--s4)">
-      <div class="card-h"><h3>Headline</h3><button class="copy-btn" onclick="copyText(window._li.headline)">Copy</button></div>
+      <div class="card-h"><h3>Headline</h3><button class="copy-btn" data-action="copy" data-arg="liHeadline">Copy</button></div>
       <div class="block"><div class="text">${escHtml(d.headline||'')}</div></div>
     </div>
     <div class="card" style="margin-bottom:var(--s4)">
-      <div class="card-h"><h3>About</h3><button class="copy-btn" onclick="copyText(window._li.about)">Copy</button></div>
+      <div class="card-h"><h3>About</h3><button class="copy-btn" data-action="copy" data-arg="liAbout">Copy</button></div>
       <div class="block"><div class="text">${escHtml(d.about||'')}</div></div>
     </div>
     <div class="card">
@@ -2272,13 +2305,13 @@ function renderOutreach(d) {
   window._or.ce_body = 'Subject: ' + (ce.subject || '') + '\n\n' + (ce.body || '');
   const blk = (title, content, copyKey) => `
     <div class="card" style="margin-bottom:var(--s4)">
-      <div class="card-h"><h3>${title}</h3><button class="copy-btn" onclick="copyText(window._or['${copyKey}'])">Copy</button></div>
+      <div class="card-h"><h3>${title}</h3><button class="copy-btn" data-action="copy" data-arg="or" data-key="${copyKey}">Copy</button></div>
       <div class="block"><div class="text">${content}</div></div>
     </div>`;
   $('or-content').innerHTML = `
     ${blk('LinkedIn DM', escHtml(dm.message||''), 'dm_msg')}
     <div class="card" style="margin-bottom:var(--s4)">
-      <div class="card-h"><h3>Cold Email</h3><button class="copy-btn" onclick="copyText(window._or.ce_body)">Copy</button></div>
+      <div class="card-h"><h3>Cold Email</h3><button class="copy-btn" data-action="copy" data-arg="or" data-key="ce_body">Copy</button></div>
       <div class="block"><div class="label">Subject</div><div class="text">${escHtml(ce.subject||'')}</div></div>
       <div class="block"><div class="label">Body</div><div class="text">${escHtml(ce.body||'')}</div></div>
     </div>
@@ -2317,7 +2350,7 @@ function renderTailor(d) {
     <div class="card">
       <div class="card-h"><h3>Tailored Resume</h3><span class="h-sub">${toScore(d.match_score_before)} → ${toScore(d.match_score_after)}</span></div>
       <pre class="diff-pre opt">${escHtml(d.tailored_resume||'')}</pre>
-      <button class="btn btn-primary" onclick="copyText(window._tailored)" style="margin-top:var(--s4)">Copy</button>
+      <button class="btn btn-primary" data-action="copy" data-arg="tailored" style="margin-top:var(--s4)">Copy</button>
     </div>`;
 }
 
@@ -2554,8 +2587,8 @@ function renderJobsList(jobs) {
       sharedHtml +
       '<div class="job-actions">' +
         '<a class="btn btn-primary btn-sm" href="' + escHtml(safeUrl(j.url)) + '" target="_blank" rel="noopener">View &amp; Apply ' + '→' + '</a>' +
-        '<button class="btn btn-sm" onclick="quickMatch(' + idx + ')">Deep Match</button>' +
-        '<button class="btn btn-sm" onclick="quickTailor(' + idx + ')">Tailor For This</button>' +
+        '<button class="btn btn-sm" data-action="quickMatch" data-arg="' + idx + '">Deep Match</button>' +
+        '<button class="btn btn-sm" data-action="quickTailor" data-arg="' + idx + '">Tailor For This</button>' +
       '</div>' +
     '</div>';
   }).join('');
@@ -3142,14 +3175,33 @@ $('tpl-download-txt').addEventListener('click', async (ev) => {
 });
 
 $('tpl-preview').addEventListener('click', async () => {
-  if (!(await ensureResumeStruct())) return;
-  const r = await fetch(SERVER + '/render-resume', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ template: state.selectedTemplate, struct: state.resumeStruct })
-  });
-  const j = await r.json();
+  // Open synchronously inside the click so pop-up blockers allow it.
   const w = window.open('', '_blank');
-  w.document.open(); w.document.write(j.html); w.document.close();
+  if (!w) return toast('Allow pop-ups for this page to open the full preview', 'err');
+  try {
+    if (!(await ensureResumeStruct())) { w.close(); return; }
+    const r = await fetch(SERVER + '/render-resume', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ template: state.selectedTemplate, struct: state.resumeStruct })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'render failed');
+    // The opened window shares this page's origin. Render the template inside
+    // a sandboxed iframe (no scripts, opaque origin) so template HTML can never
+    // reach the local API, however it was produced.
+    const d = w.document;
+    d.title = 'APEX resume preview';
+    d.body.style.margin = '0';
+    const f = d.createElement('iframe');
+    f.setAttribute('sandbox', '');
+    f.setAttribute('title', 'Resume preview');
+    f.style.cssText = 'border:0;width:100vw;height:100vh;display:block;background:#fff';
+    f.srcdoc = j.html || '';
+    d.body.appendChild(f);
+  } catch (e) {
+    w.close();
+    toast('Preview failed: ' + e.message, 'err');
+  }
 });
 
 $('tpl-reparse').addEventListener('click', async () => {
@@ -3398,7 +3450,7 @@ $('ix-scan').addEventListener('click', async () => {
       'ghosted':'var(--fg-3)'
     }[s] || 'var(--fg-2)');
     $('ix-results').innerHTML =
-      '<div style="margin-bottom:var(--s3); display:flex; gap:8px; flex-wrap:wrap"><button class="btn btn-primary btn-sm" onclick="ixAddAll()">Add All To Tracker</button><span style="font-size:11px; color:var(--fg-3); padding:6px 0">' + j.rows.length + ' applications detected · review and confirm</span></div>' +
+      '<div style="margin-bottom:var(--s3); display:flex; gap:8px; flex-wrap:wrap"><button class="btn btn-primary btn-sm" data-action="ixAddAll">Add All To Tracker</button><span style="font-size:11px; color:var(--fg-3); padding:6px 0">' + j.rows.length + ' applications detected · review and confirm</span></div>' +
       j.rows.map((r, i) =>
         '<div class="alert-card">' +
           '<div class="alert-info">' +
@@ -3406,7 +3458,7 @@ $('ix-scan').addEventListener('click', async () => {
             '<div class="m">' + escHtml(r.subject||'').slice(0,90) + ' · from ' + escHtml(r.from||'').slice(0,40) + ' · ' + escHtml(r.date||'').slice(0,16) + '</div>' +
           '</div>' +
           '<span class="alert-freq" style="color:' + statusColor(r.status) + '; background:rgba(255,255,255,0.04)">' + escHtml(r.status||'').replace(/_/g, ' ') + '</span>' +
-          '<button class="btn btn-sm" onclick="ixAddOne(' + i + ')">Add</button>' +
+          '<button class="btn btn-sm" data-action="ixAddOne" data-arg="' + i + '">Add</button>' +
         '</div>'
       ).join('');
   } catch(e) {
@@ -3452,7 +3504,7 @@ function renderTracker() {
       <td>${escHtml(a.role)}</td>
       <td style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg-3)">${escHtml(a.date)}</td>
       <td><span class="alert-freq" style="background:${a.status==='offer'?'rgba(0,217,126,0.10)':a.status==='rejected'?'rgba(232,33,39,0.10)':a.status==='interview'?'rgba(139,92,246,0.10)':'rgba(62,158,255,0.08)'};color:${a.status==='offer'?'var(--green-soft)':a.status==='rejected'?'var(--red-soft)':a.status==='interview'?'#b39bff':'var(--acc-soft)'};border-color:transparent">${escHtml(a.status)}</span></td>
-      <td><button class="btn btn-sm" onclick="trkRemove(${i})">×</button></td>
+      <td><button class="btn btn-sm" data-action="trkRemove" data-arg="${i}">×</button></td>
     </tr>`).join('');
 }
 renderTracker();
@@ -3647,7 +3699,7 @@ function viRenderGrade(d) {
       (weaknesses ? '<div class="block"><div class="label" style="color:var(--red-soft)">Weaknesses</div><ul style="padding-left:18px;font-size:13px;line-height:1.7">' + weaknesses + '</ul></div>' : '') +
       (d.better_version ? '<div class="block"><div class="label" style="color:var(--acc-soft)">Better version (STAR)</div><div class="text">' + escHtml(d.better_version) + '</div></div>' : '') +
       (d.coaching_tip ? '<div class="block"><div class="label" style="color:var(--purple)">Coaching tip</div><div class="text">' + escHtml(d.coaching_tip) + '</div></div>' : '') +
-      '<div style="margin-top:var(--s3); display:flex; gap:var(--s2)"><button class="btn btn-primary btn-sm" onclick="viNextQuestion()">Next Question →</button></div>' +
+      '<div style="margin-top:var(--s3); display:flex; gap:var(--s2)"><button class="btn btn-primary btn-sm" data-action="viNext">Next Question →</button></div>' +
     '</div>';
   $('vi-status').textContent = 'Q' + VI.asked + ' graded — Next when ready';
 }

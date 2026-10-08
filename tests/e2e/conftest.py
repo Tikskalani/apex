@@ -3,7 +3,7 @@
 The app under test is a copy of agent_server.py + index.html in a temp dir with
 a stub config.json, so the suite never reads or exposes the real keys, and
 every OpenAI call goes to tests/e2e/fake_openai.py. CDN libraries (jsPDF,
-docx, pdf.js, mammoth, html2pdf) still load from cdnjs, so the suite needs a
+docx, pdf.js, mammoth) still load from cdnjs/jsDelivr, so the suite needs a
 network connection, exactly like the app does.
 """
 import http.client

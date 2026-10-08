@@ -84,7 +84,6 @@ def test_1_smoke(probe):
     libs = page.evaluate("""() => ({
         jspdf:    !!(window.jspdf || window.jsPDF),
         docx:     typeof window.docx !== 'undefined',
-        html2pdf: typeof window.html2pdf !== 'undefined',
         pdfjsLib: typeof window.pdfjsLib !== 'undefined',
         mammoth:  typeof window.mammoth !== 'undefined'})""")
     missing = [k for k, ok in libs.items() if not ok]
@@ -242,3 +241,33 @@ def test_8_6_server_rejects_short_resume_with_message(probe):
       return {status: r.status, body: await r.json()};
     }""")
     assert r['status'] == 400 and 'too short' in r['body']['error']
+
+
+# ── Delegated actions (inline handlers were removed for the CSP) ─────────────
+
+def test_data_action_buttons_work(probe):
+    page = probe.page
+    go(page, 'templates')
+    page.click('.brand[data-action="tab"]')
+    expect(page.locator('#view-home')).to_have_class(re.compile(r'\bactive\b'))
+    page.click('#view-home [data-action="tab"][data-arg="templates"]')
+    expect(page.locator('#view-templates')).to_have_class(re.compile(r'\bactive\b'))
+    go(page, 'home')
+    page.click('#view-home [data-action="launch"]')
+    expect(page.locator('#drawer')).to_have_class(re.compile(r'\bopen\b'))
+    probe.assert_clean()
+
+
+# ── Upload round trip: our own exports must read back in (pdf.js / mammoth) ──
+
+@pytest.mark.parametrize('button,ext', [('#tpl-download', 'pdf'), ('#tpl-download-docx', 'docx')])
+def test_exported_resume_uploads_back(probe, fixture_resume, button, ext):
+    page = parsed_templates_page(probe, fixture_resume)
+    _, data = download(page, button)
+    page.fill('#resume-text', '')
+    page.set_input_files('#file-input', files=[{'name': f'resume.{ext}', 'mimeType': 'application/octet-stream',
+                                                 'buffer': data}])
+    toast(page, 'Resume loaded')
+    text = page.input_value('#resume-text')
+    assert 'Marcus Delgado' in text and 'Worked with SQL to get data from databases' in text, text[:300]
+    probe.assert_clean()
