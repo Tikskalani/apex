@@ -1,0 +1,3664 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000">
+<title>APEX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@200;300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600&display=swap">
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   APEX · Tesla-grade dashboard
+   ════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Deep blacks — Tesla MCU palette */
+  --bg-0: #000;
+  --bg-1: #08090b;
+  --bg-2: #0e1014;
+  --bg-3: #14171c;
+  --bg-4: #1b1f26;
+  --bg-5: #242931;
+  --bg-6: #2f3540;
+
+  /* Whites + grays */
+  --fg-0: #ffffff;
+  --fg-1: #e6e8ec;
+  --fg-2: #9aa0aa;
+  --fg-3: #5f6670;
+  --fg-4: #3a3f47;
+  --fg-5: #22262d;
+
+  /* Tesla blue + signature accents */
+  --acc: #3e9eff;
+  --acc-soft: #6db4ff;
+  --acc-glow: rgba(62, 158, 255, 0.45);
+  --acc-bg: rgba(62, 158, 255, 0.08);
+  --red: #e82127;
+  --red-soft: #ff5560;
+  --green: #00d97e;
+  --green-soft: #1fe89a;
+  --amber: #ffaa00;
+  --purple: #8b5cf6;
+  --teal: #14b8a6;
+  --pink: #ec4899;
+
+  /* Borders — barely there */
+  --line: rgba(255, 255, 255, 0.04);
+  --line-2: rgba(255, 255, 255, 0.07);
+  --line-3: rgba(255, 255, 255, 0.12);
+
+  /* Spacing — Tesla generous */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px;
+  --s6: 24px; --s7: 32px; --s8: 40px; --s9: 56px; --s10: 80px;
+
+  /* Radii — soft Tesla curves */
+  --r1: 8px; --r2: 12px; --r3: 16px; --r4: 22px; --r5: 28px; --r-pill: 999px;
+
+  /* Layout */
+  --topbar-h: 56px;
+  --dock-w: 72px;
+  --footer-h: 48px;
+
+  /* Type scale — Tesla huge */
+  --t-mega: clamp(56px, 9vw, 96px);
+  --t-display: clamp(32px, 5vw, 52px);
+  --t-h1: clamp(22px, 2.6vw, 28px);
+  --t-h2: clamp(16px, 1.6vw, 18px);
+  --t-body: 14px;
+  --t-sm: 12.5px;
+  --t-xs: 11px;
+  --t-tiny: 10px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --t-fast: 180ms var(--ease);
+  --t-med: 320ms var(--ease);
+  --t-slow: 520ms var(--ease);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%;
+  background: var(--bg-0);
+  color: var(--fg-0);
+  font-family: 'Inter Tight', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: var(--t-body);
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+/* Ambient background — subtle Tesla undertones */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: -2;
+  background:
+    radial-gradient(ellipse 1200px 800px at 20% 0%, rgba(62, 158, 255, 0.08), transparent 60%),
+    radial-gradient(ellipse 900px 700px at 80% 100%, rgba(139, 92, 246, 0.06), transparent 65%),
+    radial-gradient(ellipse 600px 500px at 50% 50%, rgba(20, 184, 166, 0.03), transparent 70%),
+    var(--bg-0);
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0; z-index: -1;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.012) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.012) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg-5); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--bg-6); }
+* { scrollbar-width: thin; scrollbar-color: var(--bg-5) transparent; }
+
+a { color: var(--acc); text-decoration: none; }
+a:hover { color: var(--acc-soft); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   APP SHELL — Tesla three-pane layout
+   ════════════════════════════════════════════════════════════════════════ */
+
+.app {
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr var(--footer-h);
+  height: 100vh;
+}
+
+/* ─── Top bar — minimal, Tesla-style ─── */
+.topbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--s5);
+  padding: 0 var(--s6);
+  background: linear-gradient(180deg, rgba(8,9,11,0.95) 0%, rgba(8,9,11,0.85) 100%);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  border-bottom: 1px solid var(--line);
+  position: relative; z-index: 50;
+}
+
+.brand {
+  display: flex; align-items: center; gap: var(--s3);
+  cursor: pointer; user-select: none;
+}
+.brand-mark {
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  position: relative;
+}
+.brand-mark svg { width: 28px; height: 28px; }
+.brand-name {
+  font-size: 16px; font-weight: 700; letter-spacing: 0.5px;
+  color: var(--fg-0);
+}
+.brand-sub {
+  font-size: 9px; font-weight: 600; letter-spacing: 2px;
+  color: var(--fg-3); text-transform: uppercase;
+  margin-top: -2px;
+}
+
+/* Top telemetry — center cluster */
+.telemetry {
+  display: flex; align-items: center; justify-content: center;
+  gap: var(--s6); padding: 0 var(--s5);
+}
+.tel-item {
+  display: flex; align-items: center; gap: var(--s2);
+  font-size: var(--t-xs);
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 500;
+  color: var(--fg-2);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.tel-val {
+  color: var(--fg-0); font-size: var(--t-sm); font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.tel-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--fg-3);
+}
+.tel-dot.live {
+  background: var(--green);
+  box-shadow: 0 0 0 0 var(--green);
+  animation: live-pulse 2s infinite;
+}
+@keyframes live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(0,217,126,0.7); }
+  100% { box-shadow: 0 0 0 8px rgba(0,217,126,0); }
+}
+.tel-dot.warn { background: var(--amber); }
+.tel-dot.err { background: var(--red); }
+
+.top-right { display: flex; align-items: center; gap: var(--s3); }
+
+.icon-btn {
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  background: transparent; border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: var(--t-fast);
+}
+.icon-btn:hover { background: var(--bg-3); border-color: var(--line-3); color: var(--fg-0); }
+.icon-btn svg { width: 16px; height: 16px; }
+.icon-btn.primary {
+  background: var(--acc); border-color: var(--acc); color: #fff;
+  box-shadow: 0 0 0 0 var(--acc-glow), 0 4px 14px rgba(62,158,255,0.35);
+  width: auto; padding: 0 var(--s4); height: 36px;
+  gap: var(--s2); font-weight: 600; font-size: 13px;
+  display: inline-flex; align-items: center;
+}
+.icon-btn.primary:hover {
+  background: var(--acc-soft); box-shadow: 0 0 0 4px rgba(62,158,255,0.15), 0 6px 18px rgba(62,158,255,0.45);
+}
+
+/* ─── Body: dock + canvas + drawer ─── */
+.body {
+  display: grid;
+  grid-template-columns: var(--dock-w) 1fr;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ─── DOCK — left icon rail, Tesla nav ─── */
+.dock {
+  background: var(--bg-1);
+  border-right: 1px solid var(--line);
+  padding: var(--s4) 0;
+  display: flex; flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+.dock::-webkit-scrollbar { display: none; }
+.dock-item {
+  position: relative;
+  width: 100%; height: 56px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: 0;
+  color: var(--fg-3);
+  cursor: pointer;
+  transition: var(--t-fast);
+}
+.dock-item svg { width: 22px; height: 22px; stroke-width: 1.6; }
+.dock-item:hover { color: var(--fg-0); background: var(--bg-2); }
+.dock-item.active { color: var(--acc); }
+.dock-item.active::before {
+  content: ''; position: absolute; left: 0; top: 12px; bottom: 12px;
+  width: 3px; background: var(--acc);
+  border-radius: 0 3px 3px 0;
+  box-shadow: 0 0 12px var(--acc-glow);
+}
+.dock-item::after {
+  content: attr(data-tip);
+  position: absolute; left: 100%; top: 50%;
+  transform: translate(8px, -50%);
+  background: var(--bg-5); color: var(--fg-0);
+  padding: 6px 10px; border-radius: var(--r1);
+  font-size: var(--t-xs); font-weight: 500;
+  white-space: nowrap;
+  opacity: 0; pointer-events: none;
+  transition: var(--t-fast);
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.dock-item:hover::after { opacity: 1; transform: translate(12px, -50%); }
+.dock-divider {
+  height: 1px; background: var(--line);
+  margin: var(--s2) var(--s4);
+}
+
+/* ─── CANVAS — main screen ─── */
+.canvas {
+  overflow-y: auto;
+  background: var(--bg-0);
+  position: relative;
+}
+.canvas-inner {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: var(--s8) var(--s7);
+  min-height: 100%;
+}
+.view { display: none; opacity: 0; }
+.view.active { display: block; animation: viewFadeIn 0.45s var(--ease) forwards; }
+@keyframes viewFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── View header (page title block) ─── */
+.view-header { margin-bottom: var(--s8); }
+.view-eyebrow {
+  font-size: var(--t-tiny); font-weight: 700; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--fg-3);
+  margin-bottom: var(--s3);
+  font-family: 'JetBrains Mono', monospace;
+}
+.view-title {
+  font-size: var(--t-display); font-weight: 300;
+  letter-spacing: -0.02em; line-height: 1.05;
+  color: var(--fg-0);
+}
+.view-title strong { font-weight: 700; }
+.view-subtitle {
+  margin-top: var(--s3); font-size: var(--t-h2);
+  color: var(--fg-2); max-width: 720px;
+  font-weight: 300;
+}
+
+/* ─── HERO mega gauge ─── */
+.hero {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--s8);
+  align-items: center;
+  margin-bottom: var(--s8);
+  padding: var(--s8) var(--s7);
+  background: linear-gradient(135deg, var(--bg-2) 0%, var(--bg-1) 100%);
+  border-radius: var(--r4);
+  border: 1px solid var(--line);
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute; top: -50%; right: -10%;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, var(--acc-glow), transparent 60%);
+  filter: blur(80px);
+  pointer-events: none;
+  opacity: 0.5;
+}
+.hero-content { position: relative; z-index: 1; }
+.hero-mega-num {
+  font-size: var(--t-mega); font-weight: 200;
+  letter-spacing: -0.04em; line-height: 0.95;
+  color: var(--fg-0);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: var(--s2);
+}
+.hero-mega-num .small { font-size: 0.4em; color: var(--fg-2); font-weight: 300; }
+.hero-mega-label {
+  font-size: var(--t-tiny); font-weight: 700; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--fg-3);
+  font-family: 'JetBrains Mono', monospace;
+}
+.hero-meta {
+  margin-top: var(--s5);
+  display: flex; flex-wrap: wrap; gap: var(--s5);
+}
+.hero-meta-item .v {
+  font-size: var(--t-h1); font-weight: 500;
+  color: var(--fg-0); font-variant-numeric: tabular-nums;
+}
+.hero-meta-item .l {
+  font-size: var(--t-tiny); font-weight: 600; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--fg-3);
+  margin-top: 2px;
+}
+
+/* ─── Tesla-style speedometer gauge ─── */
+.gauge {
+  position: relative;
+  width: 280px; height: 280px;
+}
+.gauge svg { width: 100%; height: 100%; }
+.gauge-center {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  text-align: center;
+}
+.gauge-num {
+  font-size: 64px; font-weight: 200;
+  letter-spacing: -0.04em; line-height: 1;
+  color: var(--fg-0); font-variant-numeric: tabular-nums;
+}
+.gauge-lbl {
+  font-size: var(--t-tiny); font-weight: 700; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--fg-3); margin-top: 6px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.gauge-delta {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: var(--t-xs); font-weight: 600;
+  color: var(--green); margin-top: 6px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.gauge-delta.neg { color: var(--red-soft); }
+
+/* ─── Card system ─── */
+.card {
+  background: linear-gradient(180deg, var(--bg-2) 0%, var(--bg-1) 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  padding: var(--s6);
+  transition: var(--t-fast);
+}
+.card:hover { border-color: var(--line-2); }
+.card-h {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s4); margin-bottom: var(--s5);
+  flex-wrap: wrap;
+}
+.card-h h3 {
+  font-size: var(--t-h1); font-weight: 500; color: var(--fg-0);
+  letter-spacing: -0.01em;
+}
+.card-h .h-sub {
+  font-size: var(--t-xs); font-weight: 500;
+  color: var(--fg-3); letter-spacing: 1px; text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+}
+.card-h .badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  font-size: 10px; font-weight: 600; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--fg-2);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: var(--s5); }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--s5); }
+.grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--s4); }
+
+/* ─── Stats / readout tiles ─── */
+.tile {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  padding: var(--s5);
+  transition: var(--t-fast);
+}
+.tile:hover { background: var(--bg-3); }
+.tile .v {
+  font-size: 32px; font-weight: 300; letter-spacing: -0.02em;
+  color: var(--fg-0); line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.tile .v .unit { font-size: 0.5em; color: var(--fg-3); font-weight: 400; margin-left: 4px; }
+.tile .l {
+  font-size: 10px; font-weight: 600; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--fg-3);
+  margin-top: 8px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.tile .trend {
+  font-size: var(--t-xs); font-weight: 600;
+  color: var(--green); margin-top: 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.tile .trend.neg { color: var(--red-soft); }
+
+/* ─── Empty hero state (default landing) ─── */
+.welcome {
+  text-align: left; padding: var(--s10) 0 var(--s8);
+  max-width: 900px;
+}
+.welcome h1 {
+  font-size: var(--t-mega); font-weight: 200;
+  letter-spacing: -0.05em; line-height: 0.95;
+  color: var(--fg-0); margin-bottom: var(--s5);
+}
+.welcome h1 strong {
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--acc) 0%, var(--acc-soft) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.welcome p {
+  font-size: var(--t-h2); color: var(--fg-2);
+  font-weight: 300; max-width: 720px;
+  line-height: 1.6;
+}
+.welcome-cta {
+  margin-top: var(--s7);
+  display: flex; gap: var(--s3); flex-wrap: wrap;
+}
+.welcome-stats {
+  margin-top: var(--s9);
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1px; background: var(--line);
+  border-radius: var(--r3); overflow: hidden;
+  border: 1px solid var(--line);
+}
+.welcome-stat {
+  padding: var(--s5);
+  background: var(--bg-1);
+}
+.welcome-stat .v {
+  font-size: 36px; font-weight: 300;
+  letter-spacing: -0.02em; color: var(--fg-0);
+  font-variant-numeric: tabular-nums;
+}
+.welcome-stat .v .unit { font-size: 16px; color: var(--fg-2); font-weight: 400; }
+.welcome-stat .l {
+  font-size: 10px; font-weight: 600; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--fg-3); margin-top: 6px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ─── Buttons ─── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--s2); height: 44px; padding: 0 var(--s5);
+  background: var(--bg-3); border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  color: var(--fg-0);
+  font-family: inherit; font-size: var(--t-body); font-weight: 500;
+  cursor: pointer; transition: var(--t-fast);
+  letter-spacing: 0.01em;
+}
+.btn:hover { background: var(--bg-4); border-color: var(--line-3); transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn-primary {
+  background: var(--acc); border-color: var(--acc); color: #fff;
+  box-shadow: 0 0 0 0 rgba(62,158,255,0.6), 0 4px 24px rgba(62,158,255,0.30);
+}
+.btn-primary:hover {
+  background: var(--acc-soft);
+  box-shadow: 0 0 0 6px rgba(62,158,255,0.10), 0 8px 32px rgba(62,158,255,0.50);
+}
+.btn-big { height: 52px; padding: 0 var(--s6); font-size: 15px; font-weight: 600; }
+.btn-sm { height: 32px; padding: 0 var(--s3); font-size: 12px; }
+.btn-ghost { background: transparent; }
+.btn-block { width: 100%; }
+.btn-danger { background: var(--red); border-color: var(--red); }
+.btn-danger:hover { background: var(--red-soft); }
+
+/* ─── Inputs ─── */
+input[type="text"], input[type="email"], input[type="password"], select, textarea {
+  width: 100%; padding: 12px 14px;
+  background: var(--bg-2); border: 1px solid var(--line-2);
+  border-radius: var(--r2); color: var(--fg-0);
+  font-family: inherit; font-size: var(--t-body);
+  transition: var(--t-fast); outline: none;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--acc);
+  background: var(--bg-3);
+  box-shadow: 0 0 0 4px var(--acc-bg);
+}
+input::placeholder, textarea::placeholder { color: var(--fg-4); }
+textarea { min-height: 96px; resize: vertical; line-height: 1.55; }
+label {
+  display: block; font-size: 10px; font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase;
+  color: var(--fg-3); margin-bottom: 8px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ─── DRAWER — Tesla-style slide from right ─── */
+.drawer-scrim {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--t-med);
+}
+.drawer-scrim.open { opacity: 1; pointer-events: auto; }
+
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(440px, 100vw); z-index: 210;
+  background: var(--bg-1);
+  border-left: 1px solid var(--line-2);
+  box-shadow: -16px 0 60px rgba(0,0,0,0.6);
+  transform: translateX(100%);
+  transition: transform var(--t-med);
+  display: flex; flex-direction: column;
+}
+.drawer.open { transform: translateX(0); }
+.drawer-header {
+  padding: var(--s5) var(--s6);
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+}
+.drawer-header h2 {
+  font-size: var(--t-h1); font-weight: 500; letter-spacing: -0.01em;
+}
+.drawer-body { flex: 1; overflow-y: auto; padding: var(--s6); }
+.drawer-section { margin-bottom: var(--s6); }
+.drawer-footer {
+  padding: var(--s5) var(--s6);
+  border-top: 1px solid var(--line);
+  background: var(--bg-2);
+}
+
+/* ─── Upload zone ─── */
+.upload-zone {
+  margin-top: var(--s2);
+  border: 1.5px dashed var(--line-3);
+  border-radius: var(--r2);
+  padding: var(--s5);
+  text-align: center; cursor: pointer;
+  transition: var(--t-fast);
+  background: var(--bg-2);
+}
+.upload-zone:hover, .upload-zone.dragover {
+  border-color: var(--acc);
+  background: var(--acc-bg);
+}
+.upload-zone .ico { font-size: 24px; opacity: 0.6; margin-bottom: 6px; }
+.upload-zone .text { font-size: var(--t-sm); color: var(--fg-2); }
+.upload-zone strong { color: var(--acc); }
+
+/* ─── KEYWORD chips — Tesla pill style ─── */
+.kw-row {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.kw {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-3); border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  font-size: 12px; font-weight: 500;
+  color: var(--fg-1);
+  transition: var(--t-fast);
+}
+.kw .freq {
+  font-size: 10px; font-weight: 600; opacity: 0.7;
+  font-family: 'JetBrains Mono', monospace;
+}
+.kw:hover { transform: translateY(-1px); border-color: var(--line-3); }
+.kw.hot { background: rgba(232,33,39,0.10); color: #ff7d82; border-color: rgba(232,33,39,0.20); }
+.kw.warm { background: rgba(255,170,0,0.10); color: #ffc857; border-color: rgba(255,170,0,0.20); }
+.kw.cold { background: rgba(62,158,255,0.10); color: var(--acc-soft); border-color: rgba(62,158,255,0.20); }
+.kw.em { background: rgba(139,92,246,0.10); color: #b39bff; border-color: rgba(139,92,246,0.20); }
+.kw.hard { background: rgba(20,184,166,0.10); color: #4dd6c5; border-color: rgba(20,184,166,0.20); }
+.kw.soft { background: rgba(236,72,153,0.10); color: #f49ec9; border-color: rgba(236,72,153,0.20); }
+.kw.sal { background: rgba(0,217,126,0.10); color: var(--green-soft); border-color: rgba(0,217,126,0.20); }
+
+.cluster {
+  margin-bottom: var(--s5);
+}
+.cluster-h {
+  display: flex; align-items: center; gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+.cluster-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 2px;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+}
+.cluster-count {
+  font-size: 10px; color: var(--fg-3);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ─── Resume diff ─── */
+.diff-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--s5);
+}
+.diff-col h4 {
+  font-size: 10px; font-weight: 700; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--fg-3);
+  margin-bottom: var(--s3);
+  display: flex; align-items: center; gap: var(--s2);
+  font-family: 'JetBrains Mono', monospace;
+}
+.diff-col.opt h4 { color: var(--acc); }
+.diff-pre {
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--r2); padding: var(--s5);
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  line-height: 1.75; color: var(--fg-1);
+  max-height: 640px; overflow-y: auto; white-space: pre-wrap;
+}
+.diff-pre.opt { border-color: rgba(62,158,255,0.25); background: rgba(62,158,255,0.03); }
+.diff-pre mark {
+  background: rgba(62,158,255,0.18); color: var(--acc-soft);
+  padding: 1px 4px; border-radius: 3px; font-weight: 600;
+}
+
+/* ─── Live jobs feed ─── */
+.jobs-toolbar {
+  display: flex; gap: var(--s3); margin-bottom: var(--s5);
+  flex-wrap: wrap;
+}
+.jobs-toolbar input { flex: 1; min-width: 240px; }
+
+.job-card {
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--r3); padding: var(--s5);
+  margin-bottom: var(--s3);
+  transition: var(--t-fast);
+}
+.job-card:hover {
+  border-color: var(--line-3);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+.job-head { display: flex; gap: var(--s4); justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
+.job-title { font-size: 16px; font-weight: 600; color: var(--fg-0); margin-bottom: 4px; letter-spacing: -0.005em; }
+.job-meta { font-size: 12px; color: var(--fg-3); display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.job-meta span { display: inline-flex; align-items: center; gap: 4px; }
+.job-source {
+  padding: 4px 10px; background: var(--bg-3); border: 1px solid var(--line-2);
+  border-radius: var(--r-pill); font-size: 10px; font-weight: 700;
+  color: var(--fg-2); letter-spacing: 1px; text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+  flex-shrink: 0;
+}
+.job-salary { color: var(--green-soft); font-weight: 600; }
+
+/* ─── Match score badge + filter pills + shared keywords ─── */
+.match-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: var(--r-pill);
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  font-weight: 700; letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+.match-badge .pct { font-size: 13px; }
+.match-badge.strong { background: rgba(0,217,126,0.12); color: var(--green-soft); border: 1px solid rgba(0,217,126,0.30); }
+.match-badge.good   { background: rgba(255,170,0,0.12); color: var(--amber); border: 1px solid rgba(255,170,0,0.30); }
+.match-badge.weak   { background: rgba(232,33,39,0.10); color: var(--red-soft); border: 1px solid rgba(232,33,39,0.25); }
+.match-badge.none   { background: var(--bg-3); color: var(--fg-3); border: 1px solid var(--line-2); }
+
+.match-bar {
+  height: 4px; background: var(--bg-3); border-radius: 2px;
+  overflow: hidden; margin-top: 8px; width: 100%;
+}
+.match-bar > span {
+  display: block; height: 100%;
+  border-radius: 2px;
+  transition: width 0.6s var(--ease);
+}
+.match-bar > span.strong { background: linear-gradient(90deg, var(--green), var(--green-soft)); }
+.match-bar > span.good   { background: linear-gradient(90deg, var(--amber), #ffc857); }
+.match-bar > span.weak   { background: linear-gradient(90deg, var(--red), var(--red-soft)); }
+
+.shared-keys {
+  display: flex; flex-wrap: wrap; gap: 5px;
+  margin-top: var(--s3); padding-top: var(--s3);
+  border-top: 1px dashed var(--line);
+}
+.shared-keys-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--fg-3);
+  font-family: 'JetBrains Mono', monospace;
+  margin-right: 4px; align-self: center;
+}
+.shared-key {
+  display: inline-block; padding: 3px 9px;
+  background: rgba(62,158,255,0.10); color: var(--acc-soft);
+  border: 1px solid rgba(62,158,255,0.20);
+  border-radius: var(--r-pill); font-size: 10.5px; font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Filter pills */
+.filter-pill { padding: 5px 11px; height: 32px; font-size: 12px; }
+.filter-pill.active {
+  background: var(--acc); border-color: var(--acc); color: #fff;
+  box-shadow: 0 0 0 3px rgba(62,158,255,0.18);
+}
+.job-snippet { font-size: 13px; color: var(--fg-2); margin-top: var(--s3); line-height: 1.6; }
+.job-actions { display: flex; gap: var(--s2); margin-top: var(--s4); flex-wrap: wrap; }
+
+/* ─── PDF Templates ─── */
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--s5); }
+.tpl-card {
+  background: var(--bg-2); border: 2px solid var(--line);
+  border-radius: var(--r3); padding: var(--s5);
+  cursor: pointer; transition: var(--t-med);
+  position: relative;
+}
+.tpl-card:hover { border-color: var(--line-3); transform: translateY(-3px); box-shadow: 0 12px 32px rgba(0,0,0,0.4); }
+.tpl-card.selected {
+  border-color: var(--acc);
+  background: linear-gradient(180deg, rgba(62,158,255,0.04), rgba(62,158,255,0.01));
+  box-shadow: 0 0 0 4px rgba(62,158,255,0.10), 0 8px 24px rgba(62,158,255,0.15);
+}
+.tpl-card.selected::after {
+  content: ''; position: absolute; top: 14px; right: 14px;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--acc);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: center;
+}
+.tpl-preview {
+  width: 100%; aspect-ratio: 8.5/11;
+  background: #fff; border-radius: var(--r2);
+  margin-bottom: var(--s4); overflow: hidden;
+  position: relative; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.tpl-preview iframe {
+  border: 0; pointer-events: none;
+  transform: scale(0.55); transform-origin: top left;
+  width: 181.82%; height: 181.82%;
+}
+.tpl-card h4 { font-size: 15px; font-weight: 600; color: var(--fg-0); margin-bottom: 4px; }
+.tpl-card p { font-size: 12px; color: var(--fg-3); line-height: 1.5; }
+
+/* ─── Alerts ─── */
+.alert-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--s4); margin-bottom: var(--s5); }
+.alert-card {
+  display: flex; align-items: center; gap: var(--s4);
+  padding: var(--s4) var(--s5);
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--r2);
+  margin-bottom: var(--s2);
+  flex-wrap: wrap;
+}
+.alert-info { flex: 1; min-width: 240px; }
+.alert-info .t { font-weight: 600; color: var(--fg-0); font-size: 14px; }
+.alert-info .m { color: var(--fg-3); font-size: 12px; margin-top: 2px; font-family: 'JetBrains Mono', monospace; }
+.alert-freq {
+  padding: 5px 10px;
+  background: var(--acc-bg);
+  color: var(--acc-soft);
+  border: 1px solid rgba(62,158,255,0.25);
+  border-radius: var(--r-pill);
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1.5px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ─── Content blocks ─── */
+.block {
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--r2); padding: var(--s5);
+  margin-bottom: var(--s3);
+}
+.block .label {
+  font-size: 10px; font-weight: 700; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--fg-3);
+  margin-bottom: var(--s3);
+  font-family: 'JetBrains Mono', monospace;
+}
+.block .text { font-size: 13.5px; line-height: 1.7; color: var(--fg-1); white-space: pre-wrap; }
+
+.qa-item {
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--r2); padding: var(--s4) var(--s5);
+  margin-bottom: var(--s3);
+}
+.qa-item .q { font-weight: 600; color: var(--fg-0); margin-bottom: var(--s2); font-size: 14px; }
+.qa-item .a { color: var(--fg-1); font-size: 13.5px; line-height: 1.7; }
+.qa-item .tip {
+  color: var(--acc-soft); font-size: 12px; font-weight: 500;
+  padding-top: var(--s3); margin-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
+
+/* ─── Footer telemetry strip ─── */
+.footer {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--s5);
+  padding: 0 var(--s6);
+  background: linear-gradient(0deg, var(--bg-1) 0%, rgba(8,9,11,0.85) 100%);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid var(--line);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--t-xs);
+}
+.foot-status {
+  display: flex; align-items: center; gap: var(--s2);
+  color: var(--fg-2); font-weight: 500;
+}
+.foot-pipeline {
+  display: flex; align-items: center;
+  gap: var(--s2);
+  overflow-x: auto; scrollbar-width: none;
+  white-space: nowrap;
+}
+.foot-pipeline::-webkit-scrollbar { display: none; }
+.pipe-step {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  font-size: 10px; font-weight: 600; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--fg-3);
+  transition: var(--t-fast);
+  flex-shrink: 0;
+}
+.pipe-step.running {
+  background: var(--acc-bg); color: var(--acc); border-color: rgba(62,158,255,0.25);
+}
+.pipe-step.done { color: var(--green); border-color: rgba(0,217,126,0.20); }
+.pipe-step.fail { color: var(--red-soft); border-color: rgba(232,33,39,0.25); }
+.pipe-step .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+  flex-shrink: 0;
+}
+.pipe-step.running .dot { animation: live-pulse 1.4s infinite; box-shadow: 0 0 0 0 currentColor; }
+.pipe-arr { color: var(--fg-4); }
+
+.foot-cost { color: var(--fg-2); font-weight: 500; }
+
+/* ─── Toast ─── */
+.toast {
+  position: fixed; bottom: calc(var(--footer-h) + 16px); left: 50%;
+  transform: translateX(-50%) translateY(40px);
+  background: var(--bg-4); color: var(--fg-0);
+  padding: 14px 22px; border-radius: var(--r-pill);
+  border: 1px solid var(--line-3);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+  font-size: 13px; font-weight: 500;
+  transition: var(--t-med); z-index: 1000;
+  max-width: 90vw;
+  opacity: 0;
+}
+.toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+.toast.ok { border-color: var(--green); box-shadow: 0 12px 40px rgba(0,217,126,0.25); }
+.toast.err { border-color: var(--red); box-shadow: 0 12px 40px rgba(232,33,39,0.25); }
+
+/* ─── Tailor+Apply Modal ─── */
+.modal-scrim {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(0,0,0,0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--t-med);
+}
+.modal-scrim.open { opacity: 1; pointer-events: auto; }
+
+.modal {
+  position: fixed; top: 5vh; left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  width: min(1100px, 95vw); max-height: 90vh;
+  z-index: 310; background: var(--bg-1);
+  border: 1px solid var(--line-3); border-radius: var(--r4);
+  box-shadow: 0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(62,158,255,0.15);
+  display: flex; flex-direction: column;
+  opacity: 0; pointer-events: none;
+  transition: var(--t-med);
+}
+.modal.open { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+.modal-header {
+  padding: var(--s5) var(--s6);
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap; gap: var(--s3);
+}
+.modal-header h2 {
+  font-size: var(--t-h1); font-weight: 500; letter-spacing: -0.01em;
+  flex: 1; min-width: 200px;
+}
+.modal-header .h-sub { font-size: var(--t-xs); color: var(--fg-3); margin-top: 2px; font-family: 'JetBrains Mono', monospace; }
+.modal-body { flex: 1; overflow-y: auto; padding: var(--s6); }
+.modal-cols {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--s5);
+}
+@media (max-width: 880px) { .modal-cols { grid-template-columns: 1fr; } }
+.modal-col h4 {
+  font-size: 10px; font-weight: 700; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--fg-3); margin-bottom: var(--s3);
+  font-family: 'JetBrains Mono', monospace;
+  display: flex; align-items: center; gap: 8px; justify-content: space-between;
+}
+.modal-col h4 .copy-btn { font-family: 'Inter Tight', sans-serif; }
+.modal-col-body {
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--r2); padding: var(--s4);
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  line-height: 1.7; color: var(--fg-1);
+  height: 60vh; max-height: 520px; overflow-y: auto; white-space: pre-wrap;
+}
+.modal-footer {
+  padding: var(--s5) var(--s6);
+  display: flex; gap: var(--s3); flex-wrap: wrap; align-items: center;
+  border-top: 1px solid var(--line);
+  background: var(--bg-2);
+}
+
+/* ─── Spinner ─── */
+.spinner {
+  display: inline-block; width: 16px; height: 16px;
+  border: 2px solid var(--line-2); border-top-color: var(--acc);
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+  vertical-align: middle; margin-right: 8px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Activity log ─── */
+.log-panel {
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--r2); padding: var(--s3);
+  max-height: 240px; overflow-y: auto;
+  font-family: 'JetBrains Mono', monospace; font-size: var(--t-xs);
+  line-height: 1.7;
+}
+.log-line { color: var(--fg-2); word-break: break-word; }
+.log-line.ok { color: var(--green-soft); }
+.log-line.warn { color: var(--amber); }
+.log-line.fail { color: var(--red-soft); }
+.log-line.dim { color: var(--fg-3); }
+
+/* ─── Tracker ─── */
+.tracker-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tracker-table th {
+  text-align: left; padding: var(--s3) var(--s4);
+  font-size: 10px; text-transform: uppercase; letter-spacing: 2px;
+  color: var(--fg-3); font-weight: 700;
+  border-bottom: 1px solid var(--line);
+  font-family: 'JetBrains Mono', monospace;
+}
+.tracker-table td {
+  padding: var(--s4); color: var(--fg-1);
+  border-bottom: 1px solid var(--line);
+}
+
+/* ─── Hide / utility ─── */
+.hidden { display: none !important; }
+.copy-btn {
+  padding: 5px 12px; background: var(--bg-3); color: var(--fg-2);
+  border: 1px solid var(--line-2); border-radius: var(--r-pill);
+  font-size: 11px; font-weight: 600; cursor: pointer;
+  transition: var(--t-fast);
+  font-family: inherit;
+}
+.copy-btn:hover { background: var(--acc); color: #fff; border-color: var(--acc); }
+.empty {
+  text-align: center; padding: var(--s9) var(--s5);
+  color: var(--fg-3); font-size: 13px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 1100px) {
+  .canvas-inner { padding: var(--s7) var(--s6); }
+  .hero { grid-template-columns: 1fr; text-align: left; padding: var(--s7); }
+  .gauge { width: 220px; height: 220px; margin: 0 auto; }
+}
+
+@media (max-width: 880px) {
+  :root { --dock-w: 56px; --topbar-h: 52px; --footer-h: 44px; }
+  .dock-item svg { width: 20px; height: 20px; }
+  .canvas-inner { padding: var(--s6) var(--s5); }
+  .welcome { padding: var(--s8) 0 var(--s7); }
+  .welcome h1 { font-size: clamp(40px, 9vw, 64px); }
+  .telemetry { display: none; }
+  .topbar { padding: 0 var(--s4); }
+  .brand-sub { display: none; }
+  .hero-meta { gap: var(--s4); }
+  .foot-pipeline { padding: 0 var(--s2); }
+  .pipe-step { padding: 3px 8px; font-size: 9px; }
+  .diff-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .canvas-inner { padding: var(--s5) var(--s4); }
+  .hero { padding: var(--s5); }
+  .gauge { width: 180px; height: 180px; }
+  .card { padding: var(--s5); }
+  .welcome-stats { grid-template-columns: 1fr 1fr; }
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .tpl-grid { grid-template-columns: 1fr; }
+  .footer { padding: 0 var(--s3); gap: var(--s3); }
+  .foot-cost { display: none; }
+  .foot-status .lbl { display: none; }
+}
+
+@media (max-width: 400px) {
+  :root { --dock-w: 48px; }
+  .dock-item { height: 48px; }
+  .dock-item svg { width: 18px; height: 18px; }
+  .drawer { width: 100vw; }
+}
+
+@media print {
+  .topbar, .dock, .footer, .drawer, .drawer-scrim { display: none !important; }
+  .body { grid-template-columns: 1fr; }
+  .view { display: block !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ═══════════════════════ TOP BAR ═══════════════════════ -->
+  <header class="topbar">
+    <div class="brand" onclick="switchTab('home')">
+      <div class="brand-mark">
+        <svg viewBox="0 0 32 32" fill="none">
+          <defs>
+            <linearGradient id="bg" x1="0" y1="0" x2="32" y2="32">
+              <stop offset="0" stop-color="#3e9eff"/>
+              <stop offset="1" stop-color="#8b5cf6"/>
+            </linearGradient>
+          </defs>
+          <path d="M16 2 L28 26 L22 26 L19.5 20 L12.5 20 L10 26 L4 26 Z M16 9 L13.5 16 L18.5 16 Z" fill="url(#bg)"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-name">APEX</div>
+        <div class="brand-sub">v10 · Career Intelligence</div>
+      </div>
+    </div>
+
+    <div class="telemetry">
+      <div class="tel-item"><span class="tel-dot live" id="tel-server"></span>SERVER<span class="tel-val" id="tel-server-v">…</span></div>
+      <div class="tel-item"><span class="tel-dot" id="tel-smtp"></span>SMTP<span class="tel-val" id="tel-smtp-v">—</span></div>
+      <div class="tel-item">ATS<span class="tel-val" id="tel-ats">—</span></div>
+      <div class="tel-item">JOBS<span class="tel-val" id="tel-jobs">—</span></div>
+    </div>
+
+    <div class="top-right">
+      <button class="icon-btn" id="open-log" aria-label="Activity">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
+      </button>
+      <button class="icon-btn primary" id="open-drawer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <span>Launch</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════ BODY ═══════════════════════ -->
+  <div class="body">
+
+    <!-- ─── DOCK (left icon rail) ─── -->
+    <nav class="dock" id="dock">
+      <button class="dock-item active" data-view="home" data-tip="Home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 L12 3 L21 12 M5 10 V21 H19 V10"/></svg></button>
+      <button class="dock-item" data-view="market" data-tip="Market Intel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 M3 12 H21 M12 3 a14 14 0 0 1 0 18 a14 14 0 0 1 0 -18"/></svg></button>
+      <button class="dock-item" data-view="resume" data-tip="Resume X-Ray"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2 H6 A2 2 0 0 0 4 4 V20 A2 2 0 0 0 6 22 H18 A2 2 0 0 0 20 20 V8 Z M14 2 V8 H20 M9 13 H15 M9 17 H13"/></svg></button>
+      <button class="dock-item" data-view="gap" data-tip="Gap Report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3 V21 H21 M7 14 L10 11 L14 15 L20 9"/></svg></button>
+      <button class="dock-item" data-view="templates" data-tip="PDF Templates"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></button>
+      <button class="dock-item" data-view="jobs" data-tip="Live Jobs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21 V5 a2 2 0 0 0 -2 -2 H10 a2 2 0 0 0 -2 2 V21"/></svg></button>
+      <button class="dock-item" data-view="alerts" data-tip="Job Alerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8 a6 6 0 0 1 12 0 c0 7 3 9 3 9 H3 s3 -2 3 -9 M10 21 a2 2 0 0 0 4 0"/></svg></button>
+      <div class="dock-divider"></div>
+      <button class="dock-item" data-view="cl" data-tip="Cover Letter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4 H20 A2 2 0 0 1 22 6 V18 A2 2 0 0 1 20 20 H4 A2 2 0 0 1 2 18 V6 A2 2 0 0 1 4 4 M2 7 L12 13 L22 7"/></svg></button>
+      <button class="dock-item" data-view="iv" data-tip="Interview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9 11 A3 3 0 0 1 15 11 c0 2 -3 2 -3 4 M12 17 v.01"/></svg></button>
+      <button class="dock-item" data-view="linkedin" data-tip="LinkedIn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8 a6 6 0 0 1 6 6 V21 H18 V14 a2 2 0 0 0 -4 0 V21 H10 V8 H14 V10 M6 4 a2 2 0 1 1 -.001 4 a2 2 0 0 1 .001 -4 M2 9 H6 V21 H2 Z"/></svg></button>
+      <button class="dock-item" data-view="outreach" data-tip="Outreach"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 L22 2 L13 21 L11 13 Z"/></svg></button>
+      <button class="dock-item" data-view="velocity" data-tip="Velocity"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M5 16 L9 12 L13 16 L19 8 M14 8 H19 V13"/></svg></button>
+      <div class="dock-divider"></div>
+      <button class="dock-item" data-view="bullets" data-tip="Bullets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="5" cy="18" r="2"/><line x1="11" y1="6" x2="21" y2="6"/><line x1="11" y1="12" x2="21" y2="12"/><line x1="11" y1="18" x2="21" y2="18"/></svg></button>
+      <button class="dock-item" data-view="tailor" data-tip="Tailor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg></button>
+      <button class="dock-item" data-view="match" data-tip="Match"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 L9 17 L4 12"/></svg></button>
+      <button class="dock-item" data-view="weakness" data-tip="Weakness X-Ray"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg></button>
+      <button class="dock-item" data-view="negotiate" data-tip="Negotiate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5 H9.5 a3.5 3.5 0 0 0 0 7 h5 a3.5 3.5 0 0 1 0 7 H6"/></svg></button>
+      <button class="dock-item" data-view="bridge" data-tip="Career Bridge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12 H22 M5 12 V8 M9 12 V6 M15 12 V6 M19 12 V8 M3 16 H21"/></svg></button>
+      <button class="dock-item" data-view="tracker" data-tip="Tracker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
+    </nav>
+
+    <!-- ─── CANVAS ─── -->
+    <main class="canvas">
+      <div class="canvas-inner">
+
+        <!-- ═══ HOME ═══ -->
+        <section class="view active" id="view-home">
+          <div class="welcome">
+            <div class="view-eyebrow">APEX · v10</div>
+            <h1>The world's most <strong>capable</strong><br>resume agent.</h1>
+            <p>Real-time market scraping across 11 free job boards. Self-improving rewrites. 6 designer-grade PDF templates. Email job alerts. Fully responsive. Built to be unbeatable — and free.</p>
+            <div class="welcome-cta">
+              <button class="btn btn-primary btn-big" onclick="$('open-drawer').click()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                Launch Agent
+              </button>
+              <button class="btn btn-big" onclick="switchTab('templates')">
+                Browse PDF Templates
+              </button>
+              <button class="btn btn-big" onclick="switchTab('jobs')">
+                Live Jobs Feed
+              </button>
+            </div>
+            <div class="welcome-stats">
+              <div class="welcome-stat"><div class="v">11<span class="unit">sources</span></div><div class="l">Live job boards</div></div>
+              <div class="welcome-stat"><div class="v">6<span class="unit">styles</span></div><div class="l">PDF templates</div></div>
+              <div class="welcome-stat"><div class="v">18<span class="unit">tabs</span></div><div class="l">Sub-agents</div></div>
+              <div class="welcome-stat"><div class="v">~18<span class="unit">¢</span></div><div class="l">Per full run</div></div>
+              <div class="welcome-stat"><div class="v">0<span class="unit">deps</span></div><div class="l">Pure stdlib</div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══ MARKET INTEL ═══ -->
+        <section class="view" id="view-market">
+          <div class="view-header">
+            <div class="view-eyebrow">01 · Intelligence</div>
+            <h2 class="view-title">Market <strong>Intel</strong></h2>
+            <p class="view-subtitle">Live keyword extraction from real job postings, ranked by demand.</p>
+          </div>
+          <div id="market-content">
+            <div class="empty">Launch the agent to scan your market.</div>
+          </div>
+        </section>
+
+        <!-- ═══ RESUME X-RAY ═══ -->
+        <section class="view" id="view-resume">
+          <div class="view-header">
+            <div class="view-eyebrow">02 · X-Ray</div>
+            <h2 class="view-title">Resume <strong>X-Ray</strong></h2>
+            <p class="view-subtitle">Original vs. APEX-rewritten, side by side. Optimized text in <span style="color:var(--acc)">blue</span> highlights injected keywords.</p>
+          </div>
+          <div id="resume-content"><div class="empty">Run the agent to see your diff.</div></div>
+        </section>
+
+        <!-- ═══ GAP REPORT ═══ -->
+        <section class="view" id="view-gap">
+          <div class="view-header">
+            <div class="view-eyebrow">03 · Diagnostic</div>
+            <h2 class="view-title">Gap <strong>Report</strong></h2>
+            <p class="view-subtitle">Surgical analysis: bullet rewrites with reasons, sector-specific recommendations, next steps.</p>
+          </div>
+          <div id="gap-content"><div class="empty">Gap analysis appears after a run.</div></div>
+        </section>
+
+        <!-- ═══ PDF TEMPLATES ═══ -->
+        <section class="view" id="view-templates">
+          <div class="view-header">
+            <div class="view-eyebrow">04 · Studio</div>
+            <h2 class="view-title">PDF <strong>Templates</strong></h2>
+            <p class="view-subtitle">Six designer-grade, ATS-friendly templates. Pick one, hit download — your resume comes out perfectly formatted.</p>
+          </div>
+          <div class="card">
+            <div class="card-h">
+              <h3>Choose a template</h3>
+              <span class="badge"><span class="tel-dot live"></span>6 designs</span>
+            </div>
+            <div class="tpl-grid" id="tpl-grid"><div class="empty">Loading templates…</div></div>
+            <div id="tpl-actions" style="display:none; gap:var(--s3); margin-top:var(--s6); flex-wrap:wrap">
+              <button class="btn btn-primary" id="tpl-download">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M21 15 V19 A2 2 0 0 1 19 21 H5 A2 2 0 0 1 3 19 V15 M7 10 L12 15 L17 10 M12 15 V3"/></svg>
+                Download PDF
+              </button>
+              <button class="btn" id="tpl-download-docx">Download DOCX</button>
+              <button class="btn" id="tpl-download-txt">Download TXT</button>
+              <button class="btn" id="tpl-preview">Preview Full</button>
+              <button class="btn" id="tpl-reparse">Re-parse Resume</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══ LIVE JOBS ═══ -->
+        <section class="view" id="view-jobs">
+          <div class="view-header">
+            <div class="view-eyebrow">05 · Feed</div>
+            <h2 class="view-title">Live <strong>Jobs</strong></h2>
+            <p class="view-subtitle">Real listings from 6+ free sources. Click to apply directly, or score the match before you do.</p>
+          </div>
+          <div class="card">
+            <div class="card-h">
+              <h3>Search the market</h3>
+              <span class="badge" id="jobs-count">—</span>
+            </div>
+            <div class="jobs-toolbar">
+              <input type="text" id="jobs-q" placeholder="Search role… (e.g. 'physical therapist houston')" style="flex:2; min-width:200px" list="jobs-q-suggest">
+              <input type="text" id="jobs-location" placeholder="Location — autocompletes as you type" style="flex:1; min-width:200px" list="cities-datalist">
+              <datalist id="cities-datalist"></datalist>
+              <button class="btn btn-primary" id="jobs-search-btn">Search</button>
+            </div>
+            <div style="margin-bottom:var(--s3); display:flex; gap:6px; flex-wrap:wrap; align-items:center">
+              <span style="font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--fg-3); font-family:'JetBrains Mono',monospace; margin-right:4px">QUICK:</span>
+              <button class="btn btn-sm" onclick="quickLoc('Remote')">Remote</button>
+              <button class="btn btn-sm" onclick="quickLoc('San Francisco')">SF</button>
+              <button class="btn btn-sm" onclick="quickLoc('New York')">NYC</button>
+              <button class="btn btn-sm" onclick="quickLoc('Austin')">Austin</button>
+              <button class="btn btn-sm" onclick="quickLoc('Houston')">Houston</button>
+              <button class="btn btn-sm" onclick="quickLoc('Seattle')">Seattle</button>
+              <button class="btn btn-sm" onclick="quickLoc('Denver')">Denver</button>
+              <button class="btn btn-sm" onclick="quickLoc('')">Anywhere</button>
+            </div>
+            <div style="margin-bottom:var(--s4); display:flex; gap:var(--s3); flex-wrap:wrap; align-items:center; padding:var(--s3) var(--s4); background:var(--bg-2); border:1px solid var(--line); border-radius:var(--r2)">
+              <span style="font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--fg-3); font-family:'JetBrains Mono',monospace">FILTER:</span>
+              <div id="match-filter-group" style="display:flex; gap:4px">
+                <button class="btn btn-sm filter-pill active" data-min="0">All</button>
+                <button class="btn btn-sm filter-pill" data-min="50">50%+</button>
+                <button class="btn btn-sm filter-pill" data-min="70">70%+ (strong)</button>
+                <button class="btn btn-sm filter-pill" data-min="85">85%+ (perfect)</button>
+              </div>
+              <span style="flex:1"></span>
+              <span style="font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--fg-3); font-family:'JetBrains Mono',monospace">SORT:</span>
+              <select id="sort-mode" style="width:auto; padding:6px 10px; font-size:12px; height:32px">
+                <option value="match">Best match</option>
+                <option value="recent">Most recent</option>
+                <option value="source">Source authority</option>
+              </select>
+            </div>
+            <div id="jobs-list"><div class="empty">Search any role to fetch live jobs.</div></div>
+          </div>
+        </section>
+
+        <!-- ═══ JOB ALERTS ═══ -->
+        <section class="view" id="view-alerts">
+          <div class="view-header">
+            <div class="view-eyebrow">06 · Inbox</div>
+            <h2 class="view-title">Job <strong>Alerts</strong></h2>
+            <p class="view-subtitle">Subscribe to a role + location. APEX scans every 15 min and emails you only new matches. Gmail SMTP required.</p>
+          </div>
+          <!-- SMTP Setup Wizard -->
+          <div class="card" id="smtp-setup-card" style="margin-bottom:var(--s5); border-color:rgba(255,170,0,0.20); background:linear-gradient(180deg, rgba(255,170,0,0.04), var(--bg-1))">
+            <div class="card-h">
+              <h3>⚡ Activate email delivery (3 steps)</h3>
+              <button class="copy-btn" id="smtp-toggle" type="button">Toggle</button>
+            </div>
+            <div id="smtp-wizard" style="display:none">
+              <ol style="padding-left:22px; font-size:13.5px; line-height:1.9; color:var(--fg-1); margin-bottom:var(--s5)">
+                <li>Go to <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a> (Gmail must have 2FA on).</li>
+                <li>Generate a new app password — name it "APEX". Copy the 16-char code.</li>
+                <li>Paste your Gmail and the app password below → hit <strong>Save & Test</strong>. Done.</li>
+              </ol>
+              <div class="alert-form">
+                <div><label>SMTP host</label><input type="text" id="smtp-host" value="smtp.gmail.com"></div>
+                <div><label>SMTP port</label><input type="text" id="smtp-port" value="587"></div>
+                <div><label>Your email</label><input type="email" id="smtp-user" placeholder="you@gmail.com"></div>
+                <div><label>App password</label><input type="password" id="smtp-pass" placeholder="16-char app password"></div>
+              </div>
+              <div style="display:flex; gap:var(--s3); flex-wrap:wrap; margin-top:var(--s4)">
+                <button class="btn btn-primary" id="smtp-save" type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg>
+                  Save &amp; Test
+                </button>
+                <button class="btn" id="smtp-just-test" type="button">Test Without Saving</button>
+              </div>
+              <div id="smtp-result" style="margin-top:var(--s4); font-size:12.5px; font-family:'JetBrains Mono',monospace;"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <h3>Subscribe to alerts</h3>
+              <span class="badge" id="smtp-status">SMTP: ?</span>
+            </div>
+            <form class="alert-form" id="alert-form">
+              <div><label>Email</label><input type="email" id="al-email" placeholder="you@example.com" required></div>
+              <div><label>Job Title</label><input type="text" id="al-title" placeholder="e.g. Frontend Engineer" required></div>
+              <div><label>Location (optional)</label><input type="text" id="al-loc" placeholder="e.g. San Francisco or Remote"></div>
+              <div><label>Frequency</label><select id="al-freq"><option value="daily" selected>Daily digest</option><option value="hourly">Hourly</option><option value="instant">Every 30 min</option></select></div>
+              <div style="grid-column: 1/-1; display:flex; gap:var(--s3); flex-wrap:wrap">
+                <button class="btn btn-primary" type="submit">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M4 4 H20 A2 2 0 0 1 22 6 V18 A2 2 0 0 1 20 20 H4 A2 2 0 0 1 2 18 V6 A2 2 0 0 1 4 4 M2 7 L12 13 L22 7"/></svg>
+                  Subscribe
+                </button>
+                <button class="btn" type="button" id="al-list-btn">List My Alerts</button>
+                <button class="btn" type="button" id="al-test-btn">Send Test Email</button>
+              </div>
+            </form>
+            <div id="al-list-out" style="margin-top:var(--s5)"></div>
+          </div>
+        </section>
+
+        <!-- ═══ COVER LETTER ═══ -->
+        <section class="view" id="view-cl">
+          <div class="view-header">
+            <div class="view-eyebrow">07 · Outreach</div>
+            <h2 class="view-title">Cover <strong>Letter</strong></h2>
+            <p class="view-subtitle">3-paragraph hook → value prop → CTA, with validated keywords injected naturally.</p>
+          </div>
+          <div id="cl-content"><div class="empty">Cover letter appears after running the agent.</div></div>
+        </section>
+
+        <!-- ═══ INTERVIEW PREP ═══ -->
+        <section class="view" id="view-iv">
+          <!-- ─── Voice Interview Simulator ─── -->
+          <div class="card" style="margin-bottom:var(--s5); border-color:rgba(139,92,246,0.20); background:linear-gradient(180deg, rgba(139,92,246,0.04), var(--bg-1))">
+            <div class="card-h">
+              <h3>🎙 Voice Practice</h3>
+              <span class="badge"><span class="tel-dot"></span>Whisper · live grading</span>
+            </div>
+            <p style="color:var(--fg-2);font-size:13.5px;margin-bottom:var(--s4)">
+              AI plays a senior hiring manager. It speaks each question aloud, you answer with your voice, and APEX
+              transcribes + grades on STAR structure, keyword coverage, and depth.
+            </p>
+            <div style="display:flex; gap:var(--s3); flex-wrap:wrap; align-items:center">
+              <button class="btn btn-primary" id="vi-start">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Start Mock Interview
+              </button>
+              <button class="btn" id="vi-record" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><circle cx="12" cy="12" r="4" fill="currentColor"/><circle cx="12" cy="12" r="9"/></svg>
+                <span id="vi-record-label">Record Answer</span>
+              </button>
+              <button class="btn" id="vi-skip" disabled>Skip Question</button>
+              <button class="btn" id="vi-end" disabled>End Session</button>
+              <span style="flex:1"></span>
+              <span id="vi-status" style="font-size:11px; color:var(--fg-3); font-family:'JetBrains Mono',monospace">Click Start to begin</span>
+            </div>
+            <div id="vi-question" style="margin-top:var(--s5); padding:var(--s5); background:var(--bg-2); border:1px solid var(--line); border-radius:var(--r2); display:none">
+              <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--purple);font-family:'JetBrains Mono',monospace;margin-bottom:8px" id="vi-q-eyebrow">Q1 · BEHAVIORAL</div>
+              <div id="vi-q-text" style="font-size:18px;line-height:1.5;color:var(--fg-0);font-weight:500;letter-spacing:-0.005em"></div>
+              <div style="margin-top:var(--s3); display:flex; gap:8px; align-items:center">
+                <button class="btn btn-sm" id="vi-replay">🔊 Replay</button>
+                <span id="vi-hint" style="font-size:11px;color:var(--fg-3)"></span>
+              </div>
+            </div>
+            <div id="vi-transcript" style="margin-top:var(--s4); display:none">
+              <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--fg-3);font-family:'JetBrains Mono',monospace;margin-bottom:8px">Your answer (live transcript)</div>
+              <div id="vi-transcript-text" style="padding:var(--s4); background:var(--bg-2); border:1px solid var(--line); border-radius:var(--r2); font-size:14px; line-height:1.6; color:var(--fg-1); min-height:60px"></div>
+            </div>
+            <div id="vi-grade" style="margin-top:var(--s4)"></div>
+          </div>
+          
+          <div class="view-header">
+            <div class="view-eyebrow">08 · Prep</div>
+            <h2 class="view-title">Interview <strong>Prep</strong></h2>
+            <p class="view-subtitle">Behavioral, technical, situational Q&amp;A — with STAR sample answers and coaching tips.</p>
+          </div>
+          <div id="iv-content"><div class="empty">Interview prep appears after running the agent.</div></div>
+        </section>
+
+        <!-- ═══ LINKEDIN ═══ -->
+        <section class="view" id="view-linkedin">
+          <div class="view-header">
+            <div class="view-eyebrow">09 · Profile</div>
+            <h2 class="view-title">LinkedIn <strong>Optimizer</strong></h2>
+            <p class="view-subtitle">220-char headline · 2000-char About · top skills, all keyword-rich.</p>
+          </div>
+          <div id="li-content"><div class="empty">LinkedIn optimization appears after running the agent.</div></div>
+        </section>
+
+        <!-- ═══ OUTREACH ═══ -->
+        <section class="view" id="view-outreach">
+          <div class="view-header">
+            <div class="view-eyebrow">10 · Messages</div>
+            <h2 class="view-title">Outreach <strong>Templates</strong></h2>
+            <p class="view-subtitle">LinkedIn DM, cold email, referral request, thank-you note, negotiation script.</p>
+          </div>
+          <div id="or-content"><div class="empty">Outreach templates appear after running the agent.</div></div>
+        </section>
+
+        <!-- ═══ VELOCITY ═══ -->
+        <section class="view" id="view-velocity">
+          <div class="view-header">
+            <div class="view-eyebrow">11 · Trajectory</div>
+            <h2 class="view-title">Career <strong>Velocity</strong></h2>
+            <p class="view-subtitle">Where you're headed, how fast, what moves to make.</p>
+          </div>
+          <div id="vel-content"><div class="empty">Career velocity appears after running the agent.</div></div>
+        </section>
+
+        <!-- ═══ BULLETS ═══ -->
+        <section class="view" id="view-bullets">
+          <div class="view-header">
+            <div class="view-eyebrow">12 · Surgery</div>
+            <h2 class="view-title">Bullet <strong>Ranker</strong></h2>
+            <p class="view-subtitle">Every bullet scored 0–100. Bottom 5 get rewrite suggestions.</p>
+          </div>
+          <div class="card">
+            <button class="btn btn-primary" id="bullets-run">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+              Rank My Bullets
+            </button>
+            <div id="bullets-out" style="margin-top:var(--s5)"></div>
+          </div>
+        </section>
+
+        <!-- ═══ TAILOR ═══ -->
+        <section class="view" id="view-tailor">
+          <div class="view-header">
+            <div class="view-eyebrow">13 · Precision</div>
+            <h2 class="view-title">Job <strong>Tailor</strong></h2>
+            <p class="view-subtitle">Paste any posting → resume rewritten for that exact role.</p>
+          </div>
+          <div class="card">
+            <label>Job posting</label>
+            <textarea id="tailor-posting" placeholder="Paste full job description here…" rows="7"></textarea>
+            <button class="btn btn-primary" id="tailor-run" style="margin-top:var(--s4)">Tailor For This Job</button>
+            <div id="tailor-out" style="margin-top:var(--s5)"></div>
+          </div>
+        </section>
+
+        <!-- ═══ MATCH ═══ -->
+        <section class="view" id="view-match">
+          <div class="view-header">
+            <div class="view-eyebrow">14 · Decision</div>
+            <h2 class="view-title">Match <strong>Score</strong></h2>
+            <p class="view-subtitle">Score yourself against any specific posting before you apply.</p>
+          </div>
+          <div class="card">
+            <label>Job posting</label>
+            <textarea id="match-posting" placeholder="Paste the job posting…" rows="7"></textarea>
+            <button class="btn btn-primary" id="match-run" style="margin-top:var(--s4)">Score This Match</button>
+            <div id="match-out" style="margin-top:var(--s5)"></div>
+          </div>
+        </section>
+
+        <!-- ═══ WEAKNESS ═══ -->
+        <section class="view" id="view-weakness">
+          <div class="view-header">
+            <div class="view-eyebrow">15 · Diagnosis</div>
+            <h2 class="view-title">Weakness <strong>X-Ray</strong></h2>
+            <p class="view-subtitle">The exact bullets that are hurting your chances — and the surgical fix for each.</p>
+          </div>
+          <div class="card">
+            <button class="btn btn-primary" id="weak-run">X-Ray My Resume</button>
+            <div id="weak-out" style="margin-top:var(--s5)"></div>
+          </div>
+        </section>
+
+        <!-- ═══ NEGOTIATE ═══ -->
+        <section class="view" id="view-negotiate">
+          <div class="view-header">
+            <div class="view-eyebrow">16 · Leverage</div>
+            <h2 class="view-title">Salary <strong>Negotiation</strong></h2>
+            <p class="view-subtitle">Target · minimum · opening ask, plus the exact script to say it.</p>
+          </div>
+          <div class="card">
+            <label>Location</label>
+            <input type="text" id="neg-loc" placeholder="e.g. San Francisco, CA">
+            <button class="btn btn-primary" id="neg-run" style="margin-top:var(--s4)">Build Negotiation Plan</button>
+            <div id="neg-out" style="margin-top:var(--s5)"></div>
+          </div>
+        </section>
+
+        <!-- ═══ BRIDGE ═══ -->
+        <section class="view" id="view-bridge">
+          <div class="view-header">
+            <div class="view-eyebrow">17 · Translation</div>
+            <h2 class="view-title">Career <strong>Bridge</strong></h2>
+            <p class="view-subtitle">"Patient triage" → "incident prioritization." Translate your skills into a new field's language.</p>
+          </div>
+          <div class="card">
+            <div style="display:grid; gap:var(--s3); grid-template-columns: 1fr 1fr">
+              <div><label>From role</label><input type="text" id="br-from" placeholder="e.g. Nurse"></div>
+              <div><label>To role</label><input type="text" id="br-to" placeholder="e.g. Product Manager"></div>
+            </div>
+            <button class="btn btn-primary" id="br-run" style="margin-top:var(--s4)">Build Bridge</button>
+            <div id="br-out" style="margin-top:var(--s5)"></div>
+          </div>
+        </section>
+
+        <!-- ═══ TRACKER ═══ -->
+        <section class="view" id="view-tracker">
+          <div class="view-header">
+            <div class="view-eyebrow">18 · Pipeline</div>
+            <h2 class="view-title">Application <strong>Tracker</strong></h2>
+            <p class="view-subtitle">Every application logged. Watch your conversion rate as you optimize.</p>
+          </div>
+          <div class="grid-4" style="margin-bottom:var(--s5)">
+            <div class="tile"><div class="v" id="trk-total">0</div><div class="l">Applied</div></div>
+            <div class="tile"><div class="v" id="trk-iv">0</div><div class="l">Interviews</div></div>
+            <div class="tile"><div class="v" id="trk-of">0</div><div class="l">Offers</div></div>
+            <div class="tile"><div class="v" id="trk-rate">—</div><div class="l">Conv. Rate</div></div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h3>Add application</h3></div>
+            <div class="alert-form">
+              <input type="text" id="trk-co" placeholder="Company">
+              <input type="text" id="trk-role" placeholder="Role">
+              <input type="text" id="trk-date" placeholder="Date YYYY-MM-DD">
+              <select id="trk-status"><option value="applied">Applied</option><option value="interview">Interview</option><option value="offer">Offer</option><option value="rejected">Rejected</option></select>
+            </div>
+            <button class="btn btn-primary" id="trk-add" style="margin-top:var(--s4)">Add</button>
+            <!-- ─── Gmail Inbox Scanner ─── -->
+            <div class="card" style="margin-top:var(--s5); border-color:rgba(62,158,255,0.20); background:linear-gradient(180deg, rgba(62,158,255,0.03), var(--bg-1))">
+              <div class="card-h">
+                <h3>Auto-sync from Gmail</h3>
+                <span class="badge"><span class="tel-dot"></span>IMAP · App Password</span>
+              </div>
+              <p style="color:var(--fg-2);font-size:13px;margin-bottom:var(--s4)">
+                Scan your last 30 days of email. APEX classifies each as applied / interview / offer / rejected,
+                then lets you confirm-and-add to the tracker. Read-only — never sends or deletes.
+              </p>
+              <div class="alert-form">
+                <div><label>Gmail address</label><input type="email" id="ix-email" placeholder="you@gmail.com"></div>
+                <div><label>App password</label><input type="password" id="ix-pwd" placeholder="16-char app password (same as SMTP)"></div>
+                <div><label>Days back</label><input type="text" id="ix-days" value="30"></div>
+              </div>
+              <div style="display:flex; gap:var(--s3); flex-wrap:wrap; margin-top:var(--s4)">
+                <button class="btn btn-primary" id="ix-scan">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  Scan Inbox
+                </button>
+                <button class="btn" id="ix-prefill">Prefill from SMTP</button>
+              </div>
+              <div id="ix-status" style="margin-top:var(--s3); font-size:12px; font-family:'JetBrains Mono',monospace; color:var(--fg-3)"></div>
+              <div id="ix-results" style="margin-top:var(--s4)"></div>
+            </div>
+
+            <table class="tracker-table" style="margin-top:var(--s5)">
+              <thead><tr><th>Company</th><th>Role</th><th>Date</th><th>Status</th><th></th></tr></thead>
+              <tbody id="trk-tbody"><tr><td colspan="5" class="empty" style="padding:var(--s5)">No applications yet.</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- ═══════════════════════ FOOTER ═══════════════════════ -->
+  <footer class="footer">
+    <div class="foot-status">
+      <span class="tel-dot live"></span>
+      <span class="lbl">READY</span>
+    </div>
+    <div class="foot-pipeline" id="foot-pipeline">
+      <div class="pipe-step" id="step-market"><span class="dot"></span>Market</div>
+      <div class="pipe-arr">→</div>
+      <div class="pipe-step" id="step-heat"><span class="dot"></span>Keywords</div>
+      <div class="pipe-arr">→</div>
+      <div class="pipe-step" id="step-analyze"><span class="dot"></span>Scoring</div>
+      <div class="pipe-arr">→</div>
+      <div class="pipe-step" id="step-rewrite"><span class="dot"></span>Rewrite</div>
+      <div class="pipe-arr">→</div>
+      <div class="pipe-step" id="step-report"><span class="dot"></span>Report</div>
+    </div>
+    <div class="foot-cost" id="foot-cost">~0¢</div>
+  </footer>
+
+</div>
+
+<!-- ═══════════════════════ INPUT DRAWER ═══════════════════════ -->
+<div class="drawer-scrim" id="drawer-scrim"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-header">
+    <h2>Launch Agent</h2>
+    <button class="icon-btn" id="drawer-close" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body">
+    <div class="drawer-section">
+      <label>Target job title</label>
+      <input type="text" id="job-title" placeholder="e.g. Senior Software Engineer">
+    </div>
+    <div class="drawer-section">
+      <label>Industry</label>
+      <select id="industry">
+        <optgroup label="Technology"><option value="tech">Software / Tech</option><option value="ai_data">AI / Data</option><option value="cybersecurity">Cybersecurity</option><option value="cloud_devops">Cloud / DevOps</option></optgroup>
+        <optgroup label="Healthcare"><option value="healthcare">Healthcare</option><option value="biotech_pharma">Biotech / Pharma</option><option value="mental_health">Mental Health</option></optgroup>
+        <optgroup label="Finance"><option value="finance">Finance</option><option value="accounting">Accounting</option><option value="insurance">Insurance</option><option value="consulting">Consulting</option></optgroup>
+        <optgroup label="Government"><option value="government">Government</option><option value="nonprofit">Nonprofit</option><option value="military_defense">Military / Defense</option></optgroup>
+        <optgroup label="Real Estate"><option value="real_estate">Real Estate</option><option value="construction">Construction</option><option value="architecture">Architecture</option></optgroup>
+        <optgroup label="Creative & Media"><option value="creative_design">Creative / Design</option><option value="marketing">Marketing</option><option value="media_journalism">Media / Journalism</option><option value="advertising_pr">Advertising / PR</option></optgroup>
+        <optgroup label="Operations"><option value="operations">Operations</option><option value="logistics">Logistics</option><option value="manufacturing">Manufacturing</option><option value="automotive">Automotive</option></optgroup>
+        <optgroup label="People & Culture"><option value="human_resources">Human Resources</option><option value="sales">Sales</option><option value="education">Education</option></optgroup>
+        <optgroup label="Other"><option value="energy">Energy</option><option value="hospitality">Hospitality</option><option value="retail_service">Retail / Service</option><option value="sports_fitness">Sports / Fitness</option><option value="general" selected>General</option></optgroup>
+      </select>
+    </div>
+    <div class="drawer-section">
+      <label>Seniority</label>
+      <select id="seniority"><option value="entry">Entry</option><option value="mid">Mid</option><option value="senior" selected>Senior</option><option value="manager">Manager</option><option value="director">Director</option><option value="executive">Executive</option></select>
+    </div>
+    <div class="drawer-section">
+      <label>Job description (optional)</label>
+      <textarea id="job-desc" placeholder="Paste the job posting for sharper targeting…" rows="3"></textarea>
+    </div>
+    <div class="drawer-section">
+      <label>Your resume</label>
+      <textarea id="resume-text" placeholder="Paste your resume here, or drop a file below…" rows="6"></textarea>
+      <div class="upload-zone" id="upload-zone">
+        <input type="file" id="file-input" accept=".pdf,.docx,.txt" hidden>
+        <div class="ico">↑</div>
+        <div class="text"><strong>Click or drop</strong> a PDF · DOCX · TXT</div>
+      </div>
+    </div>
+    <div class="drawer-section">
+      <label>Activity log</label>
+      <div class="log-panel" id="log-panel"><div class="log-line dim">Standing by…</div></div>
+    </div>
+  </div>
+  <div class="drawer-footer">
+    <button class="btn btn-primary btn-block btn-big" id="run-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      <span id="run-btn-text">Launch</span>
+    </button>
+  </div>
+</aside>
+
+
+<!-- ═══════════════════════ TAILOR + APPLY MODAL ═══════════════════════ -->
+<div class="modal-scrim" id="ta-scrim"></div>
+<aside class="modal" id="ta-modal" role="dialog" aria-labelledby="ta-modal-title">
+  <div class="modal-header">
+    <div>
+      <h2 id="ta-modal-title">Tailor &amp; Apply</h2>
+      <div class="h-sub" id="ta-job-meta">—</div>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center">
+      <span id="ta-match-badge"></span>
+      <button class="icon-btn" id="ta-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="modal-body">
+    <div class="modal-cols">
+      <div class="modal-col">
+        <h4>Tailored Resume <button class="copy-btn" onclick="copyText(window._taResume||'')">Copy</button></h4>
+        <pre class="modal-col-body" id="ta-resume-body">Loading…</pre>
+      </div>
+      <div class="modal-col">
+        <h4>Cover Letter <button class="copy-btn" onclick="copyText(window._taCover||'')">Copy</button></h4>
+        <pre class="modal-col-body" id="ta-cover-body">Loading…</pre>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-primary btn-big" id="ta-download">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><path d="M21 15 V19 A2 2 0 0 1 19 21 H5 A2 2 0 0 1 3 19 V15 M7 10 L12 15 L17 10 M12 15 V3"/></svg>
+      Download Tailored PDF
+    </button>
+    <button class="btn btn-big" id="ta-download-docx">DOCX</button>
+    <button class="btn btn-big" id="ta-download-txt">TXT</button>
+    <a class="btn btn-big" id="ta-open" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      Open Application
+    </a>
+    <button class="btn" id="ta-save-tracker">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg>
+      Save to Tracker
+    </button>
+    <span style="flex:1"></span>
+    <span style="font-size:11px;color:var(--fg-3);font-family:'JetBrains Mono',monospace" id="ta-status">Ready</span>
+  </div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.js"></script>
+
+<script>
+const SERVER = 'http://localhost:7842';
+const $  = id => document.getElementById(id);
+const $$ = sel => document.querySelectorAll(sel);
+const escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+let state = {
+  resumeStruct: null, selectedTemplate: 'modern', templates: [],
+  marketKeywords: [], sector: 'general',
+  applications: JSON.parse(localStorage.getItem('apex_apps') || '[]'),
+  // Buffers populated as agent emits each tab's data — used by "Apply All" merge
+  rec: {
+    original: '', optimized: '',
+    changes: [],            // [{before, after, why}] from Gap Report
+    bulletRewrites: [],     // [{text, rewrite, score}] from Bullet Ranker
+    addedKeywords: [],
+    jobTitle: '',
+  }
+};
+
+let toastTimer;
+function toast(msg, type='') {
+  const t = $('toast'); t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ─── Dock navigation ───
+$$('.dock-item').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.view)));
+
+function switchTab(view) {
+  $$('.dock-item').forEach(t => t.classList.toggle('active', t.dataset.view === view));
+  $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
+  if (view === 'templates') initTemplatesTab();
+  if (view === 'tracker') renderTracker();
+  // scroll canvas to top
+  document.querySelector('.canvas').scrollTo({ top: 0, behavior: 'smooth' });
+}
+window.switchTab = switchTab;
+
+// ─── Drawer ───
+$('open-drawer').addEventListener('click', () => openDrawer());
+$('drawer-close').addEventListener('click', () => closeDrawer());
+$('drawer-scrim').addEventListener('click', () => closeDrawer());
+function openDrawer() { $('drawer').classList.add('open'); $('drawer-scrim').classList.add('open'); }
+function closeDrawer() { $('drawer').classList.remove('open'); $('drawer-scrim').classList.remove('open'); }
+
+// ─── Activity log toggle (focus drawer) ───
+$('open-log').addEventListener('click', () => { openDrawer(); setTimeout(() => $('log-panel').scrollIntoView({ behavior: 'smooth' }), 200); });
+
+// ─── Health ───
+async function checkHealth() {
+  try {
+    const r = await fetch(SERVER + '/health', { cache: 'no-store' });
+    const j = await r.json();
+    $('tel-server').className = 'tel-dot live';
+    $('tel-server-v').textContent = j.version || '?';
+    return j;
+  } catch(e) {
+    $('tel-server').className = 'tel-dot err';
+    $('tel-server-v').textContent = 'OFFLINE';
+    return null;
+  }
+}
+async function loadConfig() {
+  try {
+    const r = await fetch(SERVER + '/config');
+    const j = await r.json();
+    $('tel-smtp').className = 'tel-dot ' + (j.SMTP_CONFIGURED ? 'live' : 'warn');
+    $('tel-smtp-v').textContent = j.SMTP_CONFIGURED ? 'READY' : 'OFF';
+    $('smtp-status').innerHTML = j.SMTP_CONFIGURED
+      ? '<span class="tel-dot live"></span>SMTP Active'
+      : '<span class="tel-dot warn"></span>SMTP Not Configured';
+  } catch(e) {}
+}
+checkHealth(); loadConfig();
+setInterval(checkHealth, 30000);
+
+// ─── File upload ───
+$('upload-zone').addEventListener('click', () => $('file-input').click());
+$('upload-zone').addEventListener('dragover', e => { e.preventDefault(); e.currentTarget.classList.add('dragover'); });
+$('upload-zone').addEventListener('dragleave', e => e.currentTarget.classList.remove('dragover'));
+$('upload-zone').addEventListener('drop', e => { e.preventDefault(); e.currentTarget.classList.remove('dragover'); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+$('file-input').addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+async function handleFile(file) {
+  toast('Parsing ' + file.name + '…');
+  try {
+    let text = '';
+    if (file.name.toLowerCase().endsWith('.pdf')) {
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const tc = await page.getTextContent();
+        text += tc.items.map(it => it.str).join(' ') + '\n';
+      }
+    } else if (file.name.toLowerCase().endsWith('.docx')) {
+      const buf = await file.arrayBuffer();
+      const r = await mammoth.extractRawText({ arrayBuffer: buf });
+      text = r.value;
+    } else {
+      text = await file.text();
+    }
+    $('resume-text').value = text.trim();
+    toast('Resume loaded · ' + text.length + ' chars', 'ok');
+  } catch(e) { toast('Parse error: ' + e.message, 'err'); }
+}
+
+// ─── Logging + pipeline ───
+function addLog(msg, cls='') {
+  const p = $('log-panel');
+  const l = document.createElement('div');
+  l.className = 'log-line ' + cls;
+  l.textContent = msg;
+  p.appendChild(l);
+  p.scrollTop = p.scrollHeight;
+}
+function setProgress(id, status, msg) {
+  const el = $('step-' + id);
+  if (!el) return;
+  el.className = 'pipe-step ' + status;
+}
+
+// ─── SSE ───
+async function streamSSE(path, payload, onEvent) {
+  const resp = await fetch(SERVER + path, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!resp.body) throw new Error('No stream');
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const parts = buf.split('\n\n');
+    buf = parts.pop();
+    for (const part of parts) {
+      const line = part.split('\n').find(l => l.startsWith('data: '));
+      if (!line) continue;
+      try { onEvent(JSON.parse(line.slice(6))); } catch(e) {}
+    }
+  }
+}
+
+// ─── LAUNCH ───
+$('run-btn').addEventListener('click', async () => {
+  const jobTitle = $('job-title').value.trim();
+  const resume   = $('resume-text').value.trim();
+  if (!jobTitle) return toast('Enter a job title', 'err');
+  if (!resume) return toast('Paste your resume', 'err');
+
+  $('run-btn').disabled = true;
+  $('run-btn-text').innerHTML = '<span class="spinner"></span>Running…';
+  $('log-panel').innerHTML = '';
+  ['market','heat','analyze','rewrite','report'].forEach(id => setProgress(id, ''));
+  closeDrawer();
+  switchTab('market');
+
+  try {
+    await streamSSE('/analyze', {
+      jobTitle, industry: $('industry').value, seniority: $('seniority').value,
+      jobDesc: $('job-desc').value, resume, mode: 'optimize'
+    }, handleEvent);
+  } catch(e) {
+    toast('Error: ' + e.message, 'err');
+    addLog('✗ ' + e.message, 'fail');
+  } finally {
+    $('run-btn').disabled = false;
+    $('run-btn-text').textContent = 'Launch';
+  }
+});
+
+function handleEvent(ev) {
+  if (ev.type === 'log') addLog(ev.msg, ev.msg.includes('✓') ? 'ok' : ev.msg.includes('⚠') ? 'warn' : ev.msg.includes('✗') ? 'fail' : '');
+  else if (ev.type === 'step') setProgress(ev.id, ev.status, ev.msg);
+  else if (ev.type === 'market_data') { renderMarket(ev.data); switchTab('market'); }
+  else if (ev.type === 'resume_data') {
+    state.rec.original = ev.original || '';
+    state.rec.optimized = ev.optimized || '';
+    state.rec.addedKeywords = ev.added || [];
+    state.rec.jobTitle = $('job-title').value || '';
+    renderResume(ev.original, ev.optimized, ev.added);
+  }
+  else if (ev.type === 'report_data') {
+    if (ev.data && Array.isArray(ev.data.changes)) state.rec.changes = ev.data.changes;
+    renderGapReport(ev.data);
+  }
+  else if (ev.type === 'cover_letter_data') renderCoverLetter(ev.letter);
+  else if (ev.type === 'interview_data') renderInterview(ev.data);
+  else if (ev.type === 'jobs_data') renderHarvestedJobs(ev.jobs, ev.query);
+  else if (ev.type === 'linkedin_data') renderLinkedIn(ev.data);
+  else if (ev.type === 'outreach_data') renderOutreach(ev.data);
+  else if (ev.type === 'velocity_data') renderVelocity(ev.data);
+  else if (ev.type === 'tailor_data') renderTailor(ev.data);
+  else if (ev.type === 'match_data') renderMatch(ev.data);
+  else if (ev.type === 'bullet_data') {
+    if (ev.data && Array.isArray(ev.data.ranked_bullets)) state.rec.bulletRewrites = ev.data.ranked_bullets;
+    renderBullets(ev.data);
+  }
+  else if (ev.type === 'negotiate_data') renderNegotiate(ev.data);
+  else if (ev.type === 'bridge_data') renderBridge(ev.data);
+  else if (ev.type === 'xray_data') renderWeakness(ev.data);
+  else if (ev.type === 'cost_data') { $('foot-cost').textContent = '~' + ev.data.est_cents + '¢'; addLog('Cost: ~' + ev.data.est_cents + '¢', 'dim'); }
+  else if (ev.type === 'drift_data') {
+    // Server emits this from /drift; previously it was dropped on the floor.
+    const d = ev.data || {};
+    const delta = typeof d.drift === 'number' ? d.drift : 0;
+    state.drift = d;
+    addLog('Market drift for ' + (ev.role || 'role') + ': ' + (delta >= 0 ? '+' : '') + delta + ' pts', delta < 0 ? 'warn' : 'ok');
+    if (Array.isArray(d.new_keywords) && d.new_keywords.length) {
+      addLog('  New market keywords: ' + d.new_keywords.slice(0, 8).join(', '), 'dim');
+    }
+    if (Array.isArray(d.faded_keywords) && d.faded_keywords.length) {
+      addLog('  Fading: ' + d.faded_keywords.slice(0, 8).join(', '), 'dim');
+    }
+    toast(delta < 0
+      ? 'Market drift: your score dropped ' + Math.abs(delta) + ' pts — re-optimize'
+      : 'Market drift check complete (' + (delta >= 0 ? '+' : '') + delta + ' pts)',
+      delta < 0 ? 'err' : 'ok');
+  }
+  else if (ev.type === 'error') { toast(ev.msg, 'err'); addLog('✗ ' + ev.msg, 'fail'); }
+  else if (ev.type === 'done') addLog('━━ ' + ev.msg, 'ok');
+}
+
+// ─── Tesla speedometer gauge ───
+function gauge(score, label, primary=true, delta=null) {
+  const s = Math.max(0, Math.min(100, score));
+  // arc from -135° to +135° (270° sweep)
+  const start = -135, end = 135;
+  const sweep = end - start;
+  const valAngle = start + (s / 100) * sweep;
+  const r = 100;
+  const cx = 140, cy = 140;
+  const polar = (a) => {
+    const rad = (a - 90) * Math.PI / 180;
+    return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)];
+  };
+  const [sx, sy] = polar(start);
+  const [ex, ey] = polar(end);
+  const [vx, vy] = polar(valAngle);
+  const bigArc = sweep > 180 ? 1 : 0;
+  const valBigArc = (valAngle - start) > 180 ? 1 : 0;
+  const color = primary ? 'var(--acc)' : (s >= 75 ? 'var(--green)' : s >= 50 ? 'var(--amber)' : 'var(--red-soft)');
+  const deltaHtml = delta != null
+    ? '<div class="gauge-delta' + (delta < 0 ? ' neg' : '') + '">' + (delta >= 0 ? '+' : '') + delta + '</div>'
+    : '';
+  return `<div class="gauge">
+    <svg viewBox="0 0 280 280">
+      <path d="M${sx},${sy} A${r},${r} 0 ${bigArc} 1 ${ex},${ey}" stroke="rgba(255,255,255,0.06)" stroke-width="14" fill="none" stroke-linecap="round"/>
+      <path d="M${sx},${sy} A${r},${r} 0 ${valBigArc} 1 ${vx},${vy}" stroke="${color}" stroke-width="14" fill="none" stroke-linecap="round" style="filter: drop-shadow(0 0 12px ${color})"/>
+      <circle cx="${vx}" cy="${vy}" r="8" fill="${color}" style="filter: drop-shadow(0 0 8px ${color})"/>
+    </svg>
+    <div class="gauge-center">
+      <div>
+        <div class="gauge-num">${s}</div>
+        <div class="gauge-lbl">${label}</div>
+        ${deltaHtml}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ─── MARKET RENDER ───
+// Integrity readout — what the truth-preserving loop did to this resume.
+// Shown only once the loop has run (fields absent on the pre-loop emit).
+function integrityBlock(d) {
+  if (d.keywordsInjected === undefined) return '';
+  const inj = d.keywordsInjected || [], gaps = d.keywordsGapsOnly || [];
+  const fab = d.fabricationsBlocked || 0, rest = d.protectedRestored || [];
+  const bb = d.scoreBreakdownBefore || {}, ba = d.scoreBreakdownAfter || {};
+  const row = (l, b, a) => `<div class="hero-meta-item"><div class="v">${b ?? '—'}% → ${a ?? '—'}%</div><div class="l">${l}</div></div>`;
+  return `
+    <div class="card" style="margin-top:var(--s5)">
+      <div class="card-h">
+        <h3>Integrity Report</h3>
+        <span class="badge"><span class="tel-dot live"></span>truth-preserving</span>
+      </div>
+      <div class="hero-meta" style="margin-bottom:var(--s4)">
+        <div class="hero-meta-item"><div class="v">${inj.length}</div><div class="l">Keywords added — with evidence</div></div>
+        <div class="hero-meta-item"><div class="v">${gaps.length}</div><div class="l">Withheld — no evidence</div></div>
+        <div class="hero-meta-item"><div class="v" style="${fab ? 'color:var(--amber)' : ''}">${fab}</div><div class="l">Rewrites blocked for fabrication</div></div>
+        <div class="hero-meta-item"><div class="v">${rest.length}</div><div class="l">Protected sections restored</div></div>
+      </div>
+      <div class="hero-meta">
+        ${row('Keyword coverage', bb.keyword_coverage, ba.keyword_coverage)}
+        ${row('Strong-verb bullets', bb.strong_verb_pct, ba.strong_verb_pct)}
+        ${row('Quantified bullets', bb.quantified_pct, ba.quantified_pct)}
+      </div>
+      ${gaps.length ? `<div style="margin-top:var(--s4);font-size:13px;opacity:.8">
+        <strong>Not added to your resume</strong> — the market wants these but your resume shows no evidence of them. They appear in the Gap report as skills to build, never as claims:
+        <div style="margin-top:6px">${gaps.map(g => `<span class="chip cold" style="margin:2px">${escHtml(g)}</span>`).join('')}</div>
+      </div>` : ''}
+      <div style="margin-top:var(--s4);font-size:12px;opacity:.6">
+        Scores are measured, not estimated: keyword coverage 55 · sections 15 · verb strength 15 · quantification 10 · hygiene 5. Same input always yields the same score.
+      </div>
+    </div>`;
+}
+
+function renderMarket(d) {
+  state.sector = d.sector || 'general';
+  state.marketKeywords = (d.hot||[]).concat(d.warm||[],d.emerging||[]).map(k=>k.name||k);
+
+  $('tel-ats').textContent = (d.atsScoreAfter || 0) + '/100';
+  $('tel-jobs').textContent = d.total_jobs_analyzed || 0;
+
+  const before = d.atsScoreBefore || 0;
+  const after = d.atsScoreAfter || 0;
+  const delta = after - before;
+
+  $('market-content').innerHTML = `
+    <div class="hero">
+      <div class="hero-content">
+        <div class="hero-mega-label">ATS Score</div>
+        <div class="hero-mega-num">${after}<span class="small">/100</span></div>
+        <div class="hero-meta">
+          <div class="hero-meta-item"><div class="v">${before} → ${after}</div><div class="l">Before → After</div></div>
+          <div class="hero-meta-item"><div class="v">${delta >= 0 ? '+' : ''}${delta}</div><div class="l">Delta</div></div>
+          <div class="hero-meta-item"><div class="v">${d.confidence || '—'}</div><div class="l">Confidence</div></div>
+          <div class="hero-meta-item"><div class="v">${d.total_jobs_analyzed || 0}</div><div class="l">Jobs Scanned</div></div>
+          <div class="hero-meta-item"><div class="v">${(d.scrape_info?.sources || []).length}</div><div class="l">Sources Live</div></div>
+        </div>
+      </div>
+      ${gauge(after, 'ATS', true, delta)}
+    </div>
+
+    ${integrityBlock(d)}
+
+    ${kwBlock('Hot Keywords', d.hot, 'hot', '65%+ of postings')}
+    ${kwBlock('Warm Keywords', d.warm, 'warm', '30 – 64%')}
+    ${kwBlock('Cold Keywords', d.cold, 'cold', 'Under 30%')}
+    ${kwBlock('Emerging Trends', d.emerging, 'em', 'Rising fast')}
+    ${kwBlock('Hard Skills', d.hard_skills, 'hard', 'Technical')}
+    ${kwBlock('Soft Skills', d.soft_skills, 'soft', 'Interpersonal')}
+    ${kwBlock('Salary Premium', d.salary_skills, 'sal', 'Adds $$$')}
+  `;
+}
+
+function kwBlock(title, items, cls, subtitle) {
+  if (!items || !items.length) return '';
+  const tags = items.map(k => {
+    const name = escHtml(k.name || k);
+    const freq = k.freq || k.pct;
+    return `<span class="kw ${cls}">${name}${freq ? ` <span class="freq">${freq}</span>` : ''}</span>`;
+  }).join('');
+  return `<div class="card" style="margin-bottom:var(--s4)">
+    <div class="card-h">
+      <h3>${title}</h3>
+      <span class="h-sub">${subtitle} · ${items.length} terms</span>
+    </div>
+    <div class="kw-row">${tags}</div>
+  </div>`;
+}
+
+// ─── RESUME DIFF ───
+function renderResume(orig, opt, added=[]) {
+  window._optResume = opt;
+  window._origResume = orig;
+  const highlight = txt => {
+    let h = escHtml(txt);
+    (added || []).slice(0, 30).forEach(kw => {
+      if (!kw) return;
+      try { h = h.replace(new RegExp('\\b' + kw.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '\\b','gi'), m => `<mark>${m}</mark>`); } catch(e){}
+    });
+    return h;
+  };
+  $('resume-content').innerHTML = `
+    <!-- ONE-CLICK ACCEPT-ALL HERO -->
+    <div class="card" style="background:linear-gradient(135deg, rgba(62,158,255,0.10), rgba(139,92,246,0.06));border-color:rgba(62,158,255,0.35);margin-bottom:var(--s5)">
+      <div style="display:flex; gap:var(--s5); align-items:center; flex-wrap:wrap; justify-content:space-between">
+        <div style="flex:1; min-width:280px">
+          <div class="view-eyebrow" style="margin-bottom:6px">Ready to ship</div>
+          <h3 style="font-size:var(--t-h1);font-weight:500;letter-spacing:-0.01em;margin-bottom:8px">Apply all ${(added||[]).length} recommended changes</h3>
+          <p style="color:var(--fg-2);font-size:14px;line-height:1.55">One click merges <b>every</b> recommendation — the optimized resume, the Gap Report bullet rewrites, the Bullet Ranker fixes, and all missing keywords — into a single final resume. Then we re-parse it and prep your PDF.</p>
+        </div>
+        <div style="display:flex; gap:var(--s2); flex-wrap:wrap">
+          <button class="btn btn-primary btn-big" onclick="applyAllSuggestions()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><polyline points="20 6 9 17 4 12"/></svg>
+            Apply All Suggestions
+          </button>
+          <button class="btn" onclick="switchTab('templates')">Skip to PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <h3>Before · After</h3>
+        <span class="h-sub">${(added||[]).length} keywords injected</span>
+        <button class="copy-btn" onclick="copyText(window._optResume)">Copy Optimized</button>
+      </div>
+      <div class="diff-grid">
+        <div class="diff-col"><h4>Original</h4><pre class="diff-pre">${escHtml(orig)}</pre></div>
+        <div class="diff-col opt"><h4>Optimized</h4><pre class="diff-pre opt">${highlight(opt)}</pre></div>
+      </div>
+    </div>`;
+}
+
+// ─── One-click "Apply All Suggestions" ───
+window.applyAllSuggestions = async () => {
+  if (!state.rec.optimized && !window._optResume) return toast('Run the agent first', 'err');
+  // Show progress in the X-Ray card
+  const banner = document.querySelector('#resume-content .card');
+  if (banner) banner.style.opacity = '0.6';
+  const recCount = state.rec.changes.length + state.rec.bulletRewrites.filter(b => b.rewrite).length + state.rec.addedKeywords.length;
+  toast('Merging ' + recCount + ' recommendations into final resume…');
+  try {
+    // 1. Call the new merge endpoint that combines optimized + Gap changes + Bullet rewrites + keywords
+    const r = await fetch(SERVER + '/apply-all-recommendations', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        original: state.rec.original || $('resume-text').value,
+        optimized: state.rec.optimized || window._optResume,
+        changes: state.rec.changes,
+        bulletRewrites: state.rec.bulletRewrites,
+        addedKeywords: state.rec.addedKeywords,
+        sector: state.sector,
+        jobTitle: state.rec.jobTitle || $('job-title').value,
+      })
+    });
+    const j = await r.json();
+    const merged = (j.merged && !j.merged.startsWith('[merge error')) ? j.merged : (state.rec.optimized || window._optResume);
+    // 2. Replace working resume + re-parse for templates
+    $('resume-text').value = merged;
+    window._optResume = merged;
+    // 3. Re-parse into structured fields for the PDF templates
+    const pr = await fetch(SERVER + '/parse-resume', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resume: merged })
+    });
+    const parsed = (await pr.json()).struct || {};
+    if (parsed && Object.keys(parsed).length) state.resumeStruct = parsed;
+    // 4. Refresh template previews so user sees the final content
+    if (state.templates.length) await loadTemplatePreviews();
+    toast('Done — switch to PDF Templates to download', 'ok');
+    if (banner) banner.style.opacity = '1';
+    // 5. Auto-jump to Templates tab
+    switchTab('templates');
+  } catch(e) {
+    toast('Merge error: ' + e.message, 'err');
+    if (banner) banner.style.opacity = '1';
+  }
+};
+
+// ─── GAP REPORT ───
+function renderGapReport(d) {
+  const changes = (d.changes||[]).map(c => `
+    <div class="block">
+      <div class="label">Why: ${escHtml(c.why||'')}</div>
+      <div style="font-size:13px;color:var(--red-soft);text-decoration:line-through;margin-bottom:6px;opacity:0.7">${escHtml(c.before||'')}</div>
+      <div style="font-size:13.5px;color:var(--green-soft)">${escHtml(c.after||'')}</div>
+    </div>`).join('');
+  const recs = (d.recommendations||[]).map(r => `<li style="margin-bottom:6px">${escHtml(r)}</li>`).join('');
+  const insights = (d.sectorInsights||[]).map(r => `<li style="margin-bottom:6px">${escHtml(r)}</li>`).join('');
+  const next = (d.nextSteps||[]).map(r => `<li style="margin-bottom:6px">${escHtml(r)}</li>`).join('');
+  $('gap-content').innerHTML = `
+    <div class="grid-2">
+      <div class="card"><div class="card-h"><h3>Bullet Rewrites</h3></div>${changes || '<div class="empty">None</div>'}</div>
+      <div class="card"><div class="card-h"><h3>Recommendations</h3></div><ul style="padding-left:20px;font-size:13.5px;line-height:1.7;color:var(--fg-1)">${recs}</ul></div>
+      <div class="card"><div class="card-h"><h3>Sector Insights</h3></div><ul style="padding-left:20px;font-size:13.5px;line-height:1.7;color:var(--fg-1)">${insights}</ul></div>
+      <div class="card"><div class="card-h"><h3>Next Steps</h3></div><ul style="padding-left:20px;font-size:13.5px;line-height:1.7;color:var(--fg-1)">${next}</ul></div>
+    </div>`;
+}
+
+function renderCoverLetter(letter) {
+  window._coverLetter = letter;
+  $('cl-content').innerHTML = `
+    <div class="card">
+      <div class="card-h"><h3>Letter</h3><button class="copy-btn" onclick="copyText(window._coverLetter)">Copy</button></div>
+      <div class="block"><div class="text">${escHtml(letter)}</div></div>
+    </div>`;
+}
+
+function renderInterview(d) {
+  const block = (title, items) => items && items.length ? `
+    <div class="card" style="margin-bottom:var(--s4)">
+      <div class="card-h"><h3>${title}</h3><span class="h-sub">${items.length} questions</span></div>
+      ${items.map(q => `
+        <div class="qa-item">
+          <div class="q">${escHtml(q.q || q)}</div>
+          ${q.a ? `<div class="a">${escHtml(q.a)}</div>` : ''}
+          ${q.tip ? `<div class="tip">${escHtml(q.tip)}</div>` : ''}
+        </div>`).join('')}
+    </div>` : '';
+  const ask = (d.questions_to_ask||[]).map(q => `<li style="margin-bottom:6px">${escHtml(q)}</li>`).join('');
+  const sal = (d.salary_negotiation||[]).map(q => `<li style="margin-bottom:6px">${escHtml(q)}</li>`).join('');
+  $('iv-content').innerHTML = `
+    ${block('Behavioral', d.behavioral)}
+    ${block('Technical', d.technical)}
+    ${block('Situational', d.situational)}
+    ${ask ? `<div class="card" style="margin-bottom:var(--s4)"><div class="card-h"><h3>Smart Questions To Ask</h3></div><ul style="padding-left:20px;font-size:13.5px;line-height:1.7;color:var(--fg-1)">${ask}</ul></div>` : ''}
+    ${sal ? `<div class="card"><div class="card-h"><h3>Salary Tips</h3></div><ul style="padding-left:20px;font-size:13.5px;line-height:1.7;color:var(--fg-1)">${sal}</ul></div>` : ''}`;
+}
+
+function renderLinkedIn(d) {
+  window._li = d;
+  const skills = (d.skills||[]).map(s => `<span class="kw">${escHtml(s)}</span>`).join('');
+  $('li-content').innerHTML = `
+    <div class="card" style="margin-bottom:var(--s4)">
+      <div class="card-h"><h3>Headline</h3><button class="copy-btn" onclick="copyText(window._li.headline)">Copy</button></div>
+      <div class="block"><div class="text">${escHtml(d.headline||'')}</div></div>
+    </div>
+    <div class="card" style="margin-bottom:var(--s4)">
+      <div class="card-h"><h3>About</h3><button class="copy-btn" onclick="copyText(window._li.about)">Copy</button></div>
+      <div class="block"><div class="text">${escHtml(d.about||'')}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h3>Top Skills</h3></div>
+      <div class="kw-row">${skills}</div>
+    </div>`;
+}
+
+function renderOutreach(d) {
+  window._or = d;
+  const dm = d.linkedin_dm || {}; const ce = d.cold_email || {};
+  window._or.dm_msg = dm.message || '';
+  window._or.ce_body = 'Subject: ' + (ce.subject || '') + '\n\n' + (ce.body || '');
+  const blk = (title, content, copyKey) => `
+    <div class="card" style="margin-bottom:var(--s4)">
+      <div class="card-h"><h3>${title}</h3><button class="copy-btn" onclick="copyText(window._or['${copyKey}'])">Copy</button></div>
+      <div class="block"><div class="text">${content}</div></div>
+    </div>`;
+  $('or-content').innerHTML = `
+    ${blk('LinkedIn DM', escHtml(dm.message||''), 'dm_msg')}
+    <div class="card" style="margin-bottom:var(--s4)">
+      <div class="card-h"><h3>Cold Email</h3><button class="copy-btn" onclick="copyText(window._or.ce_body)">Copy</button></div>
+      <div class="block"><div class="label">Subject</div><div class="text">${escHtml(ce.subject||'')}</div></div>
+      <div class="block"><div class="label">Body</div><div class="text">${escHtml(ce.body||'')}</div></div>
+    </div>
+    ${blk('Referral Request', escHtml(d.referral_request||''), 'referral_request')}
+    ${blk('Thank You Note', escHtml(d.thank_you_note||''), 'thank_you_note')}
+    ${blk('Negotiation Script', escHtml(d.negotiation_script||''), 'negotiation_script')}`;
+}
+
+function renderVelocity(d) {
+  const moves = (d.acceleration_moves||[]).map(m => `<li style="margin-bottom:6px">${escHtml(m)}</li>`).join('');
+  $('vel-content').innerHTML = `
+    <div class="hero">
+      <div class="hero-content">
+        <div class="hero-mega-label">Velocity Score</div>
+        <div class="hero-mega-num">${d.velocity_score||0}<span class="small">/100</span></div>
+        <div class="hero-meta">
+          <div class="hero-meta-item"><div class="v">${escHtml(d.trajectory||'—')}</div><div class="l">Trajectory</div></div>
+          <div class="hero-meta-item"><div class="v">${d.years_to_next_level||'—'}y</div><div class="l">To Next Level</div></div>
+          <div class="hero-meta-item"><div class="v">${escHtml(d.market_position||'—')}</div><div class="l">vs Peers</div></div>
+        </div>
+      </div>
+      ${gauge(d.velocity_score||0, 'Velocity', true)}
+    </div>
+    <div class="card">
+      <div class="card-h"><h3>Next Level: ${escHtml(d.next_level_title||'—')}</h3></div>
+      <p style="color:var(--fg-2);font-size:13.5px;line-height:1.7">${escHtml(d.market_position_note||'')}</p>
+      <h4 style="margin-top:var(--s5);font-size:11px;color:var(--acc);letter-spacing:2px;text-transform:uppercase;font-family:'JetBrains Mono',monospace">Acceleration Moves</h4>
+      <ul style="padding-left:20px;font-size:13.5px;margin-top:var(--s3);line-height:1.7;color:var(--fg-1)">${moves}</ul>
+      <p style="color:var(--fg-2);font-size:12.5px;margin-top:var(--s4);line-height:1.7"><strong>10-Year Projection:</strong> ${escHtml(d['10_year_projection']||'')}</p>
+    </div>`;
+}
+
+function renderTailor(d) {
+  window._tailored = d.tailored_resume || '';
+  $('tailor-out').innerHTML = `
+    <div class="card">
+      <div class="card-h"><h3>Tailored Resume</h3><span class="h-sub">${d.match_score_before||0} → ${d.match_score_after||0}</span></div>
+      <pre class="diff-pre opt">${escHtml(d.tailored_resume||'')}</pre>
+      <button class="btn btn-primary" onclick="copyText(window._tailored)" style="margin-top:var(--s4)">Copy</button>
+    </div>`;
+}
+
+function renderMatch(d) {
+  const fixes = (d.quick_fixes||[]).map(f => `<li>${escHtml(f.add_to_resume||'')} <span style="color:var(--fg-3)">(${escHtml(f.where||'')})</span></li>`).join('');
+  $('match-out').innerHTML = `
+    <div class="hero">
+      <div class="hero-content">
+        <div class="hero-mega-label">Match Score</div>
+        <div class="hero-mega-num">${d.match_pct||0}<span class="small">%</span></div>
+        <div class="hero-meta">
+          <div class="hero-meta-item"><div class="v">${d.should_apply ? 'YES' : 'PASS'}</div><div class="l">Apply?</div></div>
+          <div class="hero-meta-item"><div class="v">${escHtml(d.estimated_competition||'—')}</div><div class="l">Competition</div></div>
+        </div>
+      </div>
+      ${gauge(d.match_pct||0, 'Match', true)}
+    </div>
+    <div class="card">
+      <p style="color:var(--fg-1);font-size:15px;font-weight:500;line-height:1.6">${escHtml(d.verdict||'')}</p>
+      ${fixes ? `<h4 style="margin-top:var(--s5);font-size:11px;color:var(--acc);letter-spacing:2px;text-transform:uppercase;font-family:'JetBrains Mono',monospace">Quick Fixes</h4><ul style="padding-left:20px;font-size:13.5px;margin-top:var(--s3);line-height:1.7">${fixes}</ul>` : ''}
+    </div>`;
+}
+
+function renderBullets(d) {
+  const rows = (d.ranked_bullets||[]).map(b => `
+    <div class="block">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:1px;color:var(--fg-3)">#${b.rank}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:${b.score>=70?'var(--green-soft)':b.score>=50?'var(--amber)':'var(--red-soft)'}">${b.score}/100</span>
+      </div>
+      <div style="color:var(--fg-0);font-size:13.5px;line-height:1.7;margin-bottom:8px">${escHtml(b.text||'')}</div>
+      ${b.rewrite ? `<div style="color:var(--green-soft);font-size:12.5px;border-top:1px solid var(--line);padding-top:8px;line-height:1.7">→ ${escHtml(b.rewrite)}</div>` : ''}
+    </div>`).join('');
+  $('bullets-out').innerHTML = rows || '<div class="empty">No bullets ranked.</div>';
+}
+
+function renderNegotiate(d) {
+  $('neg-out').innerHTML = `
+    <div class="grid-3" style="margin-bottom:var(--s5)">
+      <div class="tile"><div class="v">${escHtml(d.opening_ask||'—')}</div><div class="l">Opening Ask</div></div>
+      <div class="tile"><div class="v" style="color:var(--green-soft)">${escHtml(d.target_salary||'—')}</div><div class="l">Target</div></div>
+      <div class="tile"><div class="v">${escHtml(d.minimum_acceptable||'—')}</div><div class="l">Minimum</div></div>
+    </div>
+    <div class="card">
+      <div class="block"><div class="label">Opening Line</div><div class="text">${escHtml(d.negotiation_script?.opening_line||'')}</div></div>
+      <div class="block"><div class="label">Counter Script</div><div class="text">${escHtml(d.negotiation_script?.counter_script||'')}</div></div>
+      <div class="block"><div class="label">If They Push Back</div><div class="text">${escHtml(d.negotiation_script?.if_they_push_back||'')}</div></div>
+    </div>`;
+}
+
+function renderBridge(d) {
+  const trans = (d.skill_translations||[]).map(t => `
+    <div class="block">
+      <div style="font-size:12.5px;color:var(--fg-2);margin-bottom:6px">${escHtml(t.old_language||'')}</div>
+      <div style="font-size:14px;color:var(--acc-soft);font-weight:500">→ ${escHtml(t.new_language||'')}</div>
+    </div>`).join('');
+  $('br-out').innerHTML = `
+    <div class="hero">
+      <div class="hero-content">
+        <div class="hero-mega-label">Transition Score</div>
+        <div class="hero-mega-num">${d.transition_score||0}<span class="small">/100</span></div>
+        <div class="hero-meta"><div class="hero-meta-item"><div class="v" style="font-size:16px">${escHtml(d.transition_verdict||'')}</div><div class="l">Verdict</div></div></div>
+      </div>
+      ${gauge(d.transition_score||0, 'Transition', true)}
+    </div>
+    <div class="card">
+      <div class="card-h"><h3>Skill Translations</h3></div>
+      ${trans}
+    </div>`;
+}
+
+function renderWeakness(d) {
+  const killers = (d.killer_bullets||[]).map(k => `
+    <div class="block">
+      <div class="label" style="color:var(--red-soft)">Problem: ${escHtml(k.problem||'')}</div>
+      <div style="font-size:13px;color:var(--red-soft);text-decoration:line-through;margin-bottom:8px;opacity:0.7">${escHtml(k.quote||'')}</div>
+      <div style="font-size:13.5px;color:var(--green-soft);line-height:1.7">→ ${escHtml(k.fix||'')}</div>
+    </div>`).join('');
+  $('weak-out').innerHTML = `
+    <div class="grid-3" style="margin-bottom:var(--s5)">
+      <div class="tile"><div class="v">${d.first_impression_score||0}<span class="unit">/100</span></div><div class="l">First Impression</div></div>
+      <div class="tile"><div class="v">${d.formatting_score||0}<span class="unit">/100</span></div><div class="l">Formatting</div></div>
+      <div class="tile"><div class="v">${(d.killer_bullets||[]).length}</div><div class="l">Killer Bullets</div></div>
+    </div>
+    <div class="card" style="margin-bottom:var(--s4)">
+      <div class="card-h"><h3>Recruiter's First 3 Seconds</h3></div>
+      <p style="color:var(--fg-1);font-size:14.5px;line-height:1.7">${escHtml(d.first_impression_note||'')}</p>
+    </div>
+    <div class="card">
+      <div class="card-h"><h3>Killer Bullets</h3></div>
+      ${killers}
+    </div>`;
+}
+
+function renderHarvestedJobs(jobs, query) {
+  if (!jobs || !jobs.length) return;
+  $('jobs-q').value = query || $('jobs-q').value;
+  renderJobsList(jobs);
+  $('jobs-count').textContent = jobs.length + ' jobs';
+}
+
+// ─── Live Jobs ───
+$('jobs-search-btn').addEventListener('click', () => loadLiveJobs());
+$('jobs-q').addEventListener('keydown', e => { if (e.key === 'Enter') loadLiveJobs(); });
+
+// Cache for current job list (used by filter/sort without re-fetching)
+state.lastJobs = [];
+state.minMatch = 0;
+state.sortMode = 'match';
+
+async function loadLiveJobs() {
+  const rawQ = $('jobs-q').value.trim() || $('job-title').value.trim();
+  const rawLoc = $('jobs-location').value.trim();
+  if (!rawQ) return toast('Enter a search query', 'err');
+  const resume = $('resume-text').value.trim();
+  $('jobs-list').innerHTML = '<div class="empty"><span class="spinner"></span>Searching 14+ free job boards' + (rawLoc ? ` in ${escHtml(rawLoc)}` : '') + (resume ? ' · scoring against your resume' : '') + '…</div>';
+  try {
+    // Use POST so we can send the (potentially long) resume for per-job scoring
+    const r = await fetch(SERVER + '/live-jobs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: rawQ, location: rawLoc, limit: 80, resume: resume })
+    });
+    const j = await r.json();
+    const finalLoc = j.parsed_location || rawLoc;
+    if (!rawLoc && j.parsed_location) {
+      $('jobs-location').value = j.parsed_location;
+      $('jobs-q').value = j.query || rawQ;
+      toast(`Detected location: ${j.parsed_location}`, 'ok');
+    }
+    state.lastJobs = j.jobs || [];
+    $('jobs-count').textContent = state.lastJobs.length + ' jobs' + (finalLoc ? ' · ' + finalLoc : '');
+    $('tel-jobs').textContent = state.lastJobs.length;
+    applyFiltersAndRender();
+  } catch(e) { $('jobs-list').innerHTML = '<div class="empty">' + escHtml(e.message) + '</div>'; }
+}
+
+function applyFiltersAndRender() {
+  let jobs = state.lastJobs.slice();
+  // Filter by match score
+  if (state.minMatch > 0) {
+    jobs = jobs.filter(j => (j.match_score || 0) >= state.minMatch);
+  }
+  // Sort
+  if (state.sortMode === 'match') {
+    jobs.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+  } else if (state.sortMode === 'recent') {
+    jobs.sort((a, b) => (b.posted || '').localeCompare(a.posted || ''));
+  }
+  // 'source' keeps backend order (relevance score from server)
+  renderJobsList(jobs);
+}
+
+// Filter pill clicks
+document.querySelectorAll('.filter-pill').forEach(p => {
+  p.addEventListener('click', () => {
+    document.querySelectorAll('.filter-pill').forEach(x => x.classList.remove('active'));
+    p.classList.add('active');
+    state.minMatch = parseInt(p.dataset.min);
+    applyFiltersAndRender();
+  });
+});
+
+// Sort dropdown
+$('sort-mode').addEventListener('change', (e) => {
+  state.sortMode = e.target.value;
+  applyFiltersAndRender();
+});
+
+window.quickLoc = (loc) => {
+  $('jobs-location').value = loc;
+  loadLiveJobs();
+};
+
+// Enter on location input also triggers search
+document.addEventListener('keydown', (e) => {
+  if (e.target.id === 'jobs-location' && e.key === 'Enter') loadLiveJobs();
+});
+
+// ─── City autocomplete: load /cities once, populate datalist ───
+async function loadCityAutocomplete() {
+  try {
+    const r = await fetch(SERVER + '/cities');
+    const j = await r.json();
+    const dl = $('cities-datalist');
+    const items = [...(j.extras || []), ...(j.cities || [])];
+    dl.innerHTML = items.map(c => `<option value="${escHtml(c)}">`).join('');
+  } catch(e) {}
+}
+loadCityAutocomplete();
+
+function renderJobsList(jobs) {
+  if (!jobs || !jobs.length) {
+    $('jobs-list').innerHTML = '<div class="empty">No jobs match your filters. Lower the match threshold or broaden the search.</div>';
+    return;
+  }
+  window._jobs = jobs;
+  const hasAnyScore = jobs.some(j => typeof j.match_score === 'number');
+  const hint = hasAnyScore ? '' : '<div style="padding:var(--s3) var(--s4); background:rgba(255,170,0,0.06); border:1px solid rgba(255,170,0,0.20); border-radius:var(--r2); margin-bottom:var(--s3); font-size:12.5px; color:var(--amber)">Paste your resume in the Launch drawer to get a per-job match score, plus the keywords that explain WHY each one matches.</div>';
+  $('jobs-list').innerHTML = hint + jobs.map((j, idx) => {
+    const sal = j.salary ? '<span class="job-salary">' + escHtml(j.salary) + '</span>' : '';
+    const snip = j.snippet ? '<div class="job-snippet">' + escHtml(j.snippet) + '...</div>' : '';
+    let badge = '', matchBar = '';
+    if (typeof j.match_score === 'number') {
+      const cls = j.match_score >= 70 ? 'strong' : j.match_score >= 50 ? 'good' : 'weak';
+      const label = j.match_score >= 70 ? 'STRONG' : j.match_score >= 50 ? 'GOOD' : 'WEAK';
+      badge = '<span class="match-badge ' + cls + '"><span class="pct">' + j.match_score + '%</span> ' + label + '</span>';
+      matchBar = '<div class="match-bar"><span class="' + cls + '" style="width:' + j.match_score + '%"></span></div>';
+    }
+    let sharedHtml = '';
+    if (j.shared_keywords && j.shared_keywords.length) {
+      const chips = j.shared_keywords.map(k => '<span class="shared-key">' + escHtml(k) + '</span>').join('');
+      sharedHtml = '<div class="shared-keys"><span class="shared-keys-label">Why this job?</span>' + chips + '</div>';
+    }
+    return '<div class="job-card">' +
+      '<div class="job-head">' +
+        '<div style="flex:1; min-width:240px">' +
+          '<div style="display:flex; gap:var(--s3); align-items:flex-start; flex-wrap:wrap">' +
+            '<div style="flex:1; min-width:200px">' +
+              '<div class="job-title">' + escHtml(j.title) + '</div>' +
+              '<div class="job-meta">' +
+                '<span>' + escHtml(j.company || '—') + '</span>' +
+                '<span>· ' + escHtml(j.location || 'Remote') + '</span>' +
+                (j.posted ? '<span>· ' + escHtml(j.posted) + '</span>' : '') +
+                (sal ? '<span>· ' + sal + '</span>' : '') +
+              '</div>' +
+            '</div>' +
+            badge +
+          '</div>' +
+          matchBar +
+        '</div>' +
+        '<span class="job-source">' + escHtml(j.source || '') + '</span>' +
+      '</div>' +
+      snip +
+      sharedHtml +
+      '<div class="job-actions">' +
+        '<a class="btn btn-primary btn-sm" href="' + escHtml(j.url || '#') + '" target="_blank" rel="noopener">View &amp; Apply ' + '→' + '</a>' +
+        '<button class="btn btn-sm" onclick="quickMatch(' + idx + ')">Deep Match</button>' +
+        '<button class="btn btn-sm" onclick="quickTailor(' + idx + ')">Tailor For This</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+window.quickMatch = (idx) => {
+  const j = window._jobs[idx];
+  $('match-posting').value = j.title + ' at ' + j.company + '\n\n' + (j.snippet || '');
+  switchTab('match');
+  toast('Loaded in Match tab — click Score This Match', 'ok');
+};
+
+window.quickTailor = (idx) => {
+  const j = window._jobs[idx];
+  openTailorApplyModal(j);
+};
+
+// ─── ONE-CLICK TAILOR + APPLY MODAL ───
+async function openTailorApplyModal(job) {
+  const resume = $('resume-text').value.trim();
+  if (!resume) {
+    toast('Paste your resume in the Launch drawer first', 'err');
+    return;
+  }
+  // Open modal immediately with loading state
+  $('ta-scrim').classList.add('open');
+  $('ta-modal').classList.add('open');
+  $('ta-modal-title').textContent = job.title || 'Tailor & Apply';
+  $('ta-job-meta').textContent = (job.company || '') + (job.location ? ' · ' + job.location : '') + (job.source ? ' · via ' + job.source : '');
+  $('ta-resume-body').textContent = 'Tailoring resume…';
+  $('ta-cover-body').textContent = 'Drafting cover letter…';
+  $('ta-open').href = job.url || '#';
+  $('ta-status').textContent = 'Generating…';
+  // Match badge
+  const ms = job.match_score;
+  if (typeof ms === 'number') {
+    const cls = ms >= 70 ? 'strong' : ms >= 50 ? 'good' : 'weak';
+    $('ta-match-badge').innerHTML = '<span class="match-badge ' + cls + '"><span class="pct">' + ms + '%</span> MATCH</span>';
+  } else {
+    $('ta-match-badge').innerHTML = '';
+  }
+
+  const posting = (job.title || '') + ' at ' + (job.company || '') + '\n\n' + (job.snippet || '');
+
+  // Fire BOTH /tailor and /draft-cover-letter in parallel
+  window._taResume = ''; window._taCover = ''; window._taStructCache = null;
+  window._taJob = job; window._taPosting = posting;
+
+  // Tailor uses SSE — handle it specially
+  const tailorPromise = (async () => {
+    try {
+      await streamSSE('/tailor', {
+        resume, jobPosting: posting,
+        jobTitle: job.title || $('job-title').value, sector: state.sector,
+      }, (ev) => {
+        if (ev.type === 'tailor_data' && ev.data) {
+          window._taResume = ev.data.tailored_resume || ''; window._taStructCache = null;
+          $('ta-resume-body').textContent = window._taResume || '(no result)';
+        } else if (ev.type === 'error') {
+          $('ta-resume-body').textContent = '✗ ' + (ev.msg || 'tailor error');
+        }
+      });
+    } catch (e) {
+      $('ta-resume-body').textContent = '✗ ' + e.message;
+    }
+  })();
+
+  // Cover letter is a synchronous JSON endpoint
+  const coverPromise = (async () => {
+    try {
+      const r = await fetch(SERVER + '/draft-cover-letter', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobTitle: job.title || '', company: job.company || '',
+          posting: posting, resume: resume, sector: state.sector,
+        })
+      });
+      const j = await r.json();
+      window._taCover = j.letter || '';
+      $('ta-cover-body').textContent = window._taCover || '(no result)';
+    } catch (e) {
+      $('ta-cover-body').textContent = '✗ ' + e.message;
+    }
+  })();
+
+  await Promise.all([tailorPromise, coverPromise]);
+  $('ta-status').textContent = 'Done · review and apply';
+}
+
+// Modal close
+$('ta-scrim').addEventListener('click', closeTailorApplyModal);
+$('ta-close').addEventListener('click', closeTailorApplyModal);
+function closeTailorApplyModal() {
+  $('ta-scrim').classList.remove('open');
+  $('ta-modal').classList.remove('open');
+}
+
+// Download tailored PDF — uses shared iframe-based helper
+// Parse the tailored resume text once, then export it in any format.
+async function taStruct() {
+  if (!window._taResume) { toast('Tailored resume not ready yet', 'err'); return null; }
+  if (window._taStructCache) return window._taStructCache;
+  const pr = await fetch(SERVER + '/parse-resume', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resume: window._taResume })
+  });
+  const parsed = (await pr.json()).struct || {};
+  if (!parsed.name) parsed.name = (state.resumeStruct && state.resumeStruct.name) || 'Resume';
+  window._taStructCache = parsed;
+  return parsed;
+}
+function taTag() {
+  return (window._taJob && window._taJob.company)
+    ? 'tailored_' + window._taJob.company.replace(/[^A-Za-z0-9]/g, '_')
+    : 'tailored';
+}
+async function taExport(fmt, ev) {
+  const st = await taStruct();
+  if (!st) return;
+  const ok = await atsExport(fmt, st, taTag(), ev.currentTarget);
+  $('ta-status').textContent = ok ? 'Downloaded ' + fmt.toUpperCase() : '✗ export failed';
+}
+$('ta-download').addEventListener('click', (ev) => taExport('pdf', ev));
+$('ta-download-docx').addEventListener('click', (ev) => taExport('docx', ev));
+$('ta-download-txt').addEventListener('click', (ev) => taExport('txt', ev));
+
+// Save to tracker
+$('ta-save-tracker').addEventListener('click', () => {
+  const j = window._taJob;
+  if (!j) return;
+  state.applications.push({
+    company: j.company || 'Unknown',
+    role: j.title || 'Unknown',
+    date: new Date().toISOString().slice(0,10),
+    status: 'applied'
+  });
+  localStorage.setItem('apex_apps', JSON.stringify(state.applications));
+  renderTracker();
+  toast('Added to tracker', 'ok');
+});
+
+window.copyText = (txt) => {
+  if (!txt) return;
+  navigator.clipboard.writeText(txt).then(() => toast('Copied', 'ok'));
+};
+
+// ─── PDF Templates ───
+async function initTemplatesTab() {
+  if (state.templates.length) return;
+  try {
+    const r = await fetch(SERVER + '/templates');
+    const j = await r.json();
+    state.templates = j.templates || [];
+    renderTemplateGrid();
+  } catch(e) { $('tpl-grid').innerHTML = '<div class="empty">Server unreachable.</div>'; }
+}
+
+function renderTemplateGrid() {
+  $('tpl-grid').innerHTML = state.templates.map(t => `
+    <div class="tpl-card ${t.id === state.selectedTemplate ? 'selected' : ''}" data-tpl="${t.id}">
+      <div class="tpl-preview"><iframe id="prev-${t.id}" sandbox></iframe></div>
+      <h4>${escHtml(t.name)}</h4>
+      <p>${escHtml(t.desc)}</p>
+    </div>`).join('');
+  $$('.tpl-card').forEach(card => card.addEventListener('click', () => selectTemplate(card.dataset.tpl)));
+  $('tpl-actions').style.display = 'flex';
+  loadTemplatePreviews();
+}
+
+async function loadTemplatePreviews() {
+  if (!state.resumeStruct) {
+    const resume = $('resume-text').value.trim();
+    if (resume.length > 100) {
+      toast('Parsing resume for previews…');
+      try {
+        const r = await fetch(SERVER + '/parse-resume', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resume })
+        });
+        const data = await r.json();
+        state.resumeStruct = data.struct && Object.keys(data.struct).length ? data.struct : sampleStruct();
+      } catch(e) { state.resumeStruct = sampleStruct(); }
+    } else {
+      state.resumeStruct = sampleStruct();
+    }
+  }
+  for (const t of state.templates) {
+    try {
+      const r = await fetch(SERVER + '/render-resume', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template: t.id, struct: state.resumeStruct })
+      });
+      const j = await r.json();
+      const iframe = $('prev-' + t.id);
+      if (iframe) iframe.srcdoc = j.html || '';
+    } catch(e) {}
+  }
+}
+
+function sampleStruct() {
+  return {
+    name: 'Your Name', title: 'Your Target Role',
+    email: 'you@example.com', phone: '+1 555 123 4567', location: 'Your City',
+    linkedin: 'linkedin.com/in/you',
+    summary: 'Paste your resume in the Launch panel, then click "Re-parse" to see your real content here.',
+    experience: [{ title: 'Recent Role', company: 'Recent Company', location: 'City', start: '2022', end: 'Present',
+      bullets: ['Bullet 1 — what you did and the measurable result', 'Bullet 2', 'Bullet 3'] }],
+    education: [{ degree: 'Your Degree', school: 'University', year: '20XX' }],
+    skills: { technical: ['Skill 1','Skill 2','Skill 3'], tools: ['Tool 1','Tool 2'], soft: ['Leadership','Communication'] }
+  };
+}
+
+function selectTemplate(id) {
+  state.selectedTemplate = id;
+  $$('.tpl-card').forEach(c => c.classList.toggle('selected', c.dataset.tpl === id));
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════
+// APEX ATS EXPORT ENGINE — real text layer (PDF / DOCX / TXT)
+// html2canvas rasterises to an image; ATS parsers extract ZERO text from that.
+// These build a genuine text layer so applicant tracking systems can read it.
+// Spec: name 15pt bold · section headers 12pt bold caps · body 10.5pt · 0.75" margins
+// ══════════════════════════════════════════════════════════════════════════
+const ATS = {
+  MARGIN: 0.75, PAGE_W: 8.5, PAGE_H: 11,
+  NAME: 15, HEAD: 12, BODY: 10.5, LEAD: 0.16, GAP: 0.10,
+
+  safe(v) { return (v === null || v === undefined) ? '' : String(v).replace(/\s+/g, ' ').trim(); },
+
+  // Normalise whatever the parser returned into a predictable shape.
+  norm(st) {
+    const s = st || {};
+    const arr = v => Array.isArray(v) ? v.filter(Boolean) : [];
+    return {
+      name: this.safe(s.name), title: this.safe(s.title),
+      email: this.safe(s.email), phone: this.safe(s.phone),
+      location: this.safe(s.location), linkedin: this.safe(s.linkedin),
+      summary: this.safe(s.summary),
+      experience: arr(s.experience).map(e => ({
+        title: this.safe(e.title), company: this.safe(e.company),
+        location: this.safe(e.location), start: this.safe(e.start), end: this.safe(e.end),
+        bullets: arr(e.bullets).map(b => this.safe(b)).filter(Boolean)
+      })),
+      education: arr(s.education).map(e => ({
+        degree: this.safe(e.degree), school: this.safe(e.school),
+        location: this.safe(e.location), year: this.safe(e.year), gpa: this.safe(e.gpa)
+      })),
+      skills: {
+        technical: arr(s.skills && s.skills.technical).map(x => this.safe(x)).filter(Boolean),
+        tools:     arr(s.skills && s.skills.tools).map(x => this.safe(x)).filter(Boolean),
+        soft:      arr(s.skills && s.skills.soft).map(x => this.safe(x)).filter(Boolean)
+      },
+      // Everything below was previously dropped by the exporter. Licenses on a
+      // clinician's resume are a hard requirement, not decoration.
+      authorization: this.safe(s.authorization),
+      website: this.safe(s.website),
+      certifications: arr(s.certifications).map(c => typeof c === 'string' ? this.safe(c)
+        : [this.safe(c.name), this.safe(c.issuer), this.safe(c.year)].filter(Boolean).join(' — ')).filter(Boolean),
+      languages: arr(s.languages).map(x => this.safe(x)).filter(Boolean),
+      projects: arr(s.projects).map(p => typeof p === 'string' ? { name: this.safe(p), description: '', tech: [] }
+        : { name: this.safe(p.name), description: this.safe(p.description), tech: arr(p.tech).map(t => this.safe(t)) }).filter(p => p.name),
+      awards: arr(s.awards).map(x => this.safe(x)).filter(Boolean),
+      additional: arr(s.additional).map(a => ({ header: this.safe(a.header), lines: arr(a.lines).map(l => this.safe(l)).filter(Boolean) }))
+        .filter(a => a.header && a.lines.length)
+    };
+  },
+
+  contactLine(d) {
+    return [d.email, d.phone, d.location, d.linkedin, d.website, d.authorization].filter(Boolean).join('  |  ');
+  },
+  eduLine(e) {
+    return [e.school, e.location].filter(Boolean).join(' — ');
+  },
+  dateRange(e) {
+    return [e.start, e.end].filter(Boolean).join(' – ');
+  },
+  filename(d, ext, tag) {
+    const base = (d.name || 'resume').replace(/[^A-Za-z0-9_-]+/g, '_') || 'resume';
+    return base + '_APEX' + (tag ? '_' + tag : '') + '.' + ext;
+  },
+
+  // ─── PDF: real selectable text via jsPDF ───
+  pdf(struct, tag) {
+    if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('jsPDF failed to load — check network');
+    const d = this.norm(struct);
+    const doc = new window.jspdf.jsPDF({ unit: 'in', format: 'letter', orientation: 'portrait' });
+    const W = this.PAGE_W - this.MARGIN * 2;
+    let y = this.MARGIN;
+
+    const room = need => {
+      if (y + need > this.PAGE_H - this.MARGIN) { doc.addPage(); y = this.MARGIN; return true; }
+      return false;
+    };
+    const text = (str, size, style, indent) => {
+      if (!str) return;
+      doc.setFont('helvetica', style || 'normal'); doc.setFontSize(size);
+      const x = this.MARGIN + (indent || 0);
+      const lines = doc.splitTextToSize(str, W - (indent || 0));
+      for (const ln of lines) { room(this.LEAD); doc.text(ln, x, y); y += this.LEAD; }
+    };
+    const rule = () => {
+      doc.setDrawColor(150); doc.setLineWidth(0.008);
+      doc.line(this.MARGIN, y, this.PAGE_W - this.MARGIN, y); y += this.GAP;
+    };
+    const section = label => {
+      room(0.55); y += this.GAP;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(this.HEAD);
+      doc.text(label.toUpperCase(), this.MARGIN, y); y += 0.09; rule();
+    };
+
+    // Header
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(this.NAME);
+    doc.text(d.name || 'Name', this.MARGIN, y); y += 0.24;
+    if (d.title) { text(d.title, this.BODY + 0.5, 'normal'); }
+    const contact = this.contactLine(d);
+    if (contact) { text(contact, this.BODY - 0.5, 'normal'); }
+    y += 0.04; rule();
+
+    if (d.summary) { section('Professional Summary'); text(d.summary, this.BODY, 'normal'); }
+
+    if (d.certifications.length) {
+      section('Licenses & Certifications');
+      d.certifications.forEach(c => text('- ' + c, this.BODY, 'normal', 0.05));
+    }
+
+    if (d.experience.length) {
+      section('Professional Experience');
+      d.experience.forEach((e, i) => {
+        if (i) y += this.GAP * 0.7;
+        room(0.5);
+        const left = [e.title, e.company].filter(Boolean).join(' — ');
+        const right = this.dateRange(e);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(this.BODY);
+        doc.text(left || '', this.MARGIN, y);
+        if (right) {
+          doc.setFont('helvetica', 'normal');
+          doc.text(right, this.PAGE_W - this.MARGIN, y, { align: 'right' });
+        }
+        y += this.LEAD;
+        if (e.location) { text(e.location, this.BODY - 1, 'italic'); }
+        // Hyphen bullets: ATS parsers handle "-" more reliably than "•"
+        e.bullets.forEach(b => {
+          room(this.LEAD);
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(this.BODY);
+          const lines = doc.splitTextToSize(b, W - 0.18);
+          lines.forEach((ln, k) => {
+            room(this.LEAD);
+            doc.text(k === 0 ? '- ' + ln : '  ' + ln, this.MARGIN + 0.05, y);
+            y += this.LEAD;
+          });
+        });
+      });
+    }
+
+    if (d.education.length) {
+      section('Education');
+      d.education.forEach(e => {
+        room(0.3);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(this.BODY);
+        doc.text(e.degree || '', this.MARGIN, y);
+        if (e.year) { doc.setFont('helvetica', 'normal'); doc.text(e.year, this.PAGE_W - this.MARGIN, y, { align: 'right' }); }
+        y += this.LEAD;
+        const el = this.eduLine(e); if (el) text(el, this.BODY, 'normal');
+        if (e.gpa) text('GPA: ' + e.gpa, this.BODY - 1, 'normal');
+      });
+    }
+
+    const sk = d.skills;
+    if (sk.technical.length || sk.tools.length || sk.soft.length) {
+      section('Skills');
+      if (sk.technical.length) text('Technical: ' + sk.technical.join(', '), this.BODY, 'normal');
+      if (sk.tools.length)     text('Tools: ' + sk.tools.join(', '), this.BODY, 'normal');
+      if (sk.soft.length)      text('Professional: ' + sk.soft.join(', '), this.BODY, 'normal');
+    }
+
+    if (d.languages.length) { section('Languages'); text(d.languages.join(', '), this.BODY, 'normal'); }
+
+    if (d.projects.length) {
+      section('Projects');
+      d.projects.forEach(p => {
+        room(0.3);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(this.BODY); doc.text(p.name, this.MARGIN, y); y += this.LEAD;
+        if (p.description) text(p.description, this.BODY, 'normal');
+        if (p.tech.length) text('Technologies: ' + p.tech.join(', '), this.BODY - 1, 'italic');
+      });
+    }
+
+    if (d.awards.length) { section('Awards'); d.awards.forEach(a => text('- ' + a, this.BODY, 'normal', 0.05)); }
+
+    d.additional.forEach(a => { section(a.header); a.lines.forEach(l => text(l, this.BODY, 'normal')); });
+
+    doc.save(this.filename(d, 'pdf', tag));
+    return true;
+  },
+
+  // ─── DOCX: Calibri, recruiter-ready ───
+  async docx(struct, tag) {
+    if (!window.docx) throw new Error('docx.js failed to load — check network');
+    const D = window.docx;
+    const d = this.norm(struct);
+    const HALF = n => Math.round(n * 2);            // pt -> half-points
+    const run = (t, o) => new D.TextRun(Object.assign({ text: t, font: 'Calibri' }, o || {}));
+    const para = (children, o) => new D.Paragraph(Object.assign({ children }, o || {}));
+    const kids = [];
+
+    kids.push(para([run(d.name || 'Name', { bold: true, size: HALF(16) })], { spacing: { after: 40 } }));
+    if (d.title) kids.push(para([run(d.title, { size: HALF(11) })], { spacing: { after: 40 } }));
+    const contact = this.contactLine(d);
+    if (contact) kids.push(para([run(contact, { size: HALF(10) })], { spacing: { after: 120 } }));
+
+    const section = label => kids.push(para(
+      [run(label.toUpperCase(), { bold: true, size: HALF(12) })],
+      { spacing: { before: 200, after: 80 },
+        border: { bottom: { color: '999999', size: 6, style: D.BorderStyle.SINGLE, space: 2 } } }
+    ));
+
+    if (d.summary) { section('Professional Summary'); kids.push(para([run(d.summary, { size: HALF(10.5) })])); }
+
+    if (d.certifications.length) {
+      section('Licenses & Certifications');
+      d.certifications.forEach(c => kids.push(para([run(c, { size: HALF(10.5) })], { bullet: { level: 0 } })));
+    }
+
+    if (d.experience.length) {
+      section('Professional Experience');
+      d.experience.forEach(e => {
+        const left = [e.title, e.company].filter(Boolean).join(' — ');
+        const right = this.dateRange(e);
+        kids.push(para(
+          [run(left, { bold: true, size: HALF(10.5) })].concat(right ? [run('\t' + right, { size: HALF(10.5) })] : []),
+          { tabStops: [{ type: D.TabStopType.RIGHT, position: 9360 }], spacing: { before: 120 } }
+        ));
+        if (e.location) kids.push(para([run(e.location, { italics: true, size: HALF(9.5) })]));
+        e.bullets.forEach(b => kids.push(para([run(b, { size: HALF(10.5) })], { bullet: { level: 0 } })));
+      });
+    }
+
+    if (d.education.length) {
+      section('Education');
+      d.education.forEach(e => {
+        kids.push(para(
+          [run(e.degree || '', { bold: true, size: HALF(10.5) })].concat(e.year ? [run('\t' + e.year, { size: HALF(10.5) })] : []),
+          { tabStops: [{ type: D.TabStopType.RIGHT, position: 9360 }] }
+        ));
+        const el = this.eduLine(e); if (el) kids.push(para([run(el, { size: HALF(10.5) })]));
+        if (e.gpa) kids.push(para([run('GPA: ' + e.gpa, { size: HALF(9.5) })]));
+      });
+    }
+
+    const sk = d.skills;
+    if (sk.technical.length || sk.tools.length || sk.soft.length) {
+      section('Skills');
+      if (sk.technical.length) kids.push(para([run('Technical: ', { bold: true, size: HALF(10.5) }), run(sk.technical.join(', '), { size: HALF(10.5) })]));
+      if (sk.tools.length)     kids.push(para([run('Tools: ',     { bold: true, size: HALF(10.5) }), run(sk.tools.join(', '),     { size: HALF(10.5) })]));
+      if (sk.soft.length)      kids.push(para([run('Professional: ', { bold: true, size: HALF(10.5) }), run(sk.soft.join(', '),   { size: HALF(10.5) })]));
+    }
+
+    if (d.languages.length) { section('Languages'); kids.push(para([run(d.languages.join(', '), { size: HALF(10.5) })])); }
+
+    if (d.projects.length) {
+      section('Projects');
+      d.projects.forEach(p => {
+        kids.push(para([run(p.name, { bold: true, size: HALF(10.5) })], { spacing: { before: 100 } }));
+        if (p.description) kids.push(para([run(p.description, { size: HALF(10.5) })]));
+        if (p.tech.length) kids.push(para([run('Technologies: ' + p.tech.join(', '), { italics: true, size: HALF(9.5) })]));
+      });
+    }
+
+    if (d.awards.length) { section('Awards'); d.awards.forEach(a => kids.push(para([run(a, { size: HALF(10.5) })], { bullet: { level: 0 } }))); }
+
+    d.additional.forEach(a => { section(a.header); a.lines.forEach(l => kids.push(para([run(l, { size: HALF(10.5) })]))); });
+
+    const doc = new D.Document({
+      sections: [{ properties: { page: { margin: { top: 1080, right: 1080, bottom: 1080, left: 1080 } } }, children: kids }]
+    });
+    const blob = await D.Packer.toBlob(doc);
+    this.saveBlob(blob, this.filename(d, 'docx', tag));
+    return true;
+  },
+
+  // ─── TXT: clean plaintext fallback for paste-into-form ───
+  txt(struct, tag) {
+    const d = this.norm(struct);
+    const L = [];
+    if (d.name) L.push(d.name);
+    if (d.title) L.push(d.title);
+    const c = this.contactLine(d); if (c) L.push(c);
+    const head = t => { L.push('', t.toUpperCase(), '='.repeat(t.length)); };
+    if (d.summary) { head('Professional Summary'); L.push(d.summary); }
+    if (d.certifications.length) { head('Licenses & Certifications'); d.certifications.forEach(c => L.push('- ' + c)); }
+    if (d.experience.length) {
+      head('Professional Experience');
+      d.experience.forEach(e => {
+        L.push('');
+        L.push([e.title, e.company].filter(Boolean).join(' — ') + (this.dateRange(e) ? '  (' + this.dateRange(e) + ')' : ''));
+        if (e.location) L.push(e.location);
+        e.bullets.forEach(b => L.push('- ' + b));
+      });
+    }
+    if (d.education.length) {
+      head('Education');
+      d.education.forEach(e => L.push([e.degree, this.eduLine(e), e.year].filter(Boolean).join(' — ')));
+    }
+    const sk = d.skills;
+    if (sk.technical.length || sk.tools.length || sk.soft.length) {
+      head('Skills');
+      if (sk.technical.length) L.push('Technical: ' + sk.technical.join(', '));
+      if (sk.tools.length)     L.push('Tools: ' + sk.tools.join(', '));
+      if (sk.soft.length)      L.push('Professional: ' + sk.soft.join(', '));
+    }
+    if (d.languages.length) { head('Languages'); L.push(d.languages.join(', ')); }
+    if (d.projects.length) { head('Projects'); d.projects.forEach(p => { L.push(p.name); if (p.description) L.push('  ' + p.description); if (p.tech.length) L.push('  Technologies: ' + p.tech.join(', ')); }); }
+    if (d.awards.length) { head('Awards'); d.awards.forEach(a => L.push('- ' + a)); }
+    d.additional.forEach(a => { head(a.header); a.lines.forEach(l => L.push(l)); });
+    this.saveBlob(new Blob([L.join('\n')], { type: 'text/plain;charset=utf-8' }), this.filename(d, 'txt', tag));
+    return true;
+  },
+
+  saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+};
+
+// Route any export button through the engine with uniform error handling.
+async function atsExport(format, struct, tag, btn) {
+  const label = btn ? btn.innerHTML : null;
+  try {
+    if (!struct || !struct.name) { toast('Paste your resume and click "Re-parse" first', 'err'); return false; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Generating ' + format.toUpperCase() + '…'; }
+    if (format === 'pdf')  ATS.pdf(struct, tag);
+    if (format === 'docx') await ATS.docx(struct, tag);
+    if (format === 'txt')  ATS.txt(struct, tag);
+    toast(format.toUpperCase() + ' downloaded — text layer intact, ATS-readable', 'ok');
+    return true;
+  } catch (err) {
+    console.error('[APEX export]', err);
+    toast('Export failed: ' + (err.message || err), 'err');
+    return false;
+  } finally {
+    if (btn) { btn.disabled = false; if (label !== null) btn.innerHTML = label; }
+  }
+}
+
+// ─── SHARED PDF DOWNLOAD HELPER (iframe-based, reliable rendering) ───
+async function downloadResumeAsPdf(html, filename) {
+  // Render into a hidden iframe so the template's <style> block has its own document context.
+  // visibility:hidden (not display:none) keeps the layout active so html2canvas can capture it.
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;left:0;top:0;width:8.5in;border:0;visibility:hidden;background:#fff;z-index:-9999';
+  iframe.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(iframe);
+  // Write the full HTML doc into the iframe
+  iframe.contentDocument.open();
+  iframe.contentDocument.write(html);
+  iframe.contentDocument.close();
+  // Wait for fonts + images
+  await new Promise(r => setTimeout(r, 700));
+  // Auto-size iframe to fit content (so html2canvas captures everything, not just first viewport)
+  const body = iframe.contentDocument.body;
+  if (body) {
+    const h = Math.max(body.scrollHeight, body.offsetHeight, 11 * 96);
+    iframe.style.height = h + 'px';
+  }
+  await new Promise(r => setTimeout(r, 200));
+  try {
+    if (typeof html2pdf === 'undefined') throw new Error('html2pdf failed to load — check network');
+    await html2pdf()
+      .from(iframe.contentDocument.documentElement)
+      .set({
+        margin: 0,
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          windowWidth: 816,    // 8.5in @ 96dpi
+        },
+        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait', compress: true },
+        pagebreak: { mode: ['css', 'legacy', 'avoid-all'] }
+      })
+      .save();
+    return true;
+  } finally {
+    iframe.remove();
+  }
+}
+
+// Text-layer exports. The old path rendered through html2canvas, which produced
+// an image-only PDF that applicant tracking systems parse as a blank document.
+$('tpl-download').addEventListener('click', async (ev) => {
+  if (!state.resumeStruct) await loadTemplatePreviews();
+  await atsExport('pdf', state.resumeStruct, state.selectedTemplate, ev.currentTarget);
+});
+$('tpl-download-docx').addEventListener('click', async (ev) => {
+  if (!state.resumeStruct) await loadTemplatePreviews();
+  await atsExport('docx', state.resumeStruct, state.selectedTemplate, ev.currentTarget);
+});
+$('tpl-download-txt').addEventListener('click', async (ev) => {
+  if (!state.resumeStruct) await loadTemplatePreviews();
+  await atsExport('txt', state.resumeStruct, state.selectedTemplate, ev.currentTarget);
+});
+
+$('tpl-preview').addEventListener('click', async () => {
+  if (!state.resumeStruct) await loadTemplatePreviews();
+  const r = await fetch(SERVER + '/render-resume', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ template: state.selectedTemplate, struct: state.resumeStruct })
+  });
+  const j = await r.json();
+  const w = window.open('', '_blank');
+  w.document.open(); w.document.write(j.html); w.document.close();
+});
+
+$('tpl-reparse').addEventListener('click', async () => {
+  state.resumeStruct = null;
+  toast('Re-parsing resume…');
+  await loadTemplatePreviews();
+  toast('Previews refreshed', 'ok');
+});
+
+// ─── Alerts ───
+$('alert-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const payload = {
+    email: $('al-email').value.trim(),
+    jobTitle: $('al-title').value.trim(),
+    location: $('al-loc').value.trim(),
+    frequency: $('al-freq').value,
+    sector: $('industry').value,
+    keywords: state.marketKeywords.slice(0, 20),
+    resumeSummary: $('resume-text').value.trim().slice(0, 500)
+  };
+  try {
+    const r = await fetch(SERVER + '/alerts/subscribe', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json();
+    if (j.error) toast(j.error, 'err');
+    else {
+      toast('Subscribed! ' + (j.smtp_configured ? 'Confirmation email sent.' : 'SMTP not configured — saved only'), 'ok');
+      loadMyAlerts(payload.email);
+    }
+  } catch(e) { toast('Error: ' + e.message, 'err'); }
+});
+
+$('al-list-btn').addEventListener('click', () => {
+  const email = $('al-email').value.trim();
+  if (!email) return toast('Enter your email', 'err');
+  loadMyAlerts(email);
+});
+
+// ─── SMTP Setup Wizard ───
+$('smtp-toggle').addEventListener('click', () => {
+  const w = $('smtp-wizard');
+  w.style.display = w.style.display === 'none' ? 'block' : 'none';
+});
+// Auto-expand wizard if SMTP not configured
+async function autoExpandSmtpWizard() {
+  try {
+    const r = await fetch(SERVER + '/config');
+    const j = await r.json();
+    if (!j.SMTP_CONFIGURED) {
+      $('smtp-wizard').style.display = 'block';
+    } else {
+      $('smtp-setup-card').style.display = 'none';
+    }
+  } catch(e) {}
+}
+autoExpandSmtpWizard();
+
+async function smtpTest(save) {
+  const payload = {
+    host: $('smtp-host').value.trim() || 'smtp.gmail.com',
+    port: parseInt($('smtp-port').value || '587'),
+    user: $('smtp-user').value.trim(),
+    password: $('smtp-pass').value.trim(),
+    from_addr: $('smtp-user').value.trim()
+  };
+  if (!payload.user || !payload.password) return toast('Enter email and app password', 'err');
+  $('smtp-result').innerHTML = '<span class="spinner"></span>Connecting to ' + escHtml(payload.host) + '…';
+  try {
+    const r = await fetch(SERVER + '/config/smtp/test', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json();
+    if (j.ok) {
+      $('smtp-result').innerHTML = '<span style="color:var(--green-soft)">✓ ' + escHtml(j.msg) + '</span>';
+      if (save) {
+        const sr = await fetch(SERVER + '/config/smtp', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const sj = await sr.json();
+        if (sj.saved) {
+          $('smtp-result').innerHTML += '<br><span style="color:var(--green-soft)">✓ Credentials saved to config.json. Alerts are LIVE.</span>';
+          toast('SMTP activated', 'ok');
+          loadConfig();
+          // Hide wizard once configured
+          setTimeout(() => { $('smtp-setup-card').style.display = 'none'; }, 2500);
+        }
+      } else {
+        toast('Test passed — click Save & Test to activate', 'ok');
+      }
+    } else {
+      $('smtp-result').innerHTML = '<span style="color:var(--red-soft)">✗ ' + escHtml(j.msg || 'failed') + '</span>';
+      toast('SMTP test failed', 'err');
+    }
+  } catch(e) {
+    $('smtp-result').innerHTML = '<span style="color:var(--red-soft)">✗ ' + escHtml(e.message) + '</span>';
+  }
+}
+$('smtp-save').addEventListener('click', () => smtpTest(true));
+$('smtp-just-test').addEventListener('click', () => smtpTest(false));
+
+$('al-test-btn').addEventListener('click', async () => {
+  const email = $('al-email').value.trim();
+  if (!email) return toast('Enter your email', 'err');
+  try {
+    const r = await fetch(SERVER + '/alerts/test', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const j = await r.json();
+    toast(j.ok ? 'Test sent. Check your inbox.' : ('SMTP: ' + j.msg), j.ok ? 'ok' : 'err');
+  } catch(e) { toast('Error: ' + e.message, 'err'); }
+});
+
+async function loadMyAlerts(email) {
+  try {
+    const r = await fetch(SERVER + '/alerts/list?email=' + encodeURIComponent(email));
+    const j = await r.json();
+    const subs = j.subscriptions || [];
+    if (!subs.length) { $('al-list-out').innerHTML = '<div class="empty">No active alerts.</div>'; return; }
+    $('al-list-out').innerHTML = '<h4 style="margin-bottom:var(--s3);font-size:11px;color:var(--fg-3);letter-spacing:2px;text-transform:uppercase;font-family:JetBrains Mono,monospace">Your Active Alerts</h4>' +
+      subs.map(s => `
+        <div class="alert-card">
+          <div class="alert-info">
+            <div class="t">${escHtml(s.jobTitle)}</div>
+            <div class="m">${escHtml(s.location || 'Anywhere')} · Created ${new Date(s.created*1000).toLocaleDateString()}</div>
+          </div>
+          <span class="alert-freq">${escHtml(s.frequency)}</span>
+          <button class="btn btn-sm" onclick="unsubAlert('${s.id}', '${email}')">Remove</button>
+        </div>`).join('');
+  } catch(e) { toast('Error: ' + e.message, 'err'); }
+}
+
+window.unsubAlert = async (id, email) => {
+  await fetch(SERVER + '/alerts/unsubscribe', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id })
+  });
+  toast('Removed', 'ok');
+  loadMyAlerts(email);
+};
+
+// ─── Sub-tools ───
+$('bullets-run').addEventListener('click', async () => {
+  const resume = $('resume-text').value.trim();
+  if (!resume) return toast('Open Launch and paste your resume first', 'err');
+  $('bullets-out').innerHTML = '<div class="empty"><span class="spinner"></span>Ranking…</div>';
+  await streamSSE('/bullets', { resume, jobTitle: $('job-title').value, sector: state.sector, keywords: state.marketKeywords }, handleEvent);
+});
+
+$('tailor-run').addEventListener('click', async () => {
+  const posting = $('tailor-posting').value.trim();
+  const resume = $('resume-text').value.trim();
+  if (!posting || !resume) return toast('Need both posting and resume', 'err');
+  $('tailor-out').innerHTML = '<div class="empty"><span class="spinner"></span>Tailoring…</div>';
+  await streamSSE('/tailor', { resume, jobPosting: posting, jobTitle: $('job-title').value, sector: state.sector }, handleEvent);
+});
+
+$('match-run').addEventListener('click', async () => {
+  const posting = $('match-posting').value.trim();
+  const resume = $('resume-text').value.trim();
+  if (!posting || !resume) return toast('Need both posting and resume', 'err');
+  $('match-out').innerHTML = '<div class="empty"><span class="spinner"></span>Scoring…</div>';
+  await streamSSE('/match', { resume, jobPosting: posting }, handleEvent);
+});
+
+$('weak-run').addEventListener('click', async () => {
+  const resume = $('resume-text').value.trim();
+  if (!resume) return toast('Open Launch and paste your resume first', 'err');
+  $('weak-out').innerHTML = '<div class="empty"><span class="spinner"></span>X-raying…</div>';
+  await streamSSE('/xray', { resume, jobTitle: $('job-title').value, sector: state.sector, keywords: state.marketKeywords }, handleEvent);
+});
+
+$('neg-run').addEventListener('click', async () => {
+  const resume = $('resume-text').value.trim();
+  if (!resume) return toast('Open Launch and paste your resume first', 'err');
+  $('neg-out').innerHTML = '<div class="empty"><span class="spinner"></span>Building plan…</div>';
+  await streamSSE('/negotiate', { resume, jobTitle: $('job-title').value, sector: state.sector, seniority: $('seniority').value, location: $('neg-loc').value, marketData: {} }, handleEvent);
+});
+
+$('br-run').addEventListener('click', async () => {
+  const fromR = $('br-from').value.trim(), toR = $('br-to').value.trim();
+  if (!fromR || !toR) return toast('Need both roles', 'err');
+  $('br-out').innerHTML = '<div class="empty"><span class="spinner"></span>Building bridge…</div>';
+  await streamSSE('/bridge', { resume: $('resume-text').value, fromRole: fromR, toRole: toR, sector: state.sector }, handleEvent);
+});
+
+// ─── Tracker ───
+$('trk-add').addEventListener('click', () => {
+  const co = $('trk-co').value.trim(), role = $('trk-role').value.trim();
+  if (!co || !role) return toast('Need company and role', 'err');
+  state.applications.push({ company: co, role, date: $('trk-date').value || new Date().toISOString().slice(0,10), status: $('trk-status').value });
+  localStorage.setItem('apex_apps', JSON.stringify(state.applications));
+  $('trk-co').value = ''; $('trk-role').value = ''; $('trk-date').value = '';
+  renderTracker();
+});
+
+window.trkRemove = (i) => {
+  state.applications.splice(i, 1);
+  localStorage.setItem('apex_apps', JSON.stringify(state.applications));
+  renderTracker();
+};
+
+// ─── Gmail Inbox Scanner ───
+$('ix-prefill').addEventListener('click', async () => {
+  // Pull saved SMTP creds from /config (we never expose pass to UI, so this is best-effort)
+  const e = $('al-email').value.trim();
+  if (e) $('ix-email').value = e;
+  toast('SMTP user pre-filled from Alerts tab — paste your app password', 'ok');
+});
+
+$('ix-scan').addEventListener('click', async () => {
+  const user = $('ix-email').value.trim();
+  const pwd = $('ix-pwd').value.trim();
+  const days = parseInt($('ix-days').value || '30');
+  if (!user || !pwd) return toast('Need Gmail and app password', 'err');
+  $('ix-status').textContent = 'Connecting via IMAP, fetching last ' + days + ' days, classifying with AI…';
+  $('ix-results').innerHTML = '<div class="empty"><span class="spinner"></span>Scanning…</div>';
+  try {
+    const r = await fetch(SERVER + '/alerts/scan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user, password: pwd, days })
+    });
+    const j = await r.json();
+    if (j.error) {
+      $('ix-status').textContent = '✗ ' + j.error;
+      $('ix-results').innerHTML = '<div class="empty">' + escHtml(j.error) + '</div>';
+      return;
+    }
+    $('ix-status').textContent = 'Scanned ' + (j.scanned || 0) + ' emails · ' + (j.count || 0) + ' job-relevant';
+    if (!j.rows || !j.rows.length) {
+      $('ix-results').innerHTML = '<div class="empty">No job-related emails found in the last ' + days + ' days. ' + escHtml(j.msg||'') + '</div>';
+      return;
+    }
+    window._ixRows = j.rows;
+    const statusColor = (s) => ({
+      'applied':'var(--acc-soft)', 'interview_invite':'var(--purple)',
+      'interview_followup':'var(--purple)', 'offer':'var(--green-soft)',
+      'rejected':'var(--red-soft)', 'recruiter_outreach':'var(--amber)',
+      'ghosted':'var(--fg-3)'
+    }[s] || 'var(--fg-2)');
+    $('ix-results').innerHTML =
+      '<div style="margin-bottom:var(--s3); display:flex; gap:8px; flex-wrap:wrap"><button class="btn btn-primary btn-sm" onclick="ixAddAll()">Add All To Tracker</button><span style="font-size:11px; color:var(--fg-3); padding:6px 0">' + j.rows.length + ' applications detected · review and confirm</span></div>' +
+      j.rows.map((r, i) =>
+        '<div class="alert-card">' +
+          '<div class="alert-info">' +
+            '<div class="t">' + escHtml(r.company || '(unknown company)') + (r.role ? ' — ' + escHtml(r.role) : '') + '</div>' +
+            '<div class="m">' + escHtml(r.subject||'').slice(0,90) + ' · from ' + escHtml(r.from||'').slice(0,40) + ' · ' + escHtml(r.date||'').slice(0,16) + '</div>' +
+          '</div>' +
+          '<span class="alert-freq" style="color:' + statusColor(r.status) + '; background:rgba(255,255,255,0.04)">' + escHtml(r.status||'').replace(/_/g, ' ') + '</span>' +
+          '<button class="btn btn-sm" onclick="ixAddOne(' + i + ')">Add</button>' +
+        '</div>'
+      ).join('');
+  } catch(e) {
+    $('ix-status').textContent = '✗ ' + e.message;
+    $('ix-results').innerHTML = '<div class="empty">' + escHtml(e.message) + '</div>';
+  }
+});
+
+window.ixAddOne = (i) => {
+  const r = window._ixRows[i];
+  if (!r) return;
+  const status = r.status === 'offer' ? 'offer'
+              : r.status === 'rejected' ? 'rejected'
+              : r.status === 'interview_invite' || r.status === 'interview_followup' ? 'interview'
+              : 'applied';
+  state.applications.push({
+    company: r.company || '(from email)',
+    role: r.role || '(unknown)',
+    date: (r.date || new Date().toISOString()).slice(0,10),
+    status,
+  });
+  localStorage.setItem('apex_apps', JSON.stringify(state.applications));
+  renderTracker();
+  toast('Added: ' + (r.company || 'application'), 'ok');
+};
+
+window.ixAddAll = () => {
+  let n = 0;
+  (window._ixRows || []).forEach((r, i) => { window.ixAddOne(i); n++; });
+  toast('Added ' + n + ' applications to tracker', 'ok');
+};
+
+function renderTracker() {
+  const apps = state.applications;
+  $('trk-total').textContent = apps.length;
+  $('trk-iv').textContent = apps.filter(a => a.status === 'interview' || a.status === 'offer').length;
+  $('trk-of').textContent = apps.filter(a => a.status === 'offer').length;
+  $('trk-rate').textContent = apps.length ? Math.round(apps.filter(a => a.status === 'interview' || a.status === 'offer').length / apps.length * 100) + '%' : '—';
+  if (!apps.length) { $('trk-tbody').innerHTML = '<tr><td colspan="5" class="empty" style="padding:var(--s5)">No applications yet.</td></tr>'; return; }
+  $('trk-tbody').innerHTML = apps.map((a, i) => `
+    <tr>
+      <td><strong>${escHtml(a.company)}</strong></td>
+      <td>${escHtml(a.role)}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg-3)">${escHtml(a.date)}</td>
+      <td><span class="alert-freq" style="background:${a.status==='offer'?'rgba(0,217,126,0.10)':a.status==='rejected'?'rgba(232,33,39,0.10)':a.status==='interview'?'rgba(139,92,246,0.10)':'rgba(62,158,255,0.08)'};color:${a.status==='offer'?'var(--green-soft)':a.status==='rejected'?'var(--red-soft)':a.status==='interview'?'#b39bff':'var(--acc-soft)'};border-color:transparent">${escHtml(a.status)}</span></td>
+      <td><button class="btn btn-sm" onclick="trkRemove(${i})">×</button></td>
+    </tr>`).join('');
+}
+renderTracker();
+
+// ═══════════════════════ VOICE INTERVIEW SIMULATOR ═══════════════════════
+const VI = {
+  questions: [],     // queue of remaining questions
+  current: null,     // current question being answered
+  asked: 0,
+  recorder: null,
+  chunks: [],
+  recording: false,
+  active: false,
+};
+
+function viSpeak(text) {
+  if (!('speechSynthesis' in window)) return;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 0.95; u.pitch = 1.0; u.volume = 1.0;
+    // Prefer a deeper, professional-sounding voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const pref = voices.find(v => /Daniel|David|Alex|Google US English|Microsoft.*Guy|Microsoft.*David/i.test(v.name + v.lang));
+    if (pref) u.voice = pref;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(u);
+  } catch(e) {}
+}
+
+function viPickQuestionsFromAgent() {
+  // If the user has run /analyze, the rendered Interview Prep card has 5 behavioral questions.
+  // Pull them from the DOM.
+  const qs = [];
+  document.querySelectorAll('#iv-content .qa-item .q').forEach(el => {
+    const t = el.textContent.replace(/^Q:\s*/, '').trim();
+    if (t) qs.push({ q: t, type: 'behavioral' });
+  });
+  if (qs.length) return qs;
+  // Otherwise use 5 universal openers
+  return [
+    { q: 'Tell me about yourself and why this role interests you.', type: 'behavioral' },
+    { q: 'Describe a recent project you led — the situation, your actions, and the result.', type: 'behavioral' },
+    { q: 'Tell me about a time you handled conflict on a team.', type: 'behavioral' },
+    { q: 'What is your biggest professional weakness, and how are you working on it?', type: 'behavioral' },
+    { q: 'Why should we hire you over other strong candidates?', type: 'behavioral' },
+  ];
+}
+
+$('vi-start').addEventListener('click', async () => {
+  VI.questions = viPickQuestionsFromAgent();
+  VI.asked = 0;
+  VI.active = true;
+  $('vi-start').disabled = true;
+  $('vi-record').disabled = false;
+  $('vi-skip').disabled = false;
+  $('vi-end').disabled = false;
+  $('vi-grade').innerHTML = '';
+  $('vi-question').style.display = 'block';
+  $('vi-transcript').style.display = 'block';
+  $('vi-status').textContent = 'Listening for your answer (record when ready)';
+  // Trigger getUserMedia early so browser asks for permission upfront
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    VI._stream = stream;
+  } catch(e) {
+    toast('Microphone permission denied — voice grading unavailable', 'err');
+    return;
+  }
+  viNextQuestion();
+});
+
+function viNextQuestion() {
+  $('vi-grade').innerHTML = '';
+  $('vi-transcript-text').textContent = '';
+  if (!VI.questions.length) {
+    $('vi-q-eyebrow').textContent = 'SESSION COMPLETE';
+    $('vi-q-text').textContent = 'Great job. ' + VI.asked + ' questions answered. Review your grades above.';
+    viSpeak('That concludes our practice session. ' + VI.asked + ' questions answered.');
+    $('vi-record').disabled = true;
+    $('vi-skip').disabled = true;
+    $('vi-start').disabled = false;
+    $('vi-status').textContent = 'Done — click Start for another round';
+    VI.active = false;
+    return;
+  }
+  VI.asked++;
+  VI.current = VI.questions.shift();
+  $('vi-q-eyebrow').textContent = 'Q' + VI.asked + ' · ' + (VI.current.type || 'BEHAVIORAL').toUpperCase();
+  $('vi-q-text').textContent = VI.current.q;
+  $('vi-hint').textContent = '';
+  viSpeak(VI.current.q);
+  $('vi-status').textContent = 'Q' + VI.asked + ' asked — record your answer';
+}
+
+$('vi-replay').addEventListener('click', () => {
+  if (VI.current) viSpeak(VI.current.q);
+});
+
+$('vi-skip').addEventListener('click', () => {
+  if (VI.recording) viStopRecord(true);
+  viNextQuestion();
+});
+
+$('vi-end').addEventListener('click', () => {
+  if (VI.recording) viStopRecord(true);
+  VI.questions = [];
+  viNextQuestion();
+  if (VI._stream) { VI._stream.getTracks().forEach(t => t.stop()); VI._stream = null; }
+});
+
+$('vi-record').addEventListener('click', () => {
+  if (VI.recording) viStopRecord(false);
+  else viStartRecord();
+});
+
+async function viStartRecord() {
+  if (!VI._stream) {
+    try { VI._stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch(e) { return toast('Microphone unavailable', 'err'); }
+  }
+  VI.chunks = [];
+  const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+  VI.recorder = new MediaRecorder(VI._stream, { mimeType: mime });
+  VI.recorder.ondataavailable = (e) => { if (e.data.size) VI.chunks.push(e.data); };
+  VI.recorder.onstop = () => viOnStop(mime);
+  VI.recorder.start();
+  VI.recording = true;
+  $('vi-record-label').textContent = '⏸ Stop & Submit';
+  $('vi-record').classList.add('btn-primary');
+  $('vi-status').textContent = 'Recording — speak now…';
+}
+
+function viStopRecord(silent) {
+  if (!VI.recording) return;
+  VI.recording = false;
+  $('vi-record-label').textContent = 'Record Answer';
+  $('vi-record').classList.remove('btn-primary');
+  try { VI.recorder.stop(); } catch(e) {}
+  if (!silent) $('vi-status').textContent = 'Transcribing & grading…';
+}
+
+async function viOnStop(mime) {
+  if (!VI.chunks.length) {
+    $('vi-status').textContent = 'No audio captured';
+    return;
+  }
+  const blob = new Blob(VI.chunks, { type: mime.split(';')[0] });
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const b64 = (reader.result || '').split(',')[1] || '';
+    $('vi-transcript-text').textContent = '(transcribing…)';
+    try {
+      // 1. Transcribe via Whisper
+      const tr = await fetch(SERVER + '/transcribe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio_b64: b64, mime: mime.split(';')[0] })
+      });
+      const tj = await tr.json();
+      const transcript = tj.text || '(no transcript)';
+      $('vi-transcript-text').textContent = transcript;
+      // 2. Grade the answer (existing endpoint)
+      $('vi-grade').innerHTML = '<div class="empty"><span class="spinner"></span>Grading answer…</div>';
+      await streamSSE('/grade-answer', {
+        question: VI.current.q,
+        answer: transcript,
+        jobTitle: $('job-title').value || 'this role',
+        sector: state.sector,
+      }, (ev) => {
+        if (ev.type === 'answer_grade' && ev.data) viRenderGrade(ev.data);
+        else if (ev.type === 'error') $('vi-grade').innerHTML = '<div class="empty">' + escHtml(ev.msg) + '</div>';
+      });
+    } catch(e) {
+      $('vi-transcript-text').textContent = '✗ ' + e.message;
+    }
+  };
+  reader.readAsDataURL(blob);
+}
+
+function viRenderGrade(d) {
+  const score = d.score || 0;
+  const cls = score >= 75 ? 'strong' : score >= 55 ? 'good' : 'weak';
+  const strengths = (d.strengths || []).map(s => '<li>' + escHtml(s) + '</li>').join('');
+  const weaknesses = (d.weaknesses || []).map(s => '<li>' + escHtml(s) + '</li>').join('');
+  $('vi-grade').innerHTML =
+    '<div class="card" style="background:var(--bg-2);margin-top:var(--s2)">' +
+      '<div class="card-h" style="margin-bottom:var(--s3)">' +
+        '<h3 style="font-size:16px">Grade: ' + escHtml(d.grade || '?') + '</h3>' +
+        '<span class="match-badge ' + cls + '"><span class="pct">' + score + '/100</span></span>' +
+      '</div>' +
+      '<p style="color:var(--fg-1);font-size:14px;line-height:1.6;margin-bottom:var(--s3)"><b>' + escHtml(d.verdict || '') + '</b></p>' +
+      (strengths ? '<div class="block"><div class="label" style="color:var(--green-soft)">Strengths</div><ul style="padding-left:18px;font-size:13px;line-height:1.7">' + strengths + '</ul></div>' : '') +
+      (weaknesses ? '<div class="block"><div class="label" style="color:var(--red-soft)">Weaknesses</div><ul style="padding-left:18px;font-size:13px;line-height:1.7">' + weaknesses + '</ul></div>' : '') +
+      (d.better_version ? '<div class="block"><div class="label" style="color:var(--acc-soft)">Better version (STAR)</div><div class="text">' + escHtml(d.better_version) + '</div></div>' : '') +
+      (d.coaching_tip ? '<div class="block"><div class="label" style="color:var(--purple)">Coaching tip</div><div class="text">' + escHtml(d.coaching_tip) + '</div></div>' : '') +
+      '<div style="margin-top:var(--s3); display:flex; gap:var(--s2)"><button class="btn btn-primary btn-sm" onclick="viNextQuestion()">Next Question →</button></div>' +
+    '</div>';
+  $('vi-status').textContent = 'Q' + VI.asked + ' graded — Next when ready';
+}
+
+// Pre-load voices (some browsers need a kick)
+if ('speechSynthesis' in window) { try { window.speechSynthesis.getVoices(); } catch(e){} }
+
+if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+</script>
+</body>
+</html>

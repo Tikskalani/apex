@@ -1,0 +1,39 @@
+# ── SECRETS — NEVER COMMIT ──────────────────────────────
+config.json
+*.key
+.env
+.env.*
+
+# ── APEX runtime data ───────────────────────────────────
+alerts_*.json
+subscriptions.json
+*.session
+
+# ── Python ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+env/
+venv/
+.venv/
+build/
+dist/
+*.egg-info/
+
+# ── OS ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ─────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Logs & scratch ──────────────────────────────────────
+*.log
+*_backup.*
+*_old.*
+*.bak
