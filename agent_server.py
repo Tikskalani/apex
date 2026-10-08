@@ -32,17 +32,35 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 from urllib.parse import quote_plus
+import sys
+
+# The startup banner prints ✓ / ⚠. On Windows, stdout redirected to a file or
+# pipe is cp1252 and those characters crash the server before it binds.
+for _stream in (sys.stdout, sys.stderr):
+    try: _stream.reconfigure(encoding='utf-8', errors='replace')
+    except Exception: pass
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # CONFIG
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PORT          = 7842
+PORT          = int(os.environ.get('APEX_PORT', '7842'))
 FETCH_TIMEOUT = 12
 GPT_TIMEOUT   = 90
 GPT_RETRIES   = 2
 MIN_LISTINGS  = 5
 MAX_CORPUS    = 16000
 LOOP_ITERS    = 3   # self-improvement iterations
+
+# Static files the server may hand out: plain names in the app root or assets/,
+# asset extensions only. Anything else (config.json, *.py, *.json data, dotfiles,
+# Windows aliases like 'config.json.' or 'x::$DATA') never matches.
+STATIC_TYPES = {
+    'css':'text/css; charset=utf-8', 'js':'application/javascript; charset=utf-8',
+    'png':'image/png', 'jpg':'image/jpeg', 'jpeg':'image/jpeg', 'webp':'image/webp',
+    'svg':'image/svg+xml', 'ico':'image/x-icon', 'woff2':'font/woff2',
+}
+STATIC_RE = re.compile(r'^/(?:assets/)?[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.(?P<ext>' +
+                       '|'.join(STATIC_TYPES) + r')$', re.IGNORECASE)
 
 def load_config():
     import os
@@ -3097,7 +3115,7 @@ def send_alert_email(to_email, subject, html_body):
 def add_alert_subscription(payload):
     with ALERTS_LOCK:
         data = _load_alerts()
-        sub_id = hashlib.sha1(f"{payload.get('email','')}{payload.get('jobTitle','')}{time.time()}".encode()).hexdigest()[:12]
+        sub_id = hashlib.sha256(f"{payload.get('email','')}{payload.get('jobTitle','')}{time.time()}".encode()).hexdigest()[:12]
         sub = {
             'id': sub_id,
             'email': payload.get('email','').strip(),
@@ -3131,7 +3149,7 @@ def remove_alert(sub_id):
         return before > len(data['subscriptions'])
 
 def _job_signature(job):
-    return hashlib.sha1((job.get('title','') + '|' + job.get('company','') + '|' + job.get('url','')).encode()).hexdigest()[:16]
+    return hashlib.sha256((job.get('title','') + '|' + job.get('company','') + '|' + job.get('url','')).encode()).hexdigest()[:16]
 
 def _alert_job_row(job):
     title = _esc(job.get('title','Untitled'))
@@ -3424,13 +3442,61 @@ class Handler(BaseHTTPRequestHandler):
             self.connection.setsockopt(socket.SOL_SOCKET,  socket.SO_KEEPALIVE, 1)
         except OSError: pass
 
+    # ── ORIGIN GUARD ──────────────────────────────────────────────────────────
+    # Every web page open in the browser can send requests to localhost. The
+    # page is served from this server, so the API only needs to answer its own
+    # origin. A foreign Origin, a foreign Host (DNS rebinding) or a cross-site
+    # Sec-Fetch-Site is refused before any route runs. Requests with no Origin
+    # header (curl, the test suite) are allowed: browsers always send Origin on
+    # cross-origin fetches, so its absence means a non-browser client.
+    ALLOWED_HOSTS = {f'localhost:{PORT}', f'127.0.0.1:{PORT}', f'[::1]:{PORT}'}
+
+    def _allowed_origin(self):
+        origin = self.headers.get('Origin')
+        if origin and origin.split('://', 1)[-1] in self.ALLOWED_HOSTS and origin.startswith('http://'):
+            return origin
+        return None
+
+    def _guard(self, path):
+        """Return an error string if this request must be refused, else None."""
+        host = (self.headers.get('Host') or '').lower()
+        if host not in self.ALLOWED_HOSTS:
+            return 'Host not allowed. Open http://localhost:%d/' % PORT
+        origin = self.headers.get('Origin')
+        if origin is not None and not self._allowed_origin():
+            if origin == 'null':
+                return 'Opened from file:// — open http://localhost:%d/ instead' % PORT
+            return 'Cross-origin request refused'
+        site = (self.headers.get('Sec-Fetch-Site') or '').lower()
+        if site == 'cross-site':
+            # A link from another site to the app's front page is harmless;
+            # anything else arriving cross-site is not.
+            is_nav = (self.command == 'GET' and path in ('/', '/index.html')
+                      and (self.headers.get('Sec-Fetch-Mode') or '') == 'navigate')
+            if not is_nav:
+                return 'Cross-site request refused'
+        return None
+
+    def _refuse(self, msg):
+        body = json.dumps({'error': msg}).encode('utf-8')
+        self.send_response(403)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers(); self.wfile.write(body)
+
     def cors(self):
-        self.send_header('Access-Control-Allow-Origin','*')
-        self.send_header('Access-Control-Allow-Methods','GET,POST,OPTIONS')
-        self.send_header('Access-Control-Allow-Headers','Content-Type')
+        origin = self._allowed_origin()
+        if origin:
+            self.send_header('Access-Control-Allow-Origin', origin)
+            self.send_header('Vary', 'Origin')
+            self.send_header('Access-Control-Allow-Methods','GET,POST,OPTIONS')
+            self.send_header('Access-Control-Allow-Headers','Content-Type')
 
     def do_OPTIONS(self):
-        self.send_response(200); self.cors(); self.end_headers()
+        err = self._guard(self.path.split('?', 1)[0])
+        if err: self._refuse(err); return
+        self.send_response(204); self.cors()
+        self.send_header('Content-Length', '0'); self.end_headers()
 
     def _send_json(self, code_, payload):
         body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
@@ -3451,6 +3517,8 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         path = u.path
         qs = parse_qs(u.query or '')
+        err = self._guard(path)
+        if err: self._refuse(err); return
 
         # ── STATIC FILES ──────────────────────────────────────────────────────
         # Serve index.html from the server so the page and the API share one
@@ -3474,23 +3542,20 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {'error': str(e)})
             return
 
-        # Any other static asset sitting next to the server (css, js, images).
-        # Path is confined to the server directory — no traversal.
-        if '.' in path.rsplit('/', 1)[-1] and not path.startswith('/api'):
+        # Front-end assets. Allowlist only: a file is served if and only if its
+        # URL matches STATIC_RE (plain names, asset extensions, no dotfiles, no
+        # ':' or trailing dots that Windows would silently strip) and it sits in
+        # this directory or assets/. Never config.json, *.py, logs or alert data.
+        if '.' in path.rsplit('/', 1)[-1]:
             try:
-                here = os.path.dirname(os.path.abspath(__file__))
-                rel = path.lstrip('/').replace('\\', '/')
-                target = os.path.normpath(os.path.join(here, rel))
-                if not target.startswith(here) or not os.path.isfile(target):
+                m = STATIC_RE.match(path)
+                if not m:
                     self._send_json(404, {'error': 'not found'}); return
-                if os.path.basename(target).lower() in ('config.json', 'agent_server.py'):
-                    self._send_json(403, {'error': 'forbidden'}); return
-                ctype = {
-                    '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8',
-                    '.js':'application/javascript; charset=utf-8', '.json':'application/json',
-                    '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg',
-                    '.svg':'image/svg+xml', '.ico':'image/x-icon', '.woff2':'font/woff2',
-                }.get(os.path.splitext(target)[1].lower(), 'application/octet-stream')
+                here = os.path.dirname(os.path.abspath(__file__))
+                target = os.path.join(here, *path.lstrip('/').split('/'))
+                if not os.path.isfile(target):
+                    self._send_json(404, {'error': 'not found'}); return
+                ctype = STATIC_TYPES[m.group('ext').lower()]
                 with open(target, 'rb') as fh:
                     body = fh.read()
                 self.send_response(200); self.cors()
@@ -3507,7 +3572,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == '/config':
             smtp = _load_smtp_config()
-            self._send_json(200, {'JSEARCH_KEY': JSEARCH_KEY or '', 'SMTP_CONFIGURED': bool(smtp['user'] and smtp['pass'])})
+            # Never return key material: report presence only.
+            self._send_json(200, {'JSEARCH_ACTIVE': bool(JSEARCH_KEY), 'SMTP_CONFIGURED': bool(smtp['user'] and smtp['pass'])})
             return
         if path == '/templates':
             self._send_json(200, {'templates': [{'id':k,'name':v['name'],'desc':v['desc']} for k,v in TEMPLATES.items()]})
@@ -3581,6 +3647,13 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(length))
 
     def do_POST(self):
+        # Refuse foreign origins before touching the body. A text/plain POST
+        # skips the CORS preflight, so the preflight alone protects nothing.
+        err = self._guard(self.path.split('?', 1)[0])
+        if err:
+            self._refuse(err)
+            self.close_connection = True   # body left unread; don't reuse the socket
+            return
         # Read body — needed for all POST routes
         try:
             p = self._read_json_body()
@@ -3999,6 +4072,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 host = (p.get('host') or 'smtp.gmail.com').strip()
                 port = int(p.get('port') or 587)
+                user = (p.get('user') or '').strip()
                 pwd  = (p.get('password') or '').strip()
                 if not user or not pwd:
                     self._send_json(400, {'ok': False, 'msg': 'user and password required'}); return
@@ -4145,7 +4219,7 @@ def run():
     print('  JSearch:  ' + ('ACTIVE' if js_ok else 'off (free APIs cover it)'))
     print('  SMTP:     ' + ('ACTIVE' if smtp_ok else 'off (set up in Alerts tab)'))
     print(bar)
-    print('  OPEN:  http://localhost:7842/   (page + API on one origin)')
+    print('  OPEN:  http://localhost:' + str(PORT) + '/   (page + API on one origin)')
     print('  Ctrl+C to stop')
     print(bar + '\n', flush=True)
     try:

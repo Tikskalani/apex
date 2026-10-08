@@ -1731,7 +1731,8 @@ label {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.js"></script>
 
 <script>
-const SERVER = 'http://localhost:7842';
+// Same origin as the page when served by agent_server.py (the only supported way).
+const SERVER = location.protocol.startsWith('http') ? location.origin : 'http://localhost:7842';
 const $  = id => document.getElementById(id);
 const $$ = sel => document.querySelectorAll(sel);
 const escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
