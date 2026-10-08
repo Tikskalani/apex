@@ -1,0 +1,6 @@
+Senior Data Analyst - Meridian Health Systems, Houston TX
+We need a Senior Data Analyst to own reporting for our clinical operations group.
+Requirements: 4+ years in analytics, advanced SQL, Python (pandas), Tableau or Power BI,
+experience with A/B testing and statistical analysis, stakeholder communication,
+healthcare data experience preferred. You will build dashboards, define KPIs,
+and partner with clinical leaders to drive measurable outcomes.

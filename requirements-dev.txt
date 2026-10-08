@@ -1,0 +1,7 @@
+# Test-only dependencies. APEX itself needs none (pure stdlib).
+#   py -3.12 -m venv .venv
+#   .venv\Scripts\python -m pip install -r requirements-dev.txt
+#   .venv\Scripts\python -m playwright install chromium
+pytest==8.3.5
+playwright==1.52.0
+pdfplumber==0.11.6

@@ -37,3 +37,6 @@ desktop.ini
 *_backup.*
 *_old.*
 *.bak
+
+# ── Test runs ───────────────────────────────────────────
+.pytest_cache/

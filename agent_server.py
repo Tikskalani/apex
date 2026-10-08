@@ -3747,8 +3747,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {'error': 'Enter a target job title.'}); return
             resume_len = len((p.get('resume') or '').strip())
             if resume_len < MIN_RESUME_CHARS:
-                self._send_json(400, {'error': f'That resume is {resume_len} characters. Paste the full resume text '
-                                               f'(at least {MIN_RESUME_CHARS} characters) before launching.'}); return
+                self._send_json(400, {'error': f'Resume too short ({resume_len} of {MIN_RESUME_CHARS} characters minimum). '
+                                               'Paste the full resume text before launching.'}); return
 
             self._sse_start()
             emit = self._make_emitter()
@@ -4196,9 +4196,24 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(404, {'error': 'not found'})
 
 
+class _ThreadingHTTPServerV6(ThreadingHTTPServer):
+    address_family = socket.AF_INET6
+
+
 def run():
-    server = ThreadingHTTPServer(('localhost', PORT), Handler)
+    # 'localhost' resolves to ::1 before 127.0.0.1 on Windows. Listening on
+    # IPv4 only made every new connection wait ~2s for the refused IPv6 attempt.
+    # Listen on both loopback addresses (still loopback only, never 0.0.0.0).
+    server = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
     server.daemon_threads = True
+    extra = []
+    try:
+        s6 = _ThreadingHTTPServerV6(('::1', PORT), Handler)
+        s6.daemon_threads = True
+        threading.Thread(target=s6.serve_forever, daemon=True).start()
+        extra.append(s6)
+    except OSError:
+        pass   # no IPv6 loopback on this machine; IPv4 still serves
     js_ok = bool(JSEARCH_KEY)
     smtp_cfg = _load_smtp_config()
     smtp_ok = bool(smtp_cfg['user'] and smtp_cfg['pass'])
@@ -4228,6 +4243,8 @@ def run():
     except KeyboardInterrupt:
         print('\nStopped.')
         server.shutdown()
+        for s in extra:
+            s.shutdown()
 
 
 if __name__ == '__main__':

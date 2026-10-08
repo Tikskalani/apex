@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#000">
 <title>APEX</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 L28 26 L22 26 L19.5 20 L12.5 20 L10 26 L4 26 Z M16 9 L13.5 16 L18.5 16 Z' fill='%233e9eff'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@200;300;400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600&display=swap">
@@ -1724,11 +1725,15 @@ label {
 
 <div class="toast" id="toast"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.js"></script>
+<!-- Vendor libraries, pinned by version AND content hash (SRI): a modified CDN
+     file is refused instead of running on the same origin as the local API.
+     To bump one, recompute: sha384 of the exact file, base64. docx is not on
+     cdnjs (the old cdnjs URL was a 404), so it comes from jsDelivr's npm mirror. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js" integrity="sha384-nFoSjZIoH3CCp8W639jJyQkuPHinJ2NHe7on1xvlUA7SuGfJAfvMldrsoAVm6ECz" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha384-Yv5O+t3uE3hunW8uyrbpPW3iw6/5/Y7HitWJBLgqfMoA36NogMmy+8wWZMpn3HWc" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js" integrity="sha384-4xaIisuLEy2lo2HkB2C4rEf7v8jbTb2kuogX6TkuEt9feTWKBSFSOzsqNNbV+sKh" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
 <script>
 // Same origin as the page when served by agent_server.py (the only supported way).
@@ -1898,7 +1903,7 @@ $('run-btn').addEventListener('click', async () => {
   const resume   = $('resume-text').value.trim();
   if (!jobTitle) return toast('Enter a job title', 'err');
   if (!resume) return toast('Paste your resume', 'err');
-  if (resume.length < MIN_RESUME_CHARS) return toast(`That resume is ${resume.length} characters. Paste the full text (at least ${MIN_RESUME_CHARS}).`, 'err');
+  if (resume.length < MIN_RESUME_CHARS) return toast(`Resume too short (${resume.length} of ${MIN_RESUME_CHARS} characters minimum). Paste the full resume text.`, 'err');
 
   $('run-btn').disabled = true;
   $('run-btn-text').innerHTML = '<span class="spinner"></span>Running…';
@@ -2731,7 +2736,7 @@ async function ensureResumeStruct({ quiet = false } = {}) {
   const resume = $('resume-text').value.trim();
   if (resume.length < MIN_RESUME_CHARS) {
     if (!quiet) toast(resume
-      ? `That resume is ${resume.length} characters. Paste the full text in Launch first.`
+      ? `Resume too short (${resume.length} of ${MIN_RESUME_CHARS} characters minimum). Paste the full text in Launch.`
       : 'Open Launch and paste your resume first', 'err');
     return false;
   }
@@ -2869,12 +2874,35 @@ const ATS = {
     const section = label => {
       room(0.55); y += this.GAP;
       doc.setFont('helvetica', 'bold'); doc.setFontSize(this.HEAD);
-      doc.text(label.toUpperCase(), this.MARGIN, y); y += 0.09; rule();
+      doc.splitTextToSize(label.toUpperCase(), W).forEach((ln, k) => {
+        if (k) { y += 0.19; room(0.19); }
+        doc.text(ln, this.MARGIN, y);
+      });
+      y += 0.09; rule();
+    };
+    // Bold text on the left, optional normal text flush right on the first
+    // line (dates). The left side wraps in whatever width the right leaves,
+    // so a long "title — company" never runs under the date or off the page.
+    const headed = (left, right) => {
+      doc.setFontSize(this.BODY);
+      doc.setFont('helvetica', 'normal');
+      const rw = right ? doc.getTextWidth(right) + 0.15 : 0;
+      doc.setFont('helvetica', 'bold');
+      const lines = doc.splitTextToSize(left || '', W - rw);
+      lines.forEach((ln, k) => {
+        room(this.LEAD);
+        doc.setFont('helvetica', 'bold'); doc.text(ln, this.MARGIN, y);
+        if (k === 0 && right) {
+          doc.setFont('helvetica', 'normal');
+          doc.text(right, this.PAGE_W - this.MARGIN, y, { align: 'right' });
+        }
+        y += this.LEAD;
+      });
     };
 
-    // Header
+    // Header (atsExport guarantees a name; never print a stand-in)
     doc.setFont('helvetica', 'bold'); doc.setFontSize(this.NAME);
-    doc.text(d.name || 'Name', this.MARGIN, y); y += 0.24;
+    doc.splitTextToSize(d.name, W).forEach(ln => { doc.text(ln, this.MARGIN, y); y += 0.24; });
     if (d.title) { text(d.title, this.BODY + 0.5, 'normal'); }
     const contact = this.contactLine(d);
     if (contact) { text(contact, this.BODY - 0.5, 'normal'); }
@@ -2892,15 +2920,7 @@ const ATS = {
       d.experience.forEach((e, i) => {
         if (i) y += this.GAP * 0.7;
         room(0.5);
-        const left = [e.title, e.company].filter(Boolean).join(' — ');
-        const right = this.dateRange(e);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(this.BODY);
-        doc.text(left || '', this.MARGIN, y);
-        if (right) {
-          doc.setFont('helvetica', 'normal');
-          doc.text(right, this.PAGE_W - this.MARGIN, y, { align: 'right' });
-        }
-        y += this.LEAD;
+        headed([e.title, e.company].filter(Boolean).join(' — '), this.dateRange(e));
         if (e.location) { text(e.location, this.BODY - 1, 'italic'); }
         // Hyphen bullets: ATS parsers handle "-" more reliably than "•"
         e.bullets.forEach(b => {
@@ -2920,10 +2940,7 @@ const ATS = {
       section('Education');
       d.education.forEach(e => {
         room(0.3);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(this.BODY);
-        doc.text(e.degree || '', this.MARGIN, y);
-        if (e.year) { doc.setFont('helvetica', 'normal'); doc.text(e.year, this.PAGE_W - this.MARGIN, y, { align: 'right' }); }
-        y += this.LEAD;
+        headed(e.degree, e.year);
         const el = this.eduLine(e); if (el) text(el, this.BODY, 'normal');
         if (e.gpa) text('GPA: ' + e.gpa, this.BODY - 1, 'normal');
       });
@@ -2943,7 +2960,7 @@ const ATS = {
       section('Projects');
       d.projects.forEach(p => {
         room(0.3);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(this.BODY); doc.text(p.name, this.MARGIN, y); y += this.LEAD;
+        headed(p.name, '');
         if (p.description) text(p.description, this.BODY, 'normal');
         if (p.tech.length) text('Technologies: ' + p.tech.join(', '), this.BODY - 1, 'italic');
       });
@@ -2967,7 +2984,7 @@ const ATS = {
     const para = (children, o) => new D.Paragraph(Object.assign({ children }, o || {}));
     const kids = [];
 
-    kids.push(para([run(d.name || 'Name', { bold: true, size: HALF(16) })], { spacing: { after: 40 } }));
+    kids.push(para([run(d.name, { bold: true, size: HALF(16) })], { spacing: { after: 40 } }));
     if (d.title) kids.push(para([run(d.title, { size: HALF(11) })], { spacing: { after: 40 } }));
     const contact = this.contactLine(d);
     if (contact) kids.push(para([run(contact, { size: HALF(10) })], { spacing: { after: 120 } }));
@@ -3106,52 +3123,6 @@ async function atsExport(format, struct, tag, btn) {
     return false;
   } finally {
     if (btn) { btn.disabled = false; if (label !== null) btn.innerHTML = label; }
-  }
-}
-
-// ─── SHARED PDF DOWNLOAD HELPER (iframe-based, reliable rendering) ───
-async function downloadResumeAsPdf(html, filename) {
-  // Render into a hidden iframe so the template's <style> block has its own document context.
-  // visibility:hidden (not display:none) keeps the layout active so html2canvas can capture it.
-  const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;left:0;top:0;width:8.5in;border:0;visibility:hidden;background:#fff;z-index:-9999';
-  iframe.setAttribute('aria-hidden', 'true');
-  document.body.appendChild(iframe);
-  // Write the full HTML doc into the iframe
-  iframe.contentDocument.open();
-  iframe.contentDocument.write(html);
-  iframe.contentDocument.close();
-  // Wait for fonts + images
-  await new Promise(r => setTimeout(r, 700));
-  // Auto-size iframe to fit content (so html2canvas captures everything, not just first viewport)
-  const body = iframe.contentDocument.body;
-  if (body) {
-    const h = Math.max(body.scrollHeight, body.offsetHeight, 11 * 96);
-    iframe.style.height = h + 'px';
-  }
-  await new Promise(r => setTimeout(r, 200));
-  try {
-    if (typeof html2pdf === 'undefined') throw new Error('html2pdf failed to load — check network');
-    await html2pdf()
-      .from(iframe.contentDocument.documentElement)
-      .set({
-        margin: 0,
-        filename: filename,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff',
-          windowWidth: 816,    // 8.5in @ 96dpi
-        },
-        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait', compress: true },
-        pagebreak: { mode: ['css', 'legacy', 'avoid-all'] }
-      })
-      .save();
-    return true;
-  } finally {
-    iframe.remove();
   }
 }
 
