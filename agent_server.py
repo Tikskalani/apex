@@ -47,8 +47,8 @@ for _stream in (sys.stdout, sys.stderr):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PORT          = int(os.environ.get('APEX_PORT', '7842'))
 FETCH_TIMEOUT = 12
-GPT_TIMEOUT   = 90
-GPT_RETRIES   = 2
+GPT_TIMEOUT   = 180   # reasoning models think before answering
+GPT_RETRIES   = 3
 MIN_LISTINGS  = 5
 MAX_CORPUS    = 16000
 LOOP_ITERS    = 3   # self-improvement iterations
@@ -110,6 +110,39 @@ def load_config():
     exit(1)
 
 OPENAI_KEY, JSEARCH_KEY = load_config()
+
+
+def _model_setting(name, default):
+    """APEX_<NAME> env var, else config.json <NAME>, else default."""
+    v = os.environ.get('APEX_' + name, '').strip()
+    if not v:
+        try:
+            cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
+            with open(cfg_path, encoding='utf-8') as fh:
+                v = str(json.load(fh).get(name, '')).strip()
+        except Exception:
+            v = ''
+    return v or default
+
+# MODEL writes and judges; MODEL_FAST does extraction and classification.
+MODEL      = _model_setting('MODEL', 'gpt-4o')
+MODEL_FAST = _model_setting('MODEL_FAST', MODEL)
+
+# USD per 1M tokens (input, output), standard tier, from OpenAI's pricing page
+# (checked 2026-10-08). Unknown models are costed at the most expensive known
+# rate so the meter over- rather than under-reports.
+MODEL_PRICES = {
+    'gpt-6.1-sol': (2.00, 10.00), 'gpt-6-sol': (2.00, 10.00), 'gpt-6-luna': (0.10, 0.50),
+    'gpt-6-astra': (10.00, 50.00), 'gpt-5.6-sol': (4.00, 20.00), 'gpt-5.6-terra': (2.00, 12.00),
+    'gpt-5.6-luna': (0.20, 1.20), 'gpt-5.5': (5.00, 30.00), 'gpt-5.4': (2.50, 15.00),
+    'gpt-5.4-mini': (0.75, 4.50), 'gpt-5.1': (1.25, 10.00), 'gpt-5': (1.25, 10.00),
+    'gpt-5-mini': (0.25, 2.00), 'gpt-4.1': (2.00, 8.00), 'gpt-4o': (2.50, 10.00), 'gpt-4o-mini': (0.15, 0.60),
+}
+def model_price(model):
+    if model in MODEL_PRICES:
+        return MODEL_PRICES[model]
+    base = max((k for k in MODEL_PRICES if model.startswith(k)), key=len, default=None)
+    return MODEL_PRICES[base] if base else max(MODEL_PRICES.values())
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # HOSTED DEMO MODE (all off unless APEX_ACCESS_CODE is set)
@@ -284,23 +317,117 @@ def parse_rss(xml_text):
 # OPENAI LAYER
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-def gpt(system, user, max_tokens=3000, temp=0.3):
-    body = json.dumps({'model':'gpt-4o','max_tokens':max_tokens,'temperature':temp,
-        'messages':[{'role':'system','content':system},{'role':'user','content':user}]}).encode()
+# Per-run cost meter. /analyze (and other routes) set one; worker threads
+# started inside a run inherit it via contextvars.copy_context().
+import contextvars
+_RUN_METER = contextvars.ContextVar('apex_run_meter', default=None)
+
+
+class Meter:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.calls = self.tokens_in = self.tokens_out = 0
+        self.usd = 0.0
+
+    def add(self, model, tin, tout):
+        pin, pout = model_price(model)
+        with self.lock:
+            self.calls += 1
+            self.tokens_in += tin
+            self.tokens_out += tout
+            self.usd += tin / 1e6 * pin + tout / 1e6 * pout
+
+    def summary(self):
+        with self.lock:
+            return {'calls': self.calls, 'tokens_in': self.tokens_in, 'tokens_out': self.tokens_out,
+                    'usd': round(self.usd, 4), 'est_cents': round(self.usd * 100, 1)}
+
+
+TOTAL_METER = Meter()          # since server start; printed per call to the console
+
+
+def spawn(target, *args):
+    """Start a daemon thread that keeps the caller's run meter."""
+    ctx = contextvars.copy_context()
+    t = threading.Thread(target=ctx.run, args=(target, *args), daemon=True)
+    t.start()
+    return t
+
+
+# What each model accepts, learned from its 400 errors and remembered.
+_MODEL_QUIRKS = {}
+_LEGACY = ('gpt-4', 'gpt-3.5')     # accept max_tokens + temperature
+
+
+def gpt(system, user, max_tokens=3000, temp=0.3, *, json_mode=False, fast=False, effort=None):
+    """One chat completion. Returns the message text.
+    json_mode: ask the API for a JSON object (more reliable than prompt-only JSON).
+    fast:      use MODEL_FAST (cheap extraction / classification).
+    effort:    reasoning effort for reasoning models ('minimal'|'low'|'medium'|'high').
+    Retries timeouts, 429 and 5xx with backoff; adapts to each model's parameters."""
+    model = MODEL_FAST if fast else MODEL
+    q = _MODEL_QUIRKS.setdefault(model, {'legacy': model.startswith(_LEGACY)})
     last = None
     for attempt in range(GPT_RETRIES + 1):
+        body = {'model': model, 'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]}
+        if q['legacy']:
+            body['max_tokens'] = max_tokens
+            if not q.get('no_temp'):
+                body['temperature'] = temp
+        else:
+            # Reasoning tokens count against the completion budget: leave room.
+            body['max_completion_tokens'] = max_tokens + 6000
+            if not q.get('no_effort'):
+                body['reasoning_effort'] = effort or 'low'
+        if json_mode and not q.get('no_json'):
+            body['response_format'] = {'type': 'json_object'}
+        t0 = time.time()
         try:
-            req = Request(OPENAI_BASE + '/v1/chat/completions', data=body,
-                headers={'Content-Type':'application/json','Authorization':f'Bearer {OPENAI_KEY}'}, method='POST')
+            req = Request(OPENAI_BASE + '/v1/chat/completions', data=json.dumps(body).encode(),
+                          headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {OPENAI_KEY}'},
+                          method='POST')
             with urlopen(req, timeout=GPT_TIMEOUT) as r:
-                return json.loads(r.read())['choices'][0]['message']['content']
+                j = json.loads(r.read())
+            u = j.get('usage') or {}
+            tin, tout = int(u.get('prompt_tokens') or 0), int(u.get('completion_tokens') or 0)
+            TOTAL_METER.add(model, tin, tout)
+            m = _RUN_METER.get()
+            if m is not None:
+                m.add(model, tin, tout)
+            print(f'  [gpt] {model} in={tin} out={tout} {time.time() - t0:.1f}s', flush=True)
+            msg = j['choices'][0]['message']
+            if j['choices'][0].get('finish_reason') == 'length' and not (msg.get('content') or '').strip():
+                raise Exception('model ran out of tokens before answering')
+            return msg.get('content') or ''
         except HTTPError as e:
-            raise Exception(f'OpenAI {e.code}: {e.reason}')
+            detail = ''
+            try:
+                detail = json.loads(e.read() or b'{}').get('error', {}).get('message', '')
+            except Exception:
+                pass
+            low = detail.lower()
+            if e.code == 400 and "'max_tokens'" in low and q['legacy']:
+                q['legacy'] = False; continue
+            if e.code == 400 and 'temperature' in low and q['legacy'] and not q.get('no_temp'):
+                q['no_temp'] = True; continue
+            if e.code == 400 and 'reasoning_effort' in low and not q.get('no_effort'):
+                q['no_effort'] = True; continue
+            if e.code == 400 and 'response_format' in low and not q.get('no_json'):
+                q['no_json'] = True; continue
+            if e.code == 429 and ('quota' in low or 'credits' in low or 'billing' in low):
+                # Out of credits is not a rate limit: retrying cannot help.
+                raise Exception('Your OpenAI account has no credits left. Add credits at '
+                                'platform.openai.com → Settings → Billing, then run again.')
+            if e.code in (429, 500, 502, 503, 504) and attempt < GPT_RETRIES:
+                wait = float(e.headers.get('Retry-After') or 0) or 2 ** (attempt + 1)
+                last = Exception(f'OpenAI {e.code}: {detail or e.reason}')
+                time.sleep(min(wait, 30)); continue
+            raise Exception(f'OpenAI {e.code}: {detail or e.reason}')
         except Exception as e:
             last = e
             if attempt < GPT_RETRIES:
                 time.sleep(2 ** (attempt + 1))
-    raise Exception(f'OpenAI failed after {GPT_RETRIES+1} attempts: {last}')
+    raise Exception(f'OpenAI failed after {GPT_RETRIES + 1} attempts: {last}')
 
 def jparse(text):
     if not text: return {}
@@ -1846,16 +1973,11 @@ Return ONLY JSON:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def estimate_cost(mode="optimize"):
-    costs = {
-        "optimize":       {"calls":5,"input_k":12,"output_k":8},
-        "cover_letter":   {"calls":2,"input_k":6, "output_k":2},
-        "interview_prep": {"calls":2,"input_k":5, "output_k":4},
-        "linkedin":       {"calls":1,"input_k":4, "output_k":3},
-        "outreach":       {"calls":1,"input_k":4, "output_k":3},
-    }
-    c = costs.get(mode, costs["optimize"])
-    total = (c["input_k"]/1000)*5.00 + (c["output_k"]/1000)*15.00
-    return {"mode":mode,"calls":c["calls"],"est_usd":round(total,4),"est_cents":round(total*100,2)}
+    """Measured cost of the current run (token usage x model price)."""
+    m = _RUN_METER.get()
+    s_ = m.summary() if m else {'calls': 0, 'usd': 0.0, 'est_cents': 0.0}
+    return {'mode': mode, 'calls': s_['calls'], 'est_usd': s_['usd'], 'est_cents': s_['est_cents'],
+            'tokens_in': s_.get('tokens_in', 0), 'tokens_out': s_.get('tokens_out', 0), 'measured': True}
 
 
 # AGENT LOOP
@@ -2187,11 +2309,11 @@ Return ONLY JSON:
 
     # Fire all generators in parallel threads
     gen_threads = [
-        threading.Thread(target=gen_cover_letter, daemon=True),
-        threading.Thread(target=gen_interview,    daemon=True),
-        threading.Thread(target=gen_linkedin,     daemon=True),
-        threading.Thread(target=gen_outreach,     daemon=True),
-        threading.Thread(target=gen_velocity,     daemon=True),
+        threading.Thread(target=contextvars.copy_context().run, args=(gen_cover_letter,), daemon=True),
+        threading.Thread(target=contextvars.copy_context().run, args=(gen_interview,),    daemon=True),
+        threading.Thread(target=contextvars.copy_context().run, args=(gen_linkedin,),     daemon=True),
+        threading.Thread(target=contextvars.copy_context().run, args=(gen_outreach,),     daemon=True),
+        threading.Thread(target=contextvars.copy_context().run, args=(gen_velocity,),     daemon=True),
     ]
     for t in gen_threads: t.start()
 
@@ -3948,6 +4070,7 @@ class Handler(BaseHTTPRequestHandler):
         # Refuse foreign origins before touching the body. A text/plain POST
         # skips the CORS preflight, so the preflight alone protects nothing.
         route = self.path.split('?', 1)[0]
+        _RUN_METER.set(Meter())          # this request's model spend (each request is its own thread)
         err = self._guard(route)
         if err:
             self._refuse(err)

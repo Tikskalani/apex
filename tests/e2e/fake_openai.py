@@ -4,7 +4,7 @@ Answers /v1/chat/completions with canned content chosen by the system prompt,
 so the browser suite is deterministic and never spends real credits.
 
 Markers in the resume text steer the response:
-  FAILPARSE  -> HTTP 500 (exercise the error path)
+  FAILPARSE  -> HTTP 400 (exercise the error path; 400s are not retried)
   LONGFORM   -> a resume long enough to need several PDF pages
 """
 import json
@@ -121,7 +121,7 @@ class _Handler(BaseHTTPRequestHandler):
         user = next((m['content'] for m in msgs if m.get('role') == 'user'), '')
         _Handler.calls.append({'path': self.path, 'system': system[:80]})
         if 'FAILPARSE' in user:
-            self._send(500, {'error': {'message': 'stubbed failure'}}); return
+            self._send(400, {'error': {'message': 'stubbed failure'}}); return   # 400: not retried
         if 'resume parser' in system:
             content = json.dumps(longform() if 'LONGFORM' in user else MARCUS)
         elif 'cover letters' in system:
