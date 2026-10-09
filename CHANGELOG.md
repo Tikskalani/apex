@@ -4,6 +4,41 @@ All notable changes to APEX. Newest first.
 
 ---
 
+## v11 — 2026-10-09
+
+A new resume engine, Claude support, and a benchmark that measures APEX against a plain chatbot.
+
+### Why
+
+On real resumes v10 shipped the original unchanged (62 → 62, zero lines edited). It kept a rewrite only if a keyword-count score rose; better writing barely moves that score, and markdown in the model's output made the scorer read good rewrites as regressions. Market keywords for an AI-engineer target came back as JavaScript and Java, with percentages invented by the model.
+
+### Added
+
+- **Evidence Engine** (`apex_engine.py`): structure-locked editing (only the summary and experience/project bullets, re-assembled from your original lines), a recruiter-rubric review, a rewrite playbook (outcome first, condense never delete, past tense for completed work), **per-line verification** (deterministic fact gate for numbers, tools and names, then a model audit for additions and omissions; one retry, then revert that line only), bullet and section ordering kept separate from wording, and a blind hiring-manager judge scored in both orders.
+- **Evidence questions**: APEX asks for the numbers only you know and rewrites with your answers.
+- **Review screen**: every verified edit with its reason and a Keep toggle; "Use this version"; "Restore my original".
+- **Measured market demand**: the model proposes role-specific requirements; the code counts how many scraped postings mention each.
+- **Claude support** via the official Anthropic SDK (the one optional package). Anthropic-only configs default to Claude Opus 5.5 / Haiku 5.5. Organisation-level keys take `ANTHROPIC_WORKSPACE_ID`.
+- **Model layer**: current OpenAI reasoning models (adaptive parameters), JSON mode, retries with backoff, clear out-of-credit messages, and **real per-run cost** (the footer cost was a hard-coded estimate).
+- **`tools/benchmark.py`**: the same engine per model on bench resumes, cross-judged by every judge model (same-provider scores shown apart), invented claims counted, cost and time, and a `chat:<model>` baseline = the plain "improve my resume" request. Blind review page included.
+
+### Removed
+
+- **"Apply All Suggestions"**: it regenerated the whole resume with no verification, after the truth-checking step.
+- The Phase 5 analysis call and the generic Phase 7 report call (the engine's findings replace both).
+- `GETTING_STARTED.md` and `START_HERE.md` (machine-specific notes).
+
+### Fixed
+
+- On phones, an invisible notification covered the Launch button; taps never reached it.
+- Engine bugs found in real runs and pinned by tests: mislabelled before/after pairs after reordering, resumes growing longer, wrong tense, deleted experience, a truncated fact-check request, false rejections of ordinary words ("write-offs") and standard names ("Postgres" → "PostgreSQL").
+
+### Privacy
+
+- Personal data removed from the code, tests, docs and the whole git history: test fixtures use fictional people, and commits carry only the GitHub handle and no-reply email.
+
+---
+
 ## v10.4 — 2026-10-08
 
 Security lockdown, a real job pipeline, and the test suite that found the bugs below. Run `python tests/run_all.py` and `.venv\Scripts\python -m pytest` after any change (setup in CLAUDE.md).

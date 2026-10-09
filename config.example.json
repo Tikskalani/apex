@@ -1,13 +1,18 @@
 {
   "_comment": "Copy this file to config.json and fill in your keys. config.json is gitignored and must never be committed.",
 
-  "_models_note": "MODEL writes, reviews and judges; MODEL_FAST does extraction. Any OpenAI model (gpt-...) or Claude model (claude-...). Prices per 1M tokens in/out: gpt-6.1-sol $2/$10, claude-sonnet-5-5 $2/$10, claude-opus-5-5 $4/$20; fast: gpt-6-luna or claude-haiku-5-5 $0.10/$0.50. Run tools/benchmark.py to compare on your own resumes before choosing.",
-  "MODEL": "gpt-6.1-sol",
-  "MODEL_FAST": "gpt-6-luna",
+  "_models_note": "MODEL writes, reviews and judges; MODEL_FAST does extraction. Any Claude model (claude-...) or OpenAI model (gpt-...). Per 1M tokens in/out: claude-opus-5-5 $4/$20, claude-sonnet-5-5 $2/$10, claude-haiku-5-5 $0.10/$0.50, gpt-6.1-sol $2/$10, gpt-6-luna $0.10/$0.50. Leave MODEL out to use the default for the key you have. Run tools/benchmark.py to compare on your own resumes.",
+  "MODEL": "claude-opus-5-5",
+  "MODEL_FAST": "claude-haiku-5-5",
 
-  "OPENAI_KEY": "sk-proj-YOUR_OPENAI_API_KEY_HERE",
-  "ANTHROPIC_KEY": "",
-  "JSEARCH_KEY": "YOUR_RAPIDAPI_JSEARCH_KEY_HERE",
+  "ANTHROPIC_KEY": "sk-ant-YOUR_ANTHROPIC_API_KEY_HERE",
+  "_workspace_note": "Only for organisation-level Anthropic keys (error: 'not scoped to a workspace'). Find it under Settings > Workspaces.",
+  "ANTHROPIC_WORKSPACE_ID": "",
+
+  "_openai_note": "Optional. Needed for OpenAI models and for voice answers in the Interview tab (speech-to-text).",
+  "OPENAI_KEY": "",
+
+  "JSEARCH_KEY": "",
 
   "_smtp_note": "SMTP is OPTIONAL. Only needed for the Job Alerts email feature. Leave blank to disable. For Gmail use an App Password, not your account password.",
   "SMTP_HOST": "",

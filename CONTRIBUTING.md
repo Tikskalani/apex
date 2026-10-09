@@ -21,17 +21,29 @@ cd apex
 
 # 2. Create your config
 cp config.example.json config.json
-# Add your OpenAI and JSearch keys to config.json
+# Add an Anthropic key (ANTHROPIC_KEY) or an OpenAI key (OPENAI_KEY); JSearch is optional
 
-# 3. Run the server
+# 3. Install and run the server
+pip install -r requirements.txt
 python agent_server.py
 
-# 4. Open the frontend
-# (any browser — no build step needed)
-open index.html
+# 4. Open the app at http://localhost:7842/
+#    (never open index.html from disk: the page must come from the server)
 ```
 
 There is intentionally no build pipeline. The frontend is a single HTML file. Edit, save, refresh the browser. The backend reloads on Python restart only.
+
+### Tests (run before every PR)
+
+```bash
+python -m venv .venv && .venv/Scripts/python -m pip install -r requirements-dev.txt
+.venv/Scripts/python -m playwright install chromium
+python tests/run_all.py            # regression suites
+.venv/Scripts/python -m pytest     # unit, API, security and browser tests (offline model stub, no API cost)
+```
+
+Changes that touch resume writing should also be checked with `tools/benchmark.py`, which compares models
+and the plain-chatbot baseline on the resumes in `bench/cases/` (this one does spend API credits).
 
 ## Code style
 
@@ -56,7 +68,7 @@ There is intentionally no build pipeline. The frontend is a single HTML file. Ed
 
 1. Branch from `main`: `git checkout -b feature/your-feature-name`
 2. Make your changes — keep commits focused and well-described
-3. Test against a real resume run before submitting
+3. Run the tests above; for writing changes, run the benchmark too
 4. Open a PR with:
    - What changed and why
    - Screenshots if UI changes
