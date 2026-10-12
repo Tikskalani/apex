@@ -24,7 +24,7 @@ def mk(**kw):
 
 def test_create_defaults_and_history():
     a = mk(url='https://jobs.example.com/1')
-    assert a['status'] == 'applied' and a['applied_on'] == date.today().isoformat()
+    assert a['status'] == 'applied' and a['applied_on'] == S._today()
     h = S.get_application(a['id'], with_history=True)
     assert [e['kind'] for e in h['events']] == ['created']
 
@@ -33,7 +33,7 @@ def test_saved_has_no_applied_date_until_it_moves():
     a = mk(status='saved')
     assert a['applied_on'] is None
     a = S.update_application(a['id'], {'status': 'applied'})
-    assert a['applied_on'] == date.today().isoformat()
+    assert a['applied_on'] == S._today()
 
 
 @pytest.mark.parametrize('bad,msg', [
@@ -88,15 +88,15 @@ def test_update_into_duplicate_is_a_clear_error():
 
 
 def test_followup_due_logic():
-    old = (date.today() - timedelta(days=S.FOLLOWUP_AFTER_DAYS)).isoformat()
-    recent = date.today().isoformat()
+    old = (date.fromisoformat(S._today()) - timedelta(days=S.FOLLOWUP_AFTER_DAYS)).isoformat()
+    recent = S._today()
     a = mk(company='Old', applied_on=old)
     b = mk(company='New', applied_on=recent)
     c = mk(company='Saved', status='saved')
     assert a['followup_due'] and not b['followup_due'] and not c['followup_due']
     a = S.record_followup_sent(a['id'])
     assert not a['followup_due'], 'sending a follow-up pushes the next one out'
-    assert a['next_action_on'] == (date.today() + timedelta(days=S.FOLLOWUP_AFTER_DAYS)).isoformat()
+    assert a['next_action_on'] == (date.fromisoformat(S._today()) + timedelta(days=S.FOLLOWUP_AFTER_DAYS)).isoformat()
     r = S.update_application(b['id'], {'status': 'rejected', 'next_action_on': old})
     assert not r['followup_due'], 'closed applications never need a follow-up'
 
@@ -217,3 +217,69 @@ def test_daily_spend_is_capped_atomically():
     for t in ts: t.start()
     for t in ts: t.join()
     assert sum(results) == 5 and S.spent('2026-10-10') == 5
+
+
+# ── v11: baselines, caps, maintenance ────────────────────────────────────────
+
+def test_score_keeps_its_requirement_list_for_drift():
+    S.record_score('Data Analyst', 'general', 40, 61, keywords=[{'name': 'SQL', 'pct': 71.6}, {'name': '', 'pct': 5}, 'junk'])
+    last = S.latest_score('data analyst')
+    assert last['score_after'] == 61 and last['keywords'] == [{'name': 'SQL', 'pct': 72}]
+
+
+def test_score_history_is_trimmed_per_owner(monkeypatch):
+    monkeypatch.setattr(S, 'MAX_SCORES_PER_OWNER', 3)
+    for i in range(5):
+        S.record_score(f'Role {i}', 'general', 1, i)
+    assert S.latest_score('Role 4')['score_after'] == 4 and S.latest_score('Role 1') is None
+
+
+def test_artifacts_per_application_are_capped(monkeypatch):
+    monkeypatch.setattr(S, 'MAX_ARTIFACTS_PER_APP', 2)
+    a = mk()
+    S.add_artifact(a['id'], 'note', 'one')
+    S.add_artifact(a['id'], 'note', 'two')
+    with pytest.raises(S.StoreError, match='already has 2 saved documents'):
+        S.add_artifact(a['id'], 'note', 'three')
+
+
+def test_owner_storage_is_capped(monkeypatch):
+    monkeypatch.setattr(S, 'MAX_OWNER_BYTES', 1000)
+    a = mk()
+    S.add_artifact(a['id'], 'note', 'x' * 900)
+    with pytest.raises(S.StoreError, match='using all the space'):
+        S.add_artifact(a['id'], 'note', 'y' * 200)
+    with pytest.raises(S.StoreError, match='using all the space'):
+        S.update_application(a['id'], {'notes': 'z' * 200})
+
+
+def test_purge_removes_only_stale_hosted_owners():
+    S.create_application({'company': 'Local', 'role': 'Mine'})                    # owner '' is never purged
+    old = S.create_application({'company': 'Old', 'role': 'Visitor'}, owner='visitor-old')[0]
+    S.create_application({'company': 'New', 'role': 'Visitor'}, owner='visitor-new')
+    with S._db() as conn:
+        conn.execute("UPDATE applications SET updated_at = '2000-01-01T00:00:00+00:00' WHERE id = ?", (old['id'],))
+    assert S.purge_inactive_owners(30) == 1
+    assert S.list_applications(owner='visitor-old') == []
+    assert len(S.list_applications(owner='visitor-new')) == 1 and len(S.list_applications()) == 1
+
+
+def test_ping_and_connections_are_closed(tmp_path, monkeypatch):
+    S.ping()
+    mk()
+    S.list_applications()
+    # On Windows an open sqlite connection keeps the file locked: removing it
+    # proves every connection was closed, not just committed.
+    import gc, os
+    gc.collect()
+    for suffix in ('', '-wal', '-shm'):
+        p = str(tmp_path / 'apex.db') + suffix
+        if os.path.exists(p):
+            os.remove(p)
+
+
+def test_owner_storage_cap_also_covers_new_applications(monkeypatch):
+    monkeypatch.setattr(S, 'MAX_OWNER_BYTES', 1000)
+    S.create_application({'company': 'A', 'role': 'R', 'notes': 'x' * 900})
+    with pytest.raises(S.StoreError, match='using all the space'):
+        S.create_application({'company': 'B', 'role': 'R', 'notes': 'y' * 200})

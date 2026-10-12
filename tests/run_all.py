@@ -5,8 +5,7 @@ APEX regression suite.  Run from the project root:
     python tests/run_all.py
 
 Requires python3. `r4_export` additionally requires node; it is skipped with a
-warning if node is absent. `r7_e2e` needs pdfplumber and a PDF in tests/fixtures/;
-it skips cleanly without either. Neither is a dependency of APEX itself.
+warning if node is absent. Node is not a dependency of APEX itself.
 """
 import subprocess, sys, os, shutil
 
@@ -17,7 +16,7 @@ try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
-PY_TESTS = ['r1_scorer', 'r2_protected', 'r3_loop', 'r5_ranking', 'r7_e2e', 'r8_weak', 'r10_final']
+PY_TESTS = ['r1_scorer', 'r5_ranking']        # the v10 rewrite-loop suites retired with the loop (v11)
 JS_TESTS = ['check_js_syntax', 'r4_export']
 
 fails, skipped = [], []

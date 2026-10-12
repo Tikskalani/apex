@@ -2,12 +2,14 @@
 
 The app under test is a copy of agent_server.py + index.html in a temp dir with
 a stub config.json, so the suite never reads or exposes the real keys, and
-every OpenAI call goes to tests/e2e/fake_openai.py. CDN libraries (jsPDF,
-docx, pdf.js, mammoth) still load from cdnjs/jsDelivr, so the suite needs a
-network connection, exactly like the app does.
+every model call goes to tests/e2e/fake_openai.py and job boards are replaced
+by tests/e2e/fixtures/jobs.json. CDN libraries (jsPDF, docx, pdf.js, mammoth)
+still load from cdnjs/jsDelivr, so the browser tests need a network connection,
+exactly like the app does.
 """
 import http.client
 import json
+import re
 import os
 import shutil
 import socket
@@ -17,9 +19,9 @@ import time
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
-from fake_openai import FakeOpenAI
+from fake_openai import MARCUS, FakeOpenAI, longform, struct_text
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_RESUME = (Path(__file__).parent / 'fixtures' / 'marcus_delgado.txt').read_text(encoding='utf-8')
@@ -44,7 +46,12 @@ class ServerProcess:
         d = tmp_path_factory.mktemp('apex')
         for name in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'index.html'):
             shutil.copy(ROOT / name, d / name)
-        env = dict(os.environ, APEX_OPENAI_BASE=fake_openai.url)
+        (d / 'assets').mkdir()
+        for font in (ROOT / 'assets').glob('*.ttf'):           # PDF export embeds these
+            shutil.copy(font, d / 'assets' / font.name)
+        # Saved postings instead of live job boards: fast, deterministic, no traffic to third parties.
+        env = dict(os.environ, APEX_OPENAI_BASE=fake_openai.url,
+                   APEX_FIXTURE_JOBS=str(Path(__file__).parent / 'fixtures' / 'jobs.json'))
         if config_json is not None:
             (d / 'config.json').write_text(json.dumps(config_json))
         elif config:
@@ -115,7 +122,7 @@ def hosted(tmp_path_factory, fake_openai):
     per-visitor budget (small here so the limit is testable), proxy IP trust."""
     a = ServerProcess(tmp_path_factory, fake_openai, config=False, extra_env={
         'APEX_ACCESS_CODE': HOSTED_CODE, 'APEX_SESSION_SECRET': 'x' * 48,
-        'APEX_PUBLIC_HOST': HOSTED_HOST, 'APEX_TRUST_PROXY': '1',
+        'APEX_PUBLIC_HOST': HOSTED_HOST, 'APEX_TRUST_PROXY': '1', 'FLY_APP_NAME': 'apex-test',   # trust Fly-Client-IP
         'APEX_VISITOR_BUDGET': '3', 'APEX_DAILY_BUDGET': '1000'})
     a.code, a.public_host = HOSTED_CODE, HOSTED_HOST
     yield a
@@ -174,7 +181,7 @@ def probe(browser, app):
     pp = PageProbe(page)
     page.goto(app.url + '/')
     # The page is ready once its own health check has rendered the version.
-    page.wait_for_function("document.getElementById('tel-server-v').textContent === '10.0'", timeout=15000)
+    page.wait_for_function("document.getElementById('tel-server-v').textContent === '11.0'", timeout=15000)
     yield pp
     ctx.close()
 
@@ -182,3 +189,29 @@ def probe(browser, app):
 @pytest.fixture
 def fixture_resume():
     return FIXTURE_RESUME
+
+
+@pytest.fixture
+def stub_resume():
+    """The resume the stub's /parse-resume answer was parsed from (with its
+    hostile shapes: very long title/company lines, a multi-line bullet, dashes)."""
+    return struct_text(MARCUS)
+
+
+@pytest.fixture
+def longform_resume():
+    return struct_text(longform()) + 'LONGFORM\n'
+
+# A page on the app at desktop size, waiting until the server answered (used by
+# the test_ui_* suites).
+@pytest.fixture
+def ui(browser, app):
+    ctx = browser.new_context(accept_downloads=True, viewport={'width': 1440, 'height': 900})
+    page = ctx.new_page()
+    pp = PageProbe(page)
+    page.goto(app.url + '/')
+    expect(page.locator('#tel-server')).to_have_class(re.compile(r'\blive\b'), timeout=15000)
+    # Null-safe: the element can be briefly missing while the page boots.
+    page.wait_for_function("/^\\d/.test((document.getElementById('tel-server-v') || {}).textContent || '')", timeout=15000)
+    yield pp
+    ctx.close()

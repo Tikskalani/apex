@@ -81,6 +81,9 @@ def test_1_smoke(probe):
     page = probe.page
     expect(page.locator('#tel-server')).to_have_class(re.compile(r'\blive\b'))
 
+    # The four libraries load on first use (not at page load): load them all now.
+    assert page.evaluate("() => document.querySelectorAll('script[src]').length") == 0
+    page.evaluate("async () => { await Promise.all(['jspdf', 'docx', 'pdfjs', 'mammoth'].map(n => loadLib(n))); }")
     libs = page.evaluate("""() => ({
         jspdf:    !!(window.jspdf || window.jsPDF),
         docx:     typeof window.docx !== 'undefined',
@@ -98,8 +101,8 @@ def test_1_smoke(probe):
 
 # ── TEST 4: export, with the text-layer check a human used to do by hand ─────
 
-def test_4_export_pdf_has_real_text_layer(probe, fixture_resume):
-    page = parsed_templates_page(probe, fixture_resume)
+def test_4_export_pdf_has_real_text_layer(probe, stub_resume):
+    page = parsed_templates_page(probe, stub_resume)
     for label in ('Download PDF', 'Download DOCX', 'Download TXT'):
         expect(page.get_by_role('button', name=label)).to_be_visible()
 
@@ -124,8 +127,8 @@ def test_4_export_pdf_has_real_text_layer(probe, fixture_resume):
     probe.assert_clean()
 
 
-def test_4_export_multipage_pdf(probe, fixture_resume):
-    page = parsed_templates_page(probe, fixture_resume + '\nLONGFORM\n')
+def test_4_export_multipage_pdf(probe, longform_resume):
+    page = parsed_templates_page(probe, longform_resume)
     _, data = download(page, '#tpl-download')
     pages = pdf_report(data)
     assert len(pages) >= 2, 'long resume should break onto a second page'
@@ -134,8 +137,8 @@ def test_4_export_multipage_pdf(probe, fixture_resume):
     probe.assert_clean()
 
 
-def test_4_export_docx_and_txt(probe, fixture_resume):
-    page = parsed_templates_page(probe, fixture_resume)
+def test_4_export_docx_and_txt(probe, stub_resume):
+    page = parsed_templates_page(probe, stub_resume)
 
     name, data = download(page, '#tpl-download-docx')
     assert name == 'Marcus_Delgado_APEX_modern.docx'
@@ -261,8 +264,8 @@ def test_data_action_buttons_work(probe):
 # ── Upload round trip: our own exports must read back in (pdf.js / mammoth) ──
 
 @pytest.mark.parametrize('button,ext', [('#tpl-download', 'pdf'), ('#tpl-download-docx', 'docx')])
-def test_exported_resume_uploads_back(probe, fixture_resume, button, ext):
-    page = parsed_templates_page(probe, fixture_resume)
+def test_exported_resume_uploads_back(probe, stub_resume, button, ext):
+    page = parsed_templates_page(probe, stub_resume)
     _, data = download(page, button)
     page.fill('#resume-text', '')
     page.set_input_files('#file-input', files=[{'name': f'resume.{ext}', 'mimeType': 'application/octet-stream',

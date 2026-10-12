@@ -1,6 +1,5 @@
 """The Tracker as a pipeline: apex.db-backed, follow-ups, apply kit, drift."""
 import io
-import json
 import os
 import re
 import sys
@@ -82,7 +81,7 @@ def test_followup_due_draft_and_mark_sent(probe, app):
 
     row(page, co).get_by_role('button', name='Open').click()
     page.click('#pp-followup-btn')
-    expect(page.locator('#pp-followup')).to_contain_text('FOLLOWUPMARKER', timeout=15000)
+    expect(page.locator('#pp-followup')).to_contain_text('followupmarker', timeout=15000)
     expect(page.locator('#pp-followup')).to_contain_text('LinkedIn note')
     expect(page.locator('#pp-timeline')).to_contain_text('Follow-up sequence saved')
 
@@ -95,12 +94,12 @@ def test_followup_due_draft_and_mark_sent(probe, app):
     probe.assert_clean()
 
 
-def test_saved_kit_exports_a_real_pdf(probe, app, fixture_resume):
+def test_saved_kit_exports_a_real_pdf(probe, app, stub_resume):
     page, co = probe.page, uniq('Kit')
     _, j = call(app, 'POST', '/api/applications', {'company': co, 'role': 'Senior Data Analyst', 'status': 'saved'})
     aid = j['application']['id']
     assert call(app, 'POST', '/api/applications/artifact',
-                {'id': aid, 'kind': 'tailored_resume', 'content': fixture_resume})[0] == 201
+                {'id': aid, 'kind': 'tailored_resume', 'content': stub_resume})[0] == 201
     assert call(app, 'POST', '/api/applications/artifact',
                 {'id': aid, 'kind': 'cover_letter', 'content': 'Dear Meridian team, ...'})[0] == 201
     go(page, 'tracker')
@@ -142,13 +141,13 @@ def test_browser_storage_migrates_into_the_database(browser, app):
 
 def test_drift_check_against_recorded_baseline(probe, app, fixture_resume):
     page, title = probe.page, uniq('Senior Data Analyst')
-    # Record a baseline exactly as a finished /analyze run would.
+    # Record a baseline exactly as a finished /analyze run would: score + its requirement list.
     sys.path.insert(0, str(ROOT))
     import apex_store
     old = os.environ.get('APEX_DB')
     os.environ['APEX_DB'] = str(app.dir / 'apex.db')
     try:
-        apex_store.record_score(title, 'general', 40, 60)
+        apex_store.record_score(title, 'general', 40, 60, keywords=[{'name': 'Excel', 'pct': 80}, {'name': 'Access', 'pct': 60}])
     finally:
         if old is None: os.environ.pop('APEX_DB', None)
         else: os.environ['APEX_DB'] = old
@@ -159,10 +158,11 @@ def test_drift_check_against_recorded_baseline(probe, app, fixture_resume):
     go(page, 'market')
     expect(page.locator('#drift-base')).to_contain_text('Baseline 60')
     page.click('#drift-run')
-    # The stub answers current_score "71" and a bogus drift of 999: the UI must
-    # show the delta the server computed (71 - 60), not the model's number.
-    expect(page.locator('#drift-out')).to_contain_text('+11', timeout=40000)
-    expect(page.locator('#drift-out')).to_contain_text('dbt')
+    # Today's saved postings ask for Python and Tableau, never for Access: the
+    # same resume is scored against both requirement lists (no model guess).
+    out = page.locator('#drift-out')
+    expect(out).to_contain_text('Python', timeout=40000)
+    expect(out).to_contain_text('Access')
     probe.assert_clean()
 
 

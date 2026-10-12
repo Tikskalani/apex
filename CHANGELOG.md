@@ -4,6 +4,82 @@ All notable changes to APEX. Newest first.
 
 ---
 
+## Unreleased
+
+Everything APEX writes about you is now fact-checked, runs can be cancelled, a bad request costs nothing, and the engine reads more resume layouts. The server still reports version 11.0.
+
+### Fixed
+
+- **Closing the tab did not stop a run.** The server kept calling the model (and spending) after the browser left. Streams now send a heartbeat every 15 s; once the client is gone, the run stops making model calls and fetching postings (`Cancelled`).
+- **A slow tab could hold up the end of a run, or never arrive.** Cover letter, interview, LinkedIn, outreach and velocity now share one 90-second deadline after the report; a tab still running is stopped and a tab that failed is reported, both with a `tab_skipped` event the page shows. Job sources share one 30-second deadline instead of 25 s each.
+- **Fact gate false matches.** Matching is on whole words ("AWS" is not in "laws", "Java" is not in "JavaScript"), numbers are compared with their unit and scale ("$2M" is not the 2 in "2 interns"), and a lexicon of tools, platforms, certifications and employers is caught in any case and position.
+- **Requirement matching was substring-based** (`_present`): "Go" matched "good", which inflated demand percentages and "supported" skills. Whole words now. A cache keyed on `id()` could also return another text's stems.
+- **Resumes the engine could not read.** Hard-wrapped PDF lines are joined back into one bullet, bullet markers are detected per section (including the Symbol-font bullet PDFs leave), German, Spanish, French and Portuguese headers are recognised, and long resumes are processed in batches (one call for 96 lines overflowed and edited nothing). A resume with nothing editable now says why instead of coming back unchanged in silence.
+- **Drift measured nothing.** It compared a stored keyword score with a model's guess. It is now deterministic: the same resume scored against your last run's requirements and today's, both counted in today's postings (`drift_data.basis`, `postings`).
+- **Salary figures were model guesses shown as market data.** `/negotiate` now uses pay ranges stated in live postings when there are at least 3, and labels the brief an AI estimate otherwise (`estimate_basis`, `basis_note`, `posted_pay`).
+- **Inbox scan said "no emails" when it had failed.** An unreadable inbox or a failed classification is now a `502` with the reason; every email is classified (was the first 40), in batches.
+- `/alerts/test` and `/config/smtp/test` reported SMTP failures as `200`/`500`; now `502` (`400` for missing credentials).
+- **Job alerts could lose subscriptions.** Two scans could run at once, and a scan overwrote subscribes or unsubscribes made while it ran. One scan at a time; results are merged into the current file; `alerts.json` and `config.json` are written atomically; a damaged `alerts.json` is set aside instead of replaced.
+- **Database connections were never closed**, and "today" (follow-ups, applied dates) was local time while timestamps were UTC. Both fixed in `apex_store`.
+- POST routes called with a query string (`/analyze?x=1`) returned 404.
+- **Exports could contain text the parser made up.** `/parse-resume` now checks every field against your resume and leaves out (and lists) anything it cannot find; resumes over 9,000 characters are no longer cut before parsing.
+- **Accented and non-Latin names broke PDF export.** Noto Sans is embedded.
+- `/followup` wrote from a short summary and `/grade-answer` had no resume to check a rewrite against; both now accept `resume`.
+- **Found in a real Claude run (Staff Backend Engineer):**
+  - Market requirements were off-role ("security engineering", "defence security clearance") because any posting saying "engineer" counted. Postings must now carry the role's core title words (`title_matches`, `role_words`). Kept postings went from 123 of 123 to 31 of 76, average relevance from 54 to 74.
+  - The fact check withheld good outreach for ordinary words: message openers ("Would", "Please"), plural nouns starting a sentence ("Containers"), and plain slash compounds ("team/product").
+  - JSearch fetched its three pages one after another and missed the deadline; now in parallel.
+  - `/tailor` now reports its measured cost (`cost_data`).
+
+### Added
+
+- **Starts without a key.** The page shows a setup card and turns Launch off; model routes answer `503 {"error", "setup": true}`. `GET /config` adds `AI_READY`, `AI_PROBLEM`, `VOICE_READY`, `MODEL`, `VERSION`.
+- **Judge veto.** If the blind hiring-manager review scores the rewrite below your original, the original ships and the page says why (`veto`, `vetoed_changes`, `notice` event).
+- **Summary creation** for resumes without one, and **Skills reordering** (`K#` lines: the skills the role asks for first; nothing added, dropped or renamed, checked in code).
+- **Answering questions rewrites only those lines** (`engine.revise`): the edits you kept stay, the first run's order and diagnosis carry over, then one judge pass.
+- **Fact check for everything else that writes about you.** Tailor & Apply runs the Evidence Engine against the posting, so the tailored resume saved to your apply kit is verified line by line and its scores are the blind judge's. Cover letters (both), interview sample answers, LinkedIn copy, outreach and follow-up messages, salary leverage points, Bullets rewrites, Weakness X-Ray fixes, Career Bridge reframes, story and answers, and graded-answer rewrites go through `engine.verify_texts`: fact gate, model audit, one repair, and anything still unverified is withheld with the reason shown on the page. Match quick fixes are marked `shown_on_resume`. Prompts no longer carry example rewrites with invented metrics.
+- **`MODEL_AUDIT` / `MODEL_JUDGE`** (config or `APEX_MODEL_AUDIT` / `APEX_MODEL_JUDGE`): run the fact-check audit and the judge on another model than the writer.
+- **Run bar** with progress, elapsed time and Cancel (cancelling stops the run on the server); a warning before leaving the page mid-run.
+- **Kept in your browser:** resume, inputs, filters, the last run's results and your review choices survive a reload; **saved resume versions** (restore, compare as a line diff, delete); **saved target roles**.
+- **Live Jobs filters** (remote only, posted within N days, hide duplicates), **cover-letter export** (PDF, DOCX, TXT), a due-follow-up count on the Tracker icon.
+- **Accessibility:** dialogs trap focus, close on Escape and return focus; closed ones are `inert`; status changes are announced.
+- `/health` reports `db` and `ai_ready`, and answers `503` when the database cannot be read.
+- `APEX_FIXTURE_JOBS` (saved postings instead of live job boards); USAJobs (`USAJOBS_API_KEY` + `USAJOBS_EMAIL`) and Findwork (`FINDWORK_API_KEY`) sources.
+- `tools/benchmark.py --fabrication-judge`: an independent model audit of invented claims, beside the engine's own gate.
+- **CI** (`.github/workflows/tests.yml`): ruff (errors only), `run_all.py` and pytest on pushes to `main` and pull requests. New unit tests for the fact gate, parsing, engine flow and server helpers; e2e tests for fact checks, request hardening, core UI and exports, all offline.
+
+### Changed
+
+- **Validate before spending.** Every POST is checked (body size, required fields, field sizes, route checks, AI key) before any budget is charged or model called. Limits: request body 2 MB (`/transcribe` 36 MB), resume 40,000 characters, posting 20,000, other fields 60,000. Answers: `400`, `411` (no `Content-Length`), `413`, `503`, `429`.
+- **Cost units** (`AI_COSTS`, hosted demo): `/analyze` 12, `/tailor` 8, most single tools 2, `/drift` and `/velocity` 1, `/render-resume` 2 (0 with a `struct`), `/live-jobs` 1; `/apply-all-recommendations` 0.
+- `/parse-resume` returns `{struct, dropped}`. `/render-resume` is POST only.
+- `/engine/answer` takes `kept`, the first run's `questions`, `order`, `section_order` and diagnosis, and (hosted) `sig`.
+- The legacy `/apply-all-recommendations` route merges without a model: only rewrites that replace a real line and pass the fact gate, never keywords.
+- Vendor libraries (pdf.js, mammoth, jsPDF, docx) load on first use, still pinned and SRI-checked; the CSP adds `'strict-dynamic'`.
+- Live Jobs: sources run in parallel under one 25-second deadline; `limit` is clamped to 1-100; a response over 12 MB is discarded. The Muse is queried by its category names (free text returned nothing).
+- `/health` and `/config` report version 11.0 (`/health` said 10.0).
+- `python tests/run_all.py` runs the two remaining legacy suites (`r1_scorer`, `r5_ranking`) plus the JS checks.
+- `fly.toml` runs the demo on Claude Sonnet 5.5 / Haiku 5.5 and sets `APEX_TRUST_PROXY` (no longer baked into the Docker image).
+
+### Removed
+
+- GET `/render-resume` (resume data in a URL).
+- The v10 rewrite loop (`improvement_loop`, `fidelity_audit`) and its suites `r2_protected`, `r3_loop`, `r7_e2e`, `r8_weak`, `r10_final`.
+- Dead code that wrote unverified text: unreachable duplicate `/transcribe` and `/apply-all-recommendations` handlers, and the unused `linkedin_optimizer`, `outreach_generator` and `_cover_letter` functions.
+- Job sources that returned aggregator pages or nothing: Indeed and LinkedIn RSS, Google News, Wellfound, Jooble.
+
+### Security
+
+- **Hosted budget can't be reset by signing in again.** The hourly limit applies per IP as well as per visitor; one IP can start 5 sessions a day; sign-in is limited to 60 attempts per 10 minutes overall (on top of 5 wrong codes per IP).
+- **Client IP spoofing.** `Fly-Client-IP` is trusted only on Fly; elsewhere the last `X-Forwarded-For` entry is used (the first one is whatever the client sent).
+- **`/engine/answer` target is signed** in hosted mode, so a visitor cannot widen what the fact gate accepts.
+- **Visitor data is purged** 21 days after its last use; each visitor is capped at 20 MB of documents and 50 per application.
+- **Slow or huge requests:** request size limits, at most 64 requests at once, idle connections dropped after 60 s (was 300 s).
+- Resumes, postings and answers are passed to the model as marked data blocks, with an instruction to ignore instructions inside them.
+- SMTP and IMAP connections verify the server's TLS certificate.
+
+---
+
 ## v11 — 2026-10-09
 
 A new resume engine, Claude support, and a benchmark that measures APEX against a plain chatbot.
@@ -131,7 +207,7 @@ On a well-written resume these three fixes moved the measured score from 71 to 7
 
 ## v10.1 — 2026-09-06
 
-Core rewrite. Fixes a defect that caused the agent to fabricate qualifications and delete credentials while reporting an improved score. Full root-cause analysis in `ANALYSIS_v10.md`.
+Core rewrite. Fixes a defect that caused the agent to fabricate qualifications and delete credentials while reporting an improved score. Full root-cause analysis in `docs/history/ANALYSIS_v10.md`.
 
 ### Fixed — critical
 

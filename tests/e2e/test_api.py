@@ -118,5 +118,14 @@ def test_full_analyze_run_streams_every_tab_and_records_the_score(app, fixture_r
                  'linkedin_data', 'outreach_data', 'velocity_data', 'cost_data'):
         assert want in types, f'{want} missing; got {sorted(set(types))}'
     assert types[-1] == 'done'
+    # Phase 8 copy is fact-checked too: repaired, withheld, or filtered, never shown unverified.
+    by = {e['type']: e for e in events}
+    assert by['cover_letter_data']['verified'] and 'SQL every day' in by['cover_letter_data']['letter']
+    li = by['linkedin_data']['data']
+    assert li['about'] == 'Data analyst who builds SQL reporting for management teams.', 'invented "12" repaired away'
+    assert li['skills'] == ['SQL', 'Excel'], 'skills the resume does not show are dropped'
+    out = by['outreach_data']['data']
+    assert out['cold_email']['body'] == '' and out['withheld']['email'], 'invented $2M withheld'
+    assert out['linkedin_dm']['message'].startswith('Hi, I build SQL reporting')
     st, j = call(app, 'GET', '/api/scores/latest?jobTitle=' + title.replace(' ', '%20'))
     assert st == 200 and j['score'] and j['score']['score_after'] is not None

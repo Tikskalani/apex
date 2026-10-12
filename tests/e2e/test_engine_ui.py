@@ -5,7 +5,7 @@ import re
 import pdfplumber
 from playwright.sync_api import expect
 
-from test_apex import download, go, toast, launch_fill
+from test_apex import download, go, launch_fill
 
 
 def run_agent(page, resume):
@@ -70,7 +70,7 @@ def test_phone_launch_button_takes_a_real_tap(browser, app, fixture_resume):
     ctx = browser.new_context(viewport={'width': 390, 'height': 844}, has_touch=True, is_mobile=True)
     page = ctx.new_page()
     page.goto(app.url + '/')
-    expect(page.locator('#tel-server-v')).to_have_text('10.0')
+    expect(page.locator('#tel-server-v')).to_have_text('11.0')
     page.tap('#open-drawer')
     page.fill('#job-title', 'Senior Data Analyst')
     page.fill('#resume-text', fixture_resume)

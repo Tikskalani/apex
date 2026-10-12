@@ -1,0 +1,24 @@
+{
+  "_comment": "Saved job postings for tests (APEX_FIXTURE_JOBS). Fictional companies. With this set, no job board is contacted.",
+  "postings": [
+    "Senior Data Analyst - Northwind Health. Build dashboards in Tableau and write SQL against our warehouse. Python for analysis is a plus. Partner with stakeholders on KPIs and reporting. 5+ years of data analysis experience.",
+    "Data Analyst II - Contoso Retail. Own weekly reporting and dashboards. Strong SQL and Excel required. Experience with Tableau or Looker. Present findings to stakeholders. A/B testing experience preferred.",
+    "Senior Data Analyst - Fabrikam Logistics. SQL, Python and dbt to model shipment data. Build Tableau dashboards for operations leaders. Define KPIs and automate reporting.",
+    "Data Analyst - Tailspin Toys. Analyze sales data with SQL and Python. Create dashboards and reports for the commercial team. Stakeholder communication and A/B testing.",
+    "Senior Data Analyst, Product - Adventure Works. SQL and Python required; Tableau dashboards; experiment design and A/B testing; KPIs for product teams; reporting automation with dbt.",
+    "Business Data Analyst - Wide World Importers. Excel, SQL, reporting and dashboards for finance. Data analysis of margins and KPIs. Communicate insights to stakeholders.",
+    "Data Analyst (Healthcare) - Litware Clinics. SQL, Tableau, Python. Build clinical reporting dashboards. KPIs for clinic operations. Stakeholder communication with clinic managers.",
+    "Senior Data Analyst - Proseware. Lead data analysis for marketing. SQL, Python, Looker and dbt. A/B testing and KPIs. Dashboards and weekly reporting to leadership.",
+    "Data Analyst - Coho Winery. Excel and SQL reporting. Tableau dashboards for sales and inventory. Data analysis and stakeholder communication.",
+    "Analytics Engineer / Data Analyst - Woodgrove Bank. dbt, SQL and Python. Build reliable reporting models and dashboards. Define KPIs with finance stakeholders.",
+    "Senior Data Analyst - Alpine Ski House. SQL, Python, Tableau. Data analysis for bookings; dashboards; A/B testing of pricing; reporting to executives.",
+    "Data Analyst - Blue Yonder Airlines. SQL and Excel; reporting and dashboards for operations; KPIs; data analysis of on-time performance; Python a plus."
+  ],
+  "jobs": [
+    {"title": "Senior Data Analyst", "company": "Northwind Health", "location": "Remote", "url": "https://jobs.example.com/northwind/1", "source": "Fixture", "posted": "2026-10-01", "snippet": "SQL, Tableau, Python. Dashboards and KPIs.", "salary": "$95,000 - $120,000"},
+    {"title": "Data Analyst II", "company": "Contoso Retail", "location": "Houston, TX", "url": "https://jobs.example.com/contoso/2", "source": "Fixture", "posted": "2026-10-03", "snippet": "Weekly reporting and dashboards. SQL and Excel.", "salary": "$80,000 - $95,000"},
+    {"title": "Senior Data Analyst", "company": "Fabrikam Logistics", "location": "Remote", "url": "https://jobs.example.com/fabrikam/3", "source": "Fixture", "posted": "2026-09-28", "snippet": "SQL, Python and dbt for shipment data.", "salary": "$110,000 - $135,000"},
+    {"title": "Data Analyst", "company": "Tailspin Toys", "location": "Austin, TX", "url": "https://jobs.example.com/tailspin/4", "source": "Fixture", "posted": "2026-10-05", "snippet": "Sales data with SQL and Python.", "salary": ""},
+    {"title": "Senior Data Analyst, Product", "company": "Adventure Works", "location": "Remote", "url": "https://jobs.example.com/adventure/5", "source": "Fixture", "posted": "2026-10-06", "snippet": "Experiment design and A/B testing.", "salary": "$120,000 - $140,000"}
+  ]
+}

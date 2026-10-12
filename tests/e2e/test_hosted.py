@@ -114,19 +114,56 @@ def test_operator_only_features_are_off(hosted, method, path):
     assert st == 403 and 'turned off in the online demo' in j['error']
 
 
-def test_per_visitor_ai_budget(hosted):
-    cookie = login(hosted)
+def test_per_visitor_and_per_ip_ai_budget(hosted):
+    ip = '10.7.7.7'
+    cookie = login(hosted, ip=ip)
     resume = 'Jane Doe\njane@x.com\nEXPERIENCE\n' + 'Analyst at Acme, built SQL reports. ' * 5
-    for _ in range(3):                               # budget is 3 units; parse costs 1
-        st, _, _ = req(hosted, 'POST', '/parse-resume', body={'resume': resume}, headers={'Cookie': cookie})
-        assert st == 200
-    st, _, j = req(hosted, 'POST', '/parse-resume', body={'resume': resume}, headers={'Cookie': cookie})
+    st, _, _ = req(hosted, 'POST', '/parse-resume', body={'resume': resume}, headers={'Cookie': cookie}, ip=ip)
+    assert st == 200                                   # budget is 3 units; parsing costs 2
+    st, _, j = req(hosted, 'POST', '/parse-resume', body={'resume': resume}, headers={'Cookie': cookie}, ip=ip)
     assert st == 429 and 'Demo limit reached' in j['error']
     st, _, _ = req(hosted, 'POST', '/api/applications', body={'company': 'Free', 'role': 'Ops'},
-                   headers={'Cookie': cookie})
+                   headers={'Cookie': cookie}, ip=ip)
     assert st == 201, 'pipeline (no AI) is not metered'
-    st, _, _ = req(hosted, 'POST', '/parse-resume', body={'resume': resume}, headers={'Cookie': login(hosted)})
-    assert st == 200, 'the limit is per visitor'
+    st, _, j = req(hosted, 'POST', '/parse-resume', body={'resume': resume}, headers={'Cookie': login(hosted, ip=ip)}, ip=ip)
+    assert st == 429, 'signing in again is a new visitor, not a new budget: the IP keeps its limit'
+    other = '10.7.7.8'
+    st, _, _ = req(hosted, 'POST', '/parse-resume', body={'resume': resume}, headers={'Cookie': login(hosted, ip=other)}, ip=other)
+    assert st == 200, 'another visitor on another network has their own budget'
+
+
+def test_bad_requests_cost_nothing(hosted):
+    ip = '10.6.6.6'
+    cookie = login(hosted, ip=ip)
+    resume = 'Jane Doe\njane@x.com\nEXPERIENCE\n' + 'Analyst at Acme, built SQL reports. ' * 5
+    for path, body in (('/parse-resume', '{{{'), ('/analyze', json.dumps({'jobTitle': '', 'resume': resume})),
+                       ('/tailor?x=1', json.dumps({'resume': 'short'})), ('/nope', '{}')):
+        c = http.client.HTTPConnection('127.0.0.1', hosted.port, timeout=15)
+        c.request('POST', path, body=body, headers={'Host': hosted.public_host, 'Content-Type': 'application/json',
+                                                   'Cookie': cookie, 'Fly-Client-IP': ip})
+        assert c.getresponse().status in (400, 404)
+    st, _, _ = req(hosted, 'POST', '/parse-resume', body={'resume': resume}, headers={'Cookie': cookie}, ip=ip)
+    assert st == 200, 'four refused requests spent none of the 3-unit budget'
+
+
+def test_new_sessions_per_ip_are_capped(hosted):
+    ip = '10.5.5.5'
+    for _ in range(5):
+        login(hosted, ip=ip)
+    st, _, page = req(hosted, 'POST', '/login', form={'code': hosted.code}, ip=ip)
+    assert st == 429 and 'Too many new sessions' in page
+
+
+def test_spoofed_forwarded_for_is_not_trusted_on_fly(hosted):
+    """On Fly only Fly-Client-IP (set by Fly's proxy) counts: rotating
+    X-Forwarded-For values cannot dodge the login throttle."""
+    ip = '10.4.4.4'
+    for n in range(5):
+        st, _, _ = req(hosted, 'POST', '/login', form={'code': 'guess'}, ip=ip,
+                       headers={'X-Forwarded-For': f'203.0.113.{n}'})
+        assert st == 401
+    st, _, page = req(hosted, 'POST', '/login', form={'code': 'guess'}, ip=ip, headers={'X-Forwarded-For': '198.51.100.9'})
+    assert st == 429
 
 
 def test_public_origin_is_https_only(hosted):
@@ -163,7 +200,7 @@ def test_browser_sign_in_flow(browser, hosted):
     expect(page.locator('.err')).to_contain_text('not right')
     page.fill('#code', hosted.code)
     page.click('button[type=submit]')
-    expect(page.locator('#tel-server-v')).to_have_text('10.0')   # (string evals are blocked by the CSP)
+    expect(page.locator('#tel-server-v')).to_have_text('11.0')   # (string evals are blocked by the CSP)
     expect(page.locator('body')).to_have_class(re.compile(r'\bhosted\b'))
     expect(page.locator('.dock-item[data-view="alerts"]')).to_be_hidden()
     expect(page.locator('a[href="/logout"]')).to_be_visible()

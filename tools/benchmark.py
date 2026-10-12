@@ -7,13 +7,18 @@ beat), then has EVERY judge model score every output (blind A/B vs the original,
 both orders). Models tend to prefer their own writing, so scores from a judge of
 the same provider are reported separately. Also measured: invented claims
 (numbers, tools and names in the output that appear nowhere in the original
-resume), verified edits, edits reverted by fact-checking, cost, time.
+resume, per the same deterministic gate the engine uses), an independent fabrication audit (a
+separate model - --fabrication-judge, default the first judge - reads the original and each output whole
+and lists unsupported claims, so the metric is not only the gate APEX is built to pass), verified edits,
+edits reverted by fact-checking, cost, time. The chatbot baseline gets the same brief as the engine and
+the judges (title, market keywords, job posting).
 Writes a blind review page so a human can pick without knowing which model wrote what.
 
     python tools/benchmark.py --models gpt-6.1-sol claude-sonnet-5-5 claude-opus-5-5 chat:gpt-6.1-sol \
         --judges gpt-6.1-sol claude-opus-5-5 --budget 3.00
 
     python tools/benchmark.py --reveal bench/runs/<run>       # after you've made your blind picks
+    python tools/benchmark.py ... --fabrication-judge none    # skip the independent fabrication audit
 
 Cases: bench/cases/*.json and bench/private/*.json (private is gitignored, for real resumes):
     {"name": "...", "title": "...", "seniority": "...", "sector": "...", "resume": "file.txt",
@@ -23,6 +28,7 @@ import argparse
 import json
 import os
 import random
+import re
 import sys
 import time
 from datetime import datetime
@@ -43,8 +49,11 @@ def load_cases(dirs, only=None):
     return cases
 
 
-CHAT_PROMPT = ('Improve my resume for a {title} role so I get more interviews. '
-               'Return only the improved resume text.\n\n{resume}')
+CHAT_PROMPT = ('Improve my resume for a {title} role so I get more interviews. This is what the role asks for:\n\n'
+               '{brief}\n\nReturn only the improved resume text.\n\nMY RESUME:\n{resume}')
+
+FABRICATION_SYSTEM = ('You are an independent reference checker. You compare a rewritten resume with the original and '
+                      'list every claim about the candidate that the original does not support. Return ONLY valid JSON.')
 
 
 def provider(model):
@@ -53,9 +62,32 @@ def provider(model):
 
 
 def invented(E, final, case, target):
-    """Claims in the output with no basis anywhere in the original resume."""
-    allowed = case['title'].split() + list(target['supported'])
+    """Claims in the output with no basis anywhere in the original resume (the engine's own gate)."""
+    allowed = E.title_words(case['title']) + list(target['supported']) + ['Summary']   # a created SUMMARY header
     return E.fact_gate(final, case['resume_text'], target['unsupported'], case['resume_text'], allowed)
+
+
+def fabrication_audit(E, llm, original, final):
+    """Independent check: a model reads the original and the output whole and lists unsupported
+    claims. Not the engine's gate or audit prompt. -> [claims], or None when the reply is unreadable."""
+    raw = llm(FABRICATION_SYSTEM, f"""{E.DATA_RULE}
+ORIGINAL RESUME (the only evidence about the candidate):
+{E._data('ORIGINAL', original)}
+
+REWRITTEN RESUME:
+{E._data('REWRITE', final)}
+
+List every claim in the REWRITTEN resume that the ORIGINAL does not support: a number, tool, employer, title,
+credential, scope, team size, user count, outcome, years of experience or seniority that is new or changed, and any
+causal claim the original does not make. Rewording, reordering, condensing, counting listed items and the standard
+name of something the original clearly shows are fine. Quote each claim once.
+
+Return ONLY JSON: {{"unsupported": [{{"claim": "quote", "why": "..."}}]}} (an empty list when everything is supported)""",
+              max_tokens=2500, json_mode=True, effort='medium')
+    d = E._jload(raw)
+    if not isinstance(d.get('unsupported'), list):
+        return None
+    return [str(x.get('claim') if isinstance(x, dict) else x)[:200] for x in d['unsupported']]
 
 
 def make_target(A, case):
@@ -108,9 +140,11 @@ def run(args):
         try:
             if model.startswith('chat:'):          # the chatbot baseline: one plain request, no engine
                 text = bound_llm(A, model[5:])('You are a helpful assistant.',
-                                               CHAT_PROMPT.format(title=case['title'], resume=case['resume_text']),
+                                               CHAT_PROMPT.format(title=case['title'], brief=E._target_block(target),
+                                                                  resume=case['resume_text']),
                                                max_tokens=4000, effort='medium')
-                r = {'final': A.strip_commentary(text) or text, 'changes': [], 'rejected': [], 'questions': []}
+                strip = getattr(A, 'strip_commentary', None) or (lambda t: re.sub(r'```[a-z]*', '', t or '').strip())
+                r = {'final': strip(text) or text, 'changes': [], 'rejected': [], 'questions': []}
             else:
                 r = E.optimize(bound_llm(A, model), case['resume_text'], target,
                                log=lambda m: say('  ' + m.strip()), judge_it=False)
@@ -128,6 +162,18 @@ def run(args):
             rec.update(changes=len(r['changes']), reverted=len(r['rejected']), questions=len(r['questions']),
                        invented=len(inv), invented_examples=inv[:8], final=r['final'], result=r)
             say(f'  invented claims: {len(inv)}' + (f' (e.g. {"; ".join(inv[:3])})' if inv else ''))
+            if args.fabrication_judge and spent() <= args.budget:
+                fm = A.Meter(); tok = A._RUN_METER.set(fm)
+                try:
+                    aud = fabrication_audit(E, bound_llm(A, args.fabrication_judge), case['resume_text'], r['final'])
+                except Exception as e:
+                    aud = None
+                    say(f'  fabrication audit: ✗ {e}')
+                A._RUN_METER.reset(tok)
+                rec['cost_usd'] = round(rec['cost_usd'] + fm.summary()['usd'], 4)
+                rec.update(audit_invented=None if aud is None else len(aud), audit_examples=(aud or [])[:8])
+                say(f'  fabrication audit ({args.fabrication_judge}): '
+                    + ('unreadable reply' if aud is None else f'{len(aud)}' + (f' (e.g. {"; ".join(aud[:3])})' if aud else '')))
             (out / f'{case["name"]}__{model}.txt').write_text(r['final'], encoding='utf-8')
             for j in args.judges:
                 if spent() > args.budget:
@@ -157,7 +203,7 @@ def summarize(results, models, judges, spent):
     for m in models:
         rs = [r for r in results if r['model'] == m and not r.get('error') and r.get('final')]
         if not rs:
-            rows.append(f'| {m} | — | — | — | — | — | — | — | — |'); continue
+            rows.append(f'| {m} | — | — | — | — | — | — | — | — | — |'); continue
         cross, same, deltas = [], [], []
         for r in rs:
             for j, s in r['judges'].items():
@@ -166,7 +212,9 @@ def summarize(results, models, judges, spent):
                 (same if provider(j) == provider(m) else cross).append(s['after'])
                 deltas.append(s['after'] - s['before'])
         avg = lambda xs: f'{sum(xs) / len(xs):.1f}' if xs else '—'
+        aud = [r['audit_invented'] for r in rs if r.get('audit_invented') is not None]
         rows.append(f'| {m} | {avg(cross)} | {avg(same)} | {avg(deltas)} | {sum(r["invented"] for r in rs)} | '
+                    f'{sum(aud) if aud else "—"} | '
                     f'{sum(r["changes"] for r in rs)} | {sum(r["reverted"] for r in rs)} | '
                     f'${sum(r["cost_usd"] for r in rs) / len(rs):.3f} | {sum(r["seconds"] for r in rs) / len(rs):.0f}s |')
     errs = [f'- {r["case"]} × {r["model"]}: {r["error"]}' for r in results if r.get('error')]
@@ -174,13 +222,15 @@ def summarize(results, models, judges, spent):
         '# APEX model benchmark',
         f'Total spent: ${spent:.2f} · judges: {", ".join(judges)}',
         '',
-        '| Model | After score, other-provider judges | After score, same-provider judges | Avg gain | Invented claims | Edits kept | Edits reverted (fact check) | Cost / resume | Time / resume |',
-        '|---|---|---|---|---|---|---|---|---|',
+        '| Model | After score, other-provider judges | After score, same-provider judges | Avg gain | Invented claims (gate) | Invented claims (independent audit) | Edits kept | Edits reverted (fact check) | Cost / resume | Time / resume |',
+        '|---|---|---|---|---|---|---|---|---|---|',
         *rows,
         '',
         'Read the first score column: it excludes a judge grading its own provider\'s writing. '
-        '"Invented claims" counts numbers, tools and names in the output that appear nowhere in the original '
-        'resume (a recruiter or reference check would catch these). `chat:` rows are the plain chatbot baseline. '
+        '"Invented claims (gate)" counts numbers, tools and names in the output that appear nowhere in the original '
+        'resume (a recruiter or reference check would catch these), using the deterministic gate APEX itself is built '
+        'on; "(independent audit)" is a separate model reading each output whole ("—" when it was skipped or its '
+        'reply was unreadable). `chat:` rows are the plain chatbot baseline, given the same brief. '
         '"Edits reverted" counts APEX rewrites its fact check rejected.',
         *(['', '## Errors', *errs] if errs else []),
     ])
@@ -223,8 +273,14 @@ if __name__ == '__main__':
     ap.add_argument('--cases', nargs='+', default=[str(ROOT / 'bench' / 'cases'), str(ROOT / 'bench' / 'private')])
     ap.add_argument('--only', nargs='*', help='case names to run')
     ap.add_argument('--budget', type=float, default=3.00, help='stop before spending more than this (USD)')
+    ap.add_argument('--fabrication-judge', help='model for the independent invented-claims audit '
+                    '(default: the first judge; "none" to skip)')
     ap.add_argument('--out')
     ap.add_argument('--reveal', metavar='RUN_DIR')
     a = ap.parse_args()
+    if a.fabrication_judge is None:
+        a.fabrication_judge = a.judges[0] if a.judges else None
+    elif a.fabrication_judge.lower() == 'none':
+        a.fabrication_judge = None
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     reveal(a.reveal) if a.reveal else run(a)

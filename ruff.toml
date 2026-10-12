@@ -1,0 +1,6 @@
+# Lint for real errors only (CI runs `ruff check --select F,E9`).
+line-length = 120
+
+[lint.per-file-ignores]
+# The legacy regression suites share helpers through `from harness import *`.
+"tests/r*.py" = ["F403", "F405"]

@@ -263,3 +263,91 @@ def test_fact_gate_compounds_and_aliases(new, ok):
     ev = 'Ran health checks after each deploy. Staff write off stock at lot level. Tests against a real Postgres.'
     probs = E.fact_gate(new, ev, (), ev)
     assert (probs == []) is ok, probs
+
+
+# ── fact check for text that is not a resume edit ────────────────────────────
+
+class TextScript:
+    """Stub model for check_texts / verify_texts: the audit flags items whose text
+    contains a flagged word; the repair returns scripted text per id."""
+
+    def __init__(self, flag=(), repairs=None):
+        self.flag, self.repairs, self.calls = set(flag), repairs or {}, []
+
+    def __call__(self, system, user, **_):
+        self.calls.append(system)
+        items = json.loads(user.split('ITEMS:')[1].split('Return ONLY JSON')[0])
+        if system == E.VERIFY_SYSTEM:
+            return json.dumps({'results': [
+                {'id': it['id'], 'ok': not any(w in it['text'] for w in self.flag),
+                 'problems': ['claims more than the resume shows']} for it in items]})
+        if system == E.REPAIR_SYSTEM:
+            return json.dumps({'fixed': [{'id': it['id'], 'text': self.repairs.get(it['id'], it['text'])}
+                                         for it in items]})
+        raise AssertionError('unexpected prompt')
+
+
+def test_text_check_gate_runs_before_the_model():
+    llm = TextScript()
+    bad = E.check_texts(llm, {'letter': {'text': 'I cut reporting time by 40% using SQL.', 'evidence': EVID}})
+    assert any('number "40"' in p for p in bad['letter'])
+    assert llm.calls == [], 'a gate failure never reaches the model audit'
+
+
+def test_text_check_context_names_pass_but_unshown_skills_fail():
+    posting = 'Meridian Health is hiring. Tableau required.'
+    ok = E.check_texts(TextScript(), {'l': {'text': 'Meridian Health needs KPI reporting. I build it in SQL.',
+                                             'evidence': EVID, 'context': posting}})
+    assert ok == {}, ok
+    # A first-person sentence is a claim: only the evidence (or allowed words, e.g. the company) backs it.
+    mixed = {'l': {'text': 'Meridian Health needs KPI reporting, which I build in SQL.', 'evidence': EVID,
+                   'context': posting}}
+    assert E.check_texts(TextScript(), mixed)
+    assert E.check_texts(TextScript(), mixed, allowed_words=['Meridian', 'Health']) == {}
+    bad = E.check_texts(TextScript(), {'l': {'text': 'I build KPI reports in Tableau.', 'evidence': EVID,
+                                              'context': posting}}, unsupported=['Tableau'])
+    assert any('adds "Tableau"' in p for p in bad['l'])
+
+
+def test_verify_texts_repairs_once_then_withholds():
+    llm = TextScript(flag={'ransformed'},
+                     repairs={'a': 'Maintained weekly KPI reports for 12 clinic managers.',
+                              'b': 'It transformed the business.'})
+    ok, withheld = E.verify_texts(llm, {
+        'a': {'text': 'Transformed the clinic with KPI reports.', 'evidence': EVID},
+        'b': {'text': 'It transformed the business.', 'evidence': EVID},
+        'c': {'text': 'Maintained KPI reports in SQL and Excel.', 'evidence': EVID},
+        'd': {'text': '', 'evidence': EVID}})
+    assert ok == {'a': 'Maintained weekly KPI reports for 12 clinic managers.',
+                  'c': 'Maintained KPI reports in SQL and Excel.'}
+    assert set(withheld) == {'b'}, 'the repair failed the check again, so it is withheld'
+    assert llm.calls.count(E.REPAIR_SYSTEM) == 1, 'one repair, never a loop'
+
+
+def test_verify_texts_fails_closed_on_an_unreadable_audit():
+    ok, withheld = E.verify_texts(lambda s, u, **_: 'not json', {'a': {'text': 'Built KPI reports.', 'evidence': EVID}})
+    assert ok == {} and withheld['a']
+
+
+def test_text_check_sends_each_evidence_text_once():
+    seen = []
+    def llm(system, user, **_):
+        seen.append(json.loads(user.split('EVIDENCE:')[1].split('CONTEXT:')[0]))
+        items = json.loads(user.split('ITEMS:')[1].split('Return ONLY JSON')[0])
+        return json.dumps({'results': [{'id': it['id'], 'ok': True} for it in items]})
+    assert E.check_texts(llm, {k: {'text': 'Maintained KPI reports.', 'evidence': EVID} for k in 'abc'}) == {}
+    assert len(seen) == 1 and list(seen[0].values()) == [EVID]
+
+
+def test_fact_gate_numbers_inside_years_are_not_evidence():
+    """Regression: "$2M" passed because "2" occurs inside "2021"."""
+    ev = 'Analyst, Acme (March 2021 - Present)\nGrew the user base to 15,000 accounts and 1,200,000 events'
+    assert any('number "2"' in p for p in E.fact_gate('Saved $2M in costs', ev))
+    assert any('number "20"' in p for p in E.fact_gate('Led 20 analysts', ev))
+    assert E.fact_gate('Grew the user base to 15K accounts and 1.2M events', ev) == []
+    assert E.fact_gate('Analyst since 2021', ev) == []
+
+
+def test_letter_vocabulary_is_not_mistaken_for_a_name():
+    text = 'Dear Hiring Manager,\n\nI saw your post on LinkedIn. I maintain KPI reports in SQL.\n\nBest Regards'
+    assert E.check_texts(TextScript(), {'l': {'text': text, 'evidence': EVID}}) == {}

@@ -6,8 +6,8 @@ Thanks for your interest in making APEX better. This is a solo-built project tha
 
 - **Report bugs** — open an issue with steps to reproduce
 - **Suggest features** — open a feature request issue
-- **Fix bugs** — pick an issue tagged `good-first-issue` and submit a PR
-- **Add a sector** — APEX supports 28 industries; add yours by extending `SECTOR_SOURCES` in `agent_server.py`
+- **Fix bugs** — pick an open issue and submit a PR
+- **Add a sector** — add yours by extending `SECTOR_SOURCES` in `agent_server.py`
 - **Improve a template** — the export PDF/DOCX templates in `index.html` can always be sharper
 - **Polish the UI** — better animations, accessibility improvements, mobile layout
 - **Write docs** — clearer setup instructions, troubleshooting tips, video walkthroughs
@@ -76,7 +76,7 @@ and the plain-chatbot baseline on the resumes in `bench/cases/` (this one does s
 
 ## What I look for in PRs
 
-- **Doesn't break existing features** — APEX has 16 tabs and 10 endpoints, all working. Check yours doesn't regress others.
+- **Doesn't break existing features** — run the full test suite (it runs on every push to `main` and every pull request in GitHub Actions).
 - **Honest about tradeoffs** — every change has costs. Note them.
 - **No feature creep** — APEX is opinionated. New tabs/endpoints need a strong justification.
 - **No breaking config changes** without a migration path

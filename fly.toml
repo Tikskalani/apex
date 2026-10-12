@@ -5,8 +5,11 @@ primary_region = "dfw"            # Dallas. Pick one near you: fly platform regi
 
 [env]
   APEX_PUBLIC_HOST    = "apex-CHANGE-ME.fly.dev"
-  APEX_VISITOR_BUDGET = "40"      # AI cost units per visitor per hour (a full run = 10)
-  APEX_DAILY_BUDGET   = "300"     # for everyone per UTC day (~30 full runs)
+  APEX_TRUST_PROXY    = "1"       # take the client IP from Fly-Client-IP (set by Fly's proxy)
+  APEX_MODEL          = "claude-sonnet-5-5"   # writing, review, judging (a public demo: not the priciest model)
+  APEX_MODEL_FAST     = "claude-haiku-5-5"    # extraction and classification
+  APEX_VISITOR_BUDGET = "40"      # AI cost units per visitor (and per IP) per hour (a full run = 12)
+  APEX_DAILY_BUDGET   = "300"     # for everyone per UTC day (~25 full runs)
 
 [http_service]
   internal_port        = 8080

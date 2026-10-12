@@ -1,9 +1,13 @@
 {
-  "_comment": "Copy this file to config.json and fill in your keys. config.json is gitignored and must never be committed.",
+  "_comment": "Copy this file to config.json and fill in your keys. config.json is gitignored and must never be committed. The server also starts without any key: the page then shows how to add one, and AI features stay off until you do (restart after editing).",
 
   "_models_note": "MODEL writes, reviews and judges; MODEL_FAST does extraction. Any Claude model (claude-...) or OpenAI model (gpt-...). Per 1M tokens in/out: claude-opus-5-5 $4/$20, claude-sonnet-5-5 $2/$10, claude-haiku-5-5 $0.10/$0.50, gpt-6.1-sol $2/$10, gpt-6-luna $0.10/$0.50. Leave MODEL out to use the default for the key you have. Run tools/benchmark.py to compare on your own resumes.",
   "MODEL": "claude-opus-5-5",
   "MODEL_FAST": "claude-haiku-5-5",
+
+  "_audit_note": "Optional. MODEL_AUDIT runs the fact checks and MODEL_JUDGE the blind hiring-manager review, so the writer does not grade its own work. Empty: MODEL_AUDIT = MODEL, MODEL_JUDGE = MODEL_AUDIT.",
+  "MODEL_AUDIT": "",
+  "MODEL_JUDGE": "",
 
   "ANTHROPIC_KEY": "sk-ant-YOUR_ANTHROPIC_API_KEY_HERE",
   "_workspace_note": "Only for organisation-level Anthropic keys (error: 'not scoped to a workspace'). Find it under Settings > Workspaces.",
@@ -15,7 +19,7 @@
   "JSEARCH_KEY": "",
 
   "_smtp_note": "SMTP is OPTIONAL. Only needed for the Job Alerts email feature. Leave blank to disable. For Gmail use an App Password, not your account password.",
-  "SMTP_HOST": "",
+  "SMTP_HOST": "smtp.gmail.com",
   "SMTP_PORT": "587",
   "SMTP_USER": "",
   "SMTP_PASS": "",

@@ -1,8 +1,8 @@
 """APEX local storage: the job pipeline, its timeline, apply kits and score history.
 
 Pure stdlib (sqlite3). One database file beside the server (`apex.db`, or
-$APEX_DB). Every public function opens its own short-lived connection, so it is
-safe to call from ThreadingHTTPServer's request threads.
+$APEX_DB). Every public function opens its own short-lived connection (and
+closes it), so it is safe to call from ThreadingHTTPServer's request threads.
 
 Rules:
 - Every row belongs to an `owner`. Running locally there is one owner, ''. In
@@ -18,6 +18,7 @@ import json
 import os
 import sqlite3
 import uuid
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 
 STATUSES = ('saved', 'applied', 'interview', 'offer', 'rejected', 'withdrawn')
@@ -27,6 +28,9 @@ ARTIFACT_KINDS = ('tailored_resume', 'cover_letter', 'followup', 'outreach', 'no
 FOLLOWUP_AFTER_DAYS = 7
 MAX_TEXT = 200_000           # per artifact; a resume is ~5 KB
 MAX_APPS_PER_OWNER = 2000    # a hosted visitor can't fill the disk
+MAX_ARTIFACTS_PER_APP = 50
+MAX_OWNER_BYTES = 20_000_000 # notes + artifacts per owner
+MAX_SCORES_PER_OWNER = 200
 
 TABLES = """
 CREATE TABLE IF NOT EXISTS applications (
@@ -65,6 +69,7 @@ CREATE TABLE IF NOT EXISTS score_history (
     sector       TEXT NOT NULL DEFAULT 'general',
     score_before INTEGER,
     score_after  INTEGER,
+    keywords     TEXT NOT NULL DEFAULT '[]',   -- the run's requirements [{name, pct}]: the drift baseline
     created_at   TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS spend (
@@ -96,7 +101,7 @@ def _now():
 
 
 def _today():
-    return date.today().isoformat()
+    return datetime.now(timezone.utc).date().isoformat()      # UTC, like _now() and the spend table
 
 
 def _connect():
@@ -106,11 +111,29 @@ def _connect():
     return conn
 
 
+@contextmanager
+def _db(immediate=False):
+    """One transaction on a fresh connection: commit on success, roll back on
+    error, always close. immediate=True takes the write lock up front, so a
+    read-then-write cannot interleave with another request's write."""
+    conn = _connect()
+    try:
+        if immediate:
+            conn.execute('BEGIN IMMEDIATE')
+        yield conn
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def init():
     parent = os.path.dirname(db_path())
     if parent:
         os.makedirs(parent, exist_ok=True)
-    with _connect() as conn:
+    with _db() as conn:
         conn.execute('PRAGMA journal_mode = WAL')
         conn.executescript(TABLES)
         # Databases created before owners existed: add the column in place.
@@ -121,6 +144,8 @@ def init():
             conn.execute("ALTER TABLE applications ADD COLUMN owner TEXT NOT NULL DEFAULT ''")
         if not has_owner('score_history'):
             conn.execute("ALTER TABLE score_history ADD COLUMN owner TEXT NOT NULL DEFAULT ''")
+        if not any(r['name'] == 'keywords' for r in conn.execute("SELECT name FROM pragma_table_info('score_history')")):
+            conn.execute("ALTER TABLE score_history ADD COLUMN keywords TEXT NOT NULL DEFAULT '[]'")
         conn.execute('DROP INDEX IF EXISTS applications_dedupe')     # pre-owner index
         conn.execute('DROP INDEX IF EXISTS score_title')
         conn.executescript(INDEXES)
@@ -173,7 +198,7 @@ def _followup_due(a):
     if a.get('next_action_on'):
         return a['next_action_on'] <= _today()
     if a.get('applied_on'):
-        return a['applied_on'] <= (date.today() - timedelta(days=FOLLOWUP_AFTER_DAYS)).isoformat()
+        return a['applied_on'] <= (date.fromisoformat(_today()) - timedelta(days=FOLLOWUP_AFTER_DAYS)).isoformat()
     return False
 
 
@@ -211,13 +236,15 @@ def create_application(data, *, owner=''):
         'notes': _text(data.get('notes'), 'notes', 20_000), 'source': source,
         'created_at': now, 'updated_at': now,
     }
-    with _connect() as conn:
+    with _db(immediate=True) as conn:
         existing = _find_dupe(conn, owner, company, role, url)
         if existing:
             return _row(existing), False
         n = conn.execute('SELECT count(*) FROM applications WHERE owner = ?', (owner,)).fetchone()[0]
         if n >= MAX_APPS_PER_OWNER:
             raise StoreError(f'pipeline is full ({MAX_APPS_PER_OWNER} applications); delete some first')
+        if rec['notes']:
+            _check_owner_bytes(conn, owner, len(rec['notes']))
         try:
             conn.execute(
                 'INSERT INTO applications (id, owner, company, role, url, location, status, applied_on,'
@@ -236,7 +263,7 @@ def create_application(data, *, owner=''):
 
 
 def get_application(app_id, *, owner='', with_history=False):
-    with _connect() as conn:
+    with _db() as conn:
         r = conn.execute('SELECT * FROM applications WHERE id = ? AND owner = ?', (app_id, owner)).fetchone()
         if not r:
             raise StoreError('application not found')
@@ -252,7 +279,7 @@ def get_application(app_id, *, owner='', with_history=False):
 
 
 def list_applications(*, owner=''):
-    with _connect() as conn:
+    with _db() as conn:
         rows = [_row(r) for r in conn.execute(
             'SELECT * FROM applications WHERE owner = ? ORDER BY updated_at DESC', (owner,))]
         kits = {r['application_id']: r['n'] for r in conn.execute(
@@ -268,7 +295,15 @@ def update_application(app_id, changes, *, owner=''):
     unknown = set(changes) - allowed - {'id'}
     if unknown:
         raise StoreError(f'cannot update: {", ".join(sorted(unknown))}')
-    current = get_application(app_id, owner=owner)
+    with _db(immediate=True) as conn:
+        r = conn.execute('SELECT * FROM applications WHERE id = ? AND owner = ?', (app_id, owner)).fetchone()
+        if not r:
+            raise StoreError('application not found')
+        _apply_update(conn, app_id, _row(r), changes, owner)
+    return get_application(app_id, owner=owner)
+
+
+def _apply_update(conn, app_id, current, changes, owner):
     upd = {}
     if 'status' in changes:
         upd['status'] = _status(changes['status'])
@@ -286,29 +321,29 @@ def update_application(app_id, changes, *, owner=''):
         if f in changes:
             upd[f] = _text(changes[f], f, 200, required=True)
     if not upd:
-        return current
+        return
+    if 'notes' in upd and len(upd['notes']) > len(current['notes']):
+        _check_owner_bytes(conn, owner, len(upd['notes']) - len(current['notes']))
     # Moving out of 'saved' is the moment of applying.
     if upd.get('status') and upd['status'] != 'saved' and not current['applied_on'] and 'applied_on' not in upd:
         upd['applied_on'] = _today()
     m = {**current, **upd, 'updated_at': _now()}
-    with _connect() as conn:
-        try:
-            conn.execute(
-                'UPDATE applications SET company = ?, role = ?, url = ?, location = ?, status = ?, applied_on = ?,'
-                ' next_action_on = ?, notes = ?, updated_at = ? WHERE id = ? AND owner = ?',
-                (m['company'], m['role'], m['url'], m['location'], m['status'], m['applied_on'],
-                 m['next_action_on'], m['notes'], m['updated_at'], app_id, owner))
-        except sqlite3.IntegrityError:
-            raise StoreError('another application already has this company, role and link')
-        if 'status' in upd and upd['status'] != current['status']:
-            _event(conn, app_id, 'status', frm=current['status'], to=upd['status'])
-        if 'notes' in upd and upd['notes'] != current['notes']:
-            _event(conn, app_id, 'note')
-    return get_application(app_id, owner=owner)
+    try:
+        conn.execute(
+            'UPDATE applications SET company = ?, role = ?, url = ?, location = ?, status = ?, applied_on = ?,'
+            ' next_action_on = ?, notes = ?, updated_at = ? WHERE id = ? AND owner = ?',
+            (m['company'], m['role'], m['url'], m['location'], m['status'], m['applied_on'],
+             m['next_action_on'], m['notes'], m['updated_at'], app_id, owner))
+    except sqlite3.IntegrityError:
+        raise StoreError('another application already has this company, role and link')
+    if 'status' in upd and upd['status'] != current['status']:
+        _event(conn, app_id, 'status', frm=current['status'], to=upd['status'])
+    if 'notes' in upd and upd['notes'] != current['notes']:
+        _event(conn, app_id, 'note')
 
 
 def delete_application(app_id, *, owner=''):
-    with _connect() as conn:
+    with _db() as conn:
         n = conn.execute('DELETE FROM applications WHERE id = ? AND owner = ?', (app_id, owner)).rowcount
     if not n:
         raise StoreError('application not found')
@@ -354,7 +389,11 @@ def add_artifact(app_id, kind, content, *, owner=''):
     if len(content) > MAX_TEXT:
         raise StoreError('content is too large')
     get_application(app_id, owner=owner)   # raises if missing or someone else's
-    with _connect() as conn:
+    with _db(immediate=True) as conn:
+        n = conn.execute('SELECT count(*) FROM artifacts WHERE application_id = ?', (app_id,)).fetchone()[0]
+        if n >= MAX_ARTIFACTS_PER_APP:
+            raise StoreError(f'this application already has {MAX_ARTIFACTS_PER_APP} saved documents; delete it or start a new one')
+        _check_owner_bytes(conn, owner, len(content))
         cur = conn.execute('INSERT INTO artifacts (application_id, kind, content, created_at) VALUES (?,?,?,?)',
                            (app_id, kind, content, _now()))
         _event(conn, app_id, 'artifact', artifact=kind)
@@ -362,11 +401,20 @@ def add_artifact(app_id, kind, content, *, owner=''):
     return cur.lastrowid
 
 
+def _check_owner_bytes(conn, owner, adding):
+    used = conn.execute(
+        'SELECT coalesce((SELECT sum(length(notes)) FROM applications WHERE owner = ?), 0)'
+        ' + coalesce((SELECT sum(length(a.content)) FROM artifacts a JOIN applications p ON p.id = a.application_id'
+        ' WHERE p.owner = ?), 0)', (owner, owner)).fetchone()[0]
+    if used + adding > MAX_OWNER_BYTES:
+        raise StoreError('your saved documents are using all the space this demo allows; delete some applications first')
+
+
 def record_followup_sent(app_id, days=FOLLOWUP_AFTER_DAYS, *, owner=''):
     """Mark that a follow-up went out; schedule the next one."""
     get_application(app_id, owner=owner)
-    nxt = (date.today() + timedelta(days=days)).isoformat()
-    with _connect() as conn:
+    nxt = (date.fromisoformat(_today()) + timedelta(days=days)).isoformat()
+    with _db() as conn:
         conn.execute('UPDATE applications SET next_action_on = ?, updated_at = ? WHERE id = ? AND owner = ?',
                      (nxt, _now(), app_id, owner))
         _event(conn, app_id, 'followup_sent', next_action_on=nxt)
@@ -378,7 +426,7 @@ def record_followup_sent(app_id, days=FOLLOWUP_AFTER_DAYS, *, owner=''):
 def try_spend(day, units, cap):
     """Atomically add `units` to `day` unless that would exceed `cap`.
     Persisted so a restarted (auto-stopped) machine can't reset the cap."""
-    with _connect() as conn:
+    with _db() as conn:
         conn.execute('INSERT OR IGNORE INTO spend (day, units) VALUES (?, 0)', (day,))
         cur = conn.execute('UPDATE spend SET units = units + ? WHERE day = ? AND units + ? <= ?',
                            (units, day, units, cap))
@@ -386,7 +434,7 @@ def try_spend(day, units, cap):
 
 
 def spent(day):
-    with _connect() as conn:
+    with _db() as conn:
         r = conn.execute('SELECT units FROM spend WHERE day = ?', (day,)).fetchone()
     return r['units'] if r else 0
 
@@ -401,22 +449,59 @@ def _score(v):
     return max(0, min(100, n))
 
 
-def record_score(job_title, sector, before, after, *, owner=''):
+def record_score(job_title, sector, before, after, *, owner='', keywords=None):
+    """keywords: the run's requirements [{name, pct}], so a later drift check can
+    re-count the same list on fresh postings (like with like)."""
     title = _text(job_title, 'job_title', 200, required=True)
     b, a = _score(before), _score(after)
     if a is None:
         raise StoreError('score_after must be a number')
-    with _connect() as conn:
-        conn.execute('INSERT INTO score_history (owner, job_title, sector, score_before, score_after, created_at)'
-                     ' VALUES (?,?,?,?,?,?)', (owner, title, (sector or 'general').strip(), b, a, _now()))
+    kws = [{'name': str(k.get('name'))[:80], 'pct': _score(k.get('pct'))}
+           for k in (keywords or []) if isinstance(k, dict) and k.get('name')][:40]
+    with _db() as conn:
+        conn.execute('INSERT INTO score_history (owner, job_title, sector, score_before, score_after, keywords, created_at)'
+                     ' VALUES (?,?,?,?,?,?,?)', (owner, title, (sector or 'general').strip(), b, a,
+                                                 json.dumps(kws, ensure_ascii=False), _now()))
+        conn.execute('DELETE FROM score_history WHERE owner = ? AND id NOT IN (SELECT id FROM score_history'
+                     ' WHERE owner = ? ORDER BY id DESC LIMIT ?)', (owner, owner, MAX_SCORES_PER_OWNER))
 
 
 def latest_score(job_title, *, owner=''):
-    with _connect() as conn:
+    with _db() as conn:
         r = conn.execute('SELECT * FROM score_history WHERE owner = ? AND lower(job_title) = lower(?)'
                          ' ORDER BY id DESC LIMIT 1', (owner, (job_title or '').strip())).fetchone()
     if not r:
         return None
     d = dict(r)
     d.pop('owner', None)
+    try:
+        d['keywords'] = json.loads(d.get('keywords') or '[]')
+    except ValueError:
+        d['keywords'] = []
     return d
+
+
+# ── maintenance ───────────────────────────────────────────────────────────────
+
+def ping():
+    """Raises if the database cannot be read (used by /health)."""
+    with _db() as conn:
+        conn.execute('SELECT 1 FROM spend LIMIT 1').fetchall()
+
+
+def purge_inactive_owners(days):
+    """Hosted demo: delete every non-local owner's data untouched for `days`
+    (sessions last 14 days, so nobody can come back to it). The local user ''
+    is never purged. Returns the number of applications removed."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec='seconds')
+    with _db(immediate=True) as conn:
+        stale = [r['owner'] for r in conn.execute(
+            "SELECT owner FROM (SELECT owner, max(updated_at) AS t FROM applications WHERE owner != '' GROUP BY owner"
+            " UNION ALL SELECT owner, max(created_at) FROM score_history WHERE owner != '' GROUP BY owner)"
+            " GROUP BY owner HAVING max(t) < ?", (cutoff,))]
+        n = 0
+        for o in stale:
+            n += conn.execute('DELETE FROM applications WHERE owner = ?', (o,)).rowcount
+            conn.execute('DELETE FROM score_history WHERE owner = ?', (o,))
+        conn.execute("DELETE FROM spend WHERE day < ?", ((datetime.now(timezone.utc) - timedelta(days=90)).date().isoformat(),))
+    return n

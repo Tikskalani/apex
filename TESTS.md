@@ -1,4 +1,7 @@
-# APEX v10 — Test Suite
+# APEX v11 — Manual Test Suite
+
+Most of this is automated (`python tests/run_all.py` and `.venv\Scripts\python -m pytest`,
+see CLAUDE.md). The steps below are the manual checks, against real models and live job boards.
 
 Run in order. Each test ends in a PASS/FAIL verdict, not a narrative.
 
@@ -70,14 +73,11 @@ Change nothing. Report only.
    disconnected/red?
 2. List every console error and warning, verbatim. Pay attention to failed
    script loads from `cdnjs.cloudflare.com`.
-3. Run in console and report exact output:
+3. The libraries load on first use, so load them, then report the exact output:
    ```js
-   ['jspdf','docx','pdfjsLib','mammoth']
-     .map(k => k + ': ' + (typeof window[k] !== 'undefined' ? 'LOADED' : 'MISSING'))
-     .join('\n')
+   (await Promise.all(['jspdf','docx','pdfjs','mammoth'].map(k =>
+     loadLib(k).then(() => k + ': LOADED', e => k + ': MISSING (' + e.message + ')')))).join('\n')
    ```
-   Note: jsPDF sometimes registers as `window.jspdf` and sometimes as
-   `window.jsPDF` depending on the build. Check both before calling it MISSING.
 4. Count the navigation tabs and list their names.
 
 **PASS** if the badge is green, there are no console errors, and all four
@@ -94,14 +94,18 @@ fails and nothing below is worth running.
 2. Set job title to "Senior Data Analyst".
 3. Start the agent.
 4. Watch the live log. Report each phase as it completes, and total run time.
-5. On completion report: ATS score before, score after, number of live jobs
-   scraped, cost shown in the footer.
+5. On completion report: the hiring-manager score before and after (Resume
+   X-Ray), the number of verified edits and of lines kept original, the number
+   of live postings analysed, and the measured cost in the footer.
 6. List any log lines containing an X mark or the word "error".
 
-**PASS** if the run completes, the after-score exceeds the before-score, and
-at least one job was scraped. Otherwise FAIL with the specific failure.
+**PASS** if the run completes, at least one posting was analysed, every edit
+shown is true to the resume (check each against the original), and either the
+hiring-manager score went up or the page says the original was kept and why.
+The keyword-match number is NOT the pass criterion: it is blind to writing
+quality (CLAUDE.md rule 9). Otherwise FAIL with the specific failure.
 
-*Why:* Exercises all eight phases and the self-improvement loop end to end.
+*Why:* Exercises every phase and the Evidence Engine end to end.
 
 ---
 
