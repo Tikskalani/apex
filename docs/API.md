@@ -326,7 +326,11 @@ Notes:
   never added.
 - **Fact check.** Text these routes write about the candidate goes through
   `engine.verify_texts`: the deterministic fact gate, then a model audit, one repair with the
-  reasons, and whatever still fails is withheld. `/bullets` rewrites, `/xray` fixes, and
+  reasons; a text that still fails loses just the sentences the check quotes when at least 60%
+  of it survives, and what is left is checked again; whatever still fails is withheld. Suggested
+  rewrites, Bridge reframes and answers, interview sample answers and `better_version` may leave a
+  short blank in square brackets ("[by X%]") for a fact only the candidate knows: a blank claims
+  nothing; everything stated outright is checked. `/bullets` rewrites, `/xray` fixes, and
   `/bridge` reframes are checked against their role's text where the quoted line is found (else
   the whole resume); `/bridge` narrative and answers, `/negotiate` leverage points and
   `/followup` messages against the resume (for `/followup`: `resume`, else `resumeSummary`);
@@ -339,7 +343,10 @@ Notes:
 - `/negotiate` first looks for real pay: it fetches live postings (the `/live-jobs` sources, up
   to 80), reads every stated pay range (hourly rates × 2080; values outside $15,000-$1,500,000
   ignored) and, with at least 3, gives the model the 25th percentile, median and 75th percentile
-  (rounded to $1,000). Then `estimate_basis` is `postings` and `posted_pay` is included;
+  (rounded to $1,000). An entry-level title counts only entry-level postings and a senior title
+  senior ones (all postings when fewer than 3 say senior). Then `estimate_basis` is `postings` and
+  `posted_pay` is included (with `companies`, the employers most of the figures come from, also
+  named in `basis_note`);
   otherwise it is `model_estimate` and `basis_note` says the figures are an AI estimate.
 - `/drift` is deterministic apart from one fast call. `_precheck` refuses an empty `jobTitle`
   (`400 {"error": "Enter a target job title."}`), a short resume
@@ -366,8 +373,9 @@ Notes:
 | `/apply-all-recommendations` | `optimized` or `original` (the base), `original` (the evidence), `bulletRewrites` / `changes` (`[{text\|bullet\|original\|before, rewrite\|after}]`), `addedKeywords` | `{"merged", "applied": {"lines", "keywords": 0}, "skipped": [{line, why}], "keywords_not_added"}` | `400 {"error": "optimized or original resume required"}`; `500 {"error", "merged"}` |
 
 `/live-jobs` queries Remotive, Arbeitnow, Jobicy, RemoteOK, The Muse (by category),
-public Greenhouse and Lever boards of a fixed list of companies, and the latest Hacker
-News "Who is hiring" thread; JSearch and USAJobs only with their keys. All sources run in
+the public Greenhouse, Ashby and Lever boards of a fixed list of tech and AI employers
+(`company_board_jobs`: full postings, with pay where the posting states it; one fetch per
+title is cached for 15 minutes), and the latest Hacker News "Who is hiring" thread; JSearch and USAJobs only with their keys. All sources run in
 parallel under one 25-second deadline (a source that has not answered by then is left
 out), a response over 12 MB is discarded, and a location in `q` ("nurse houston") is
 detected when `location` is empty. Jobs are de-duplicated by title + company, directory

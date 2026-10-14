@@ -7,7 +7,10 @@ Markers in the resume text steer the response:
   FAILPARSE  -> HTTP 400 (exercise the error path; 400s are not retried)
   LONGFORM   -> a resume long enough to need several PDF pages
   COVERLIE   -> the cover letter claims a number the resume does not have
-  STUBBORN   -> the repair step returns the text unchanged (so it is withheld)
+  COVERALLBAD -> every sentence of the first cover letter draft claims such a number
+                (the redraft is clean, unless ALWAYSBAD is also present)
+  STUBBORN   -> the repair step returns the text unchanged (the check then trims the
+                flagged sentences, or withholds the text when too little would be left)
   SLOWSTUB   -> every answer takes 1.5 s (to test cancelling a run)
 The fact check flags any item containing "xxclaim"; the repair step drops each
 sentence that contains a token quoted in the problems.
@@ -112,6 +115,8 @@ COVER_LETTER = (
     "As an analyst I work with SQL every day.\n\n"
     "I would welcome a conversation about the role."
 )
+COVER_LETTER_ALL_LIES = ("I cut reporting costs by 40% at Brightline. I grew dashboard use by 40% in a year.\n\n"
+                         "I saved the team 40% of its SQL time.")
 
 BULLETS = {'ranked_bullets': [
     {'text': 'Responsible for making reports for the management team', 'score': 30, 'rank': 3,
@@ -240,7 +245,9 @@ class _Handler(BaseHTTPRequestHandler):
         if 'resume parser' in system:
             content = json.dumps(longform() if 'LONGFORM' in user else MARCUS)
         elif 'cover letters' in system:
-            content = COVER_LETTER + ('\n\nI cut reporting costs by 40% at Brightline.' if 'COVERLIE' in user else '')
+            redraft = 'A previous draft was rejected' in user
+            content = (COVER_LETTER_ALL_LIES if 'COVERALLBAD' in user and (not redraft or 'ALWAYSBAD' in user) else
+                       COVER_LETTER + ('\n\nI cut reporting costs by 40% at Brightline.' if 'COVERLIE' in user else ''))
         elif 'You correct text written for a job candidate' in system:   # fact check: repair
             content = _repair(user)
         elif 'You extract hiring requirements' in system:  # /tailor

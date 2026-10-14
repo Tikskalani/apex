@@ -43,7 +43,10 @@ python tests/run_all.py            # regression suites
 ```
 
 Changes that touch resume writing should also be checked with `tools/benchmark.py`, which compares models
-and the plain-chatbot baseline on the resumes in `bench/cases/` (this one does spend API credits).
+and the plain-chatbot baseline on the resumes in `bench/cases/` (this one does spend API credits). Changes to
+any other AI feature (letters, follow-ups, Bullets, X-Ray, Match, Bridge, Negotiate, answer grading, Tailor) can be
+checked with `tools/feature_bench.py`, which runs each one as APEX and as a plain request to the same model and
+has a judge compare them blind; use `--features` and `--only` to keep the spend small.
 
 ## Code style
 

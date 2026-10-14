@@ -1,0 +1,31 @@
+OMAR HADDAD
+Dallas, TX | omar.haddad@email.com | (214) 555-0131 | linkedin.com/in/omarhaddad
+
+SUMMARY
+DevOps engineer with 6 years of experience in cloud infrastructure, CI/CD and automation.
+
+EXPERIENCE
+DevOps Engineer - Northline Health Tech, Dallas TX
+Mar 2021 - Present
+- Manage AWS infrastructure for 40+ microservices using Terraform
+- Run the EKS clusters and Helm charts for all production services
+- Built CI/CD pipelines in GitHub Actions and Argo CD; deploys went from weekly to several times a day
+- Set up Prometheus, Grafana and PagerDuty alerting for the platform
+- Part of the on-call rotation; led postmortems for major incidents
+- Cut AWS spend by $18K a month by rightsizing instances and adding spot nodes
+
+Systems Administrator - Texan Federal Credit Union, Irving TX
+Jun 2018 - Feb 2021
+- Administered Linux and Windows servers in the data center
+- Wrote Bash and Python scripts to automate patching and backups
+- Helped migrate file servers to AWS
+
+EDUCATION
+B.S. Information Systems, University of Texas at Arlington, 2018
+
+CERTIFICATIONS
+AWS Certified Solutions Architect - Associate
+Certified Kubernetes Administrator (CKA)
+
+SKILLS
+AWS, Terraform, Kubernetes, EKS, Helm, Docker, GitHub Actions, Argo CD, Prometheus, Grafana, Linux, Bash, Python

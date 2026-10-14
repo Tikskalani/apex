@@ -1,0 +1,30 @@
+{
+ "name": "lena_fischer",
+ "title": "Senior Frontend Engineer",
+ "seniority": "senior",
+ "sector": "tech",
+ "resume": "lena_fischer.txt",
+ "keywords": [
+  "React",
+  "TypeScript",
+  "design systems",
+  "web performance",
+  "accessibility",
+  "WCAG",
+  "testing",
+  "Jest",
+  "Storybook",
+  "Next.js",
+  "state management",
+  "mentoring",
+  "CI/CD",
+  "GraphQL"
+ ],
+ "company": "Brightloop",
+ "from_role": "Frontend Developer",
+ "job_desc": "Senior Frontend Engineer - Brightloop (Denver, Hybrid)\nBrightloop makes analytics software for operations teams. We want a senior frontend engineer to lead our web app's architecture.\nYou will: build complex data-heavy UIs in React and TypeScript; own and grow our design system in Storybook; improve web performance (Core Web Vitals); make the product accessible (WCAG 2.1 AA); set testing standards with Jest and Playwright; mentor other frontend engineers.\nRequirements: 5+ years frontend; expert React and TypeScript; design systems; performance and accessibility experience; Next.js and GraphQL a plus.",
+ "interview": {
+  "question": "Tell me about a time you improved the performance of a web app.",
+  "answer": "At Peakline the dashboard was slow so I worked on making it faster. I did some code splitting and it loaded faster after."
+ }
+}

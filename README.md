@@ -16,7 +16,7 @@ It scrapes live job postings, measures what employers are actually asking for, r
 | Control | One block of text | Every edit shown with its reason; keep or untick each one |
 | Quality check | None | Blind before/after review by a simulated hiring manager for your target role; if it prefers your original, your original is kept |
 
-`tools/benchmark.py` measures this on your resumes: the same model, run through APEX and asked plainly, scored by the same judges, with invented claims counted.
+`tools/benchmark.py` measures this on your resumes: the same model, run through APEX and asked plainly, scored by the same judges, with invented claims counted. `tools/feature_bench.py` does the same for every other AI feature, judged blind head to head.
 
 ---
 

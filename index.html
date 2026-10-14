@@ -1216,6 +1216,7 @@ label {
   color: var(--fg-1); font-size: 13px; line-height: 1.6;
 }
 .notice.info { border-color: rgba(62,158,255,0.35); background: var(--acc-bg); }
+mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dashed var(--acc-soft); border-radius: 4px; padding: 0 3px; }
 .notice strong { color: var(--fg-0); }
 .est-tag { display: inline-block; padding: 2px 8px; border-radius: var(--r-pill); font-size: 10.5px; font-weight: 700;
   letter-spacing: 1px; text-transform: uppercase; background: rgba(255,170,0,0.14); color: var(--amber); }
@@ -2099,6 +2100,8 @@ const safeUrl = u => {
 // LLM "scores" are untrusted text until coerced. Clamp to an integer range.
 const toScore = (v, lo = 0, hi = 100) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : lo; };
 // Model text that fails the fact check is withheld by the server; say so instead of showing it.
+// Advice may leave a blank only the user can fill ("cut latency [by X%]"): highlight it.
+const withBlanks = s => escHtml(s).replace(/\[([^\[\]\n]{1,80})\]/g, '<mark class="blank" title="Fill this in only if it is true">[$1]</mark>');
 const withheldNote = (probs) => `<div class="withheld">Withheld: it claimed something your resume doesn't show${probs && probs.length ? ' (' + escHtml((Array.isArray(probs) ? probs : [probs]).slice(0, 2).join('; ')) + ')' : ''}. If it's true, add it to your resume and run again.</div>`;
 const VERIFIED = '<span class="h-sub verified">✓ fact-checked</span>';
 const arr = v => Array.isArray(v) ? v : [];
@@ -3121,7 +3124,7 @@ function renderInterview(d) {
       ${items.map(q => `
         <div class="qa-item">
           <div class="q">${escHtml(q.q || q)}</div>
-          ${q.a ? `<div class="label" style="margin:6px 0 4px">Example answer, built from your resume${d.verified ? ' · fact-checked' : ''}</div><div class="a">${escHtml(q.a)}</div>`
+          ${q.a ? `<div class="label" style="margin:6px 0 4px">Example answer, built from your resume${d.verified ? ' · fact-checked' : ''}</div><div class="a">${withBlanks(q.a)}</div>`
             : (q.a === null || q.a_withheld) ? withheldNote(q.a_withheld) : ''}
           ${q.tip ? `<div class="tip">${escHtml(q.tip)}</div>` : ''}
         </div>`).join('')}
@@ -3280,7 +3283,7 @@ function renderBullets(d) {
         <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:${toScore(b.score)>=70?'var(--green-soft)':toScore(b.score)>=50?'var(--amber)':'var(--red-soft)'}">${toScore(b.score)}/100</span>
       </div>
       <div style="color:var(--fg-0);font-size:13.5px;line-height:1.7;margin-bottom:8px">${escHtml(b.text||'')}</div>
-      ${b.rewrite ? `<div style="color:var(--green-soft);font-size:12.5px;border-top:1px solid var(--line);padding-top:8px;line-height:1.7">→ ${escHtml(b.rewrite)}</div>` : b.rewrite_withheld ? withheldNote(b.rewrite_withheld) : ''}
+      ${b.rewrite ? `<div style="color:var(--green-soft);font-size:12.5px;border-top:1px solid var(--line);padding-top:8px;line-height:1.7">→ ${withBlanks(b.rewrite)}</div>` : b.rewrite_withheld ? withheldNote(b.rewrite_withheld) : ''}
     </div>`).join('');
   $('bullets-out').innerHTML = rows || '<div class="empty">No bullets ranked.</div>';
 }
@@ -3332,11 +3335,11 @@ function renderBridge(d) {
   const reframes = (d.experience_reframes||[]).map(r => `
     <div class="block">
       <div style="font-size:12.5px;color:var(--fg-2);margin-bottom:6px">${escHtml(r.original_bullet||'')}</div>
-      ${r.reframed_bullet ? `<div style="font-size:13.5px;color:var(--green-soft);line-height:1.7">→ ${escHtml(r.reframed_bullet)}</div>` : withheldNote(r.reframed_bullet_withheld)}
+      ${r.reframed_bullet ? `<div style="font-size:13.5px;color:var(--green-soft);line-height:1.7">→ ${withBlanks(r.reframed_bullet)}</div>` : withheldNote(r.reframed_bullet_withheld)}
     </div>`).join('');
   const answers = arr(d.interview_bridge_answers).map(a => `
     <div class="qa-item"><div class="q">${escHtml(a.question || '')}</div>
-      ${a.answer ? `<div class="a">${escHtml(a.answer)}</div>` : withheldNote(a.answer_withheld)}</div>`).join('');
+      ${a.answer ? `<div class="a">${withBlanks(a.answer)}</div>` : withheldNote(a.answer_withheld)}</div>`).join('');
   const story = d.narrative ? `<div class="block"><div class="text">${escHtml(d.narrative)}</div></div>`
     : d.narrative_withheld ? `<div class="block">${withheldNote(d.narrative_withheld)}</div>` : '';
   const card = (title, body, extra = '') => body ? `<div class="card" style="margin-bottom:var(--s4)"><div class="card-h"><h3>${title}</h3>${extra}</div>${body}</div>` : '';
@@ -3363,7 +3366,7 @@ function renderWeakness(d) {
     <div class="block">
       <div class="label" style="color:var(--red-soft)">Problem: ${escHtml(k.problem||'')}</div>
       <div style="font-size:13px;color:var(--red-soft);text-decoration:line-through;margin-bottom:8px;opacity:0.7">${escHtml(k.quote||'')}</div>
-      ${k.fix ? `<div style="font-size:13.5px;color:var(--green-soft);line-height:1.7">→ ${escHtml(k.fix)}</div>` : k.fix_withheld ? withheldNote(k.fix_withheld) : ''}
+      ${k.fix ? `<div style="font-size:13.5px;color:var(--green-soft);line-height:1.7">→ ${withBlanks(k.fix)}</div>` : k.fix_withheld ? withheldNote(k.fix_withheld) : ''}
     </div>`).join('');
   $('weak-out').innerHTML = `
     <div class="grid-3" style="margin-bottom:var(--s5)">
@@ -5303,7 +5306,7 @@ function viRenderGrade(d) {
   const strengths = (d.strengths || []).map(s => '<li>' + escHtml(s) + '</li>').join('');
   const weaknesses = (d.weaknesses || []).map(s => '<li>' + escHtml(s) + '</li>').join('');
   const better = d.better_version
-    ? '<div class="block"><div class="label" style="color:var(--acc-soft)">A stronger version (built from your answer)</div><div class="text">' + escHtml(d.better_version) + '</div></div>'
+    ? '<div class="block"><div class="label" style="color:var(--acc-soft)">A stronger version (built from your answer)</div><div class="text">' + withBlanks(d.better_version) + '</div></div>'
     : d.better_version_withheld ? '<div class="block"><div class="label">A stronger version</div>' + withheldNote(d.better_version_withheld) + '</div>' : '';
   $('vi-grade').innerHTML =
     '<div class="card" style="background:var(--bg-2);margin-top:var(--s2)">' +

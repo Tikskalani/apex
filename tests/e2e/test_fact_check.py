@@ -83,8 +83,18 @@ def test_cover_letter_is_checked_repaired_or_withheld(app, fixture_resume):
     st, j = call(app, 'POST', '/draft-cover-letter', dict(body, resume=fixture_resume + '\nCOVERLIE'))
     assert st == 200 and '40%' not in j['letter'] and 'SQL every day' in j['letter'], 'invented number repaired away'
 
+    # The repair changes nothing: the check trims the one unsupported sentence and keeps the letter.
     st, j = call(app, 'POST', '/draft-cover-letter', dict(body, resume=fixture_resume + '\nCOVERLIE STUBBORN'))
-    assert st == 422 and j['letter'] == '' and j['error'].startswith('Withheld') and '"40"' in j['error']
+    assert st == 200 and '40%' not in j['letter'] and 'SQL every day' in j['letter'], 'trimmed, not withheld'
+
+    # Every sentence is unsupported, so nothing can be trimmed: one redraft, told what to avoid, is clean.
+    st, j = call(app, 'POST', '/draft-cover-letter', dict(body, resume=fixture_resume + '\nCOVERALLBAD STUBBORN'))
+    assert st == 200 and '40%' not in j['letter'] and 'SQL every day' in j['letter'], 'redrafted'
+
+    # The redraft fails too: withheld, with the reason.
+    st, j = call(app, 'POST', '/draft-cover-letter',
+                 dict(body, resume=fixture_resume + '\nCOVERALLBAD ALWAYSBAD STUBBORN'))
+    assert st == 422 and j['letter'] == '' and j['error'].startswith('Withheld') and '"40' in j['error']
 
 
 def test_apply_all_merges_without_a_model_and_without_inventing(app, fake_openai, fixture_resume):

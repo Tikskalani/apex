@@ -18,6 +18,7 @@ or Anthropic), scrapes public job postings, and keeps the user's job pipeline in
 | `assets/NotoSans-*.ttf` | Unicode fonts embedded in exported PDFs (SIL OFL, `assets/OFL.txt`). |
 | `config.json` | Keys and model choice (gitignored). See API.md, Configuration. |
 | `tools/benchmark.py` | Compares models (and a plain chatbot) on bench resumes. Not part of the app. |
+| `tools/feature_bench.py` | Runs each AI feature as APEX and as a plain request to the same model; a judge compares them blind in both orders and a separate model counts unsupported claims. Not part of the app. |
 
 Runtime dependencies: Python standard library, plus the `anthropic` SDK, imported only
 when a `claude-...` model is configured. Browser libraries (pdf.js, mammoth, jsPDF, docx)

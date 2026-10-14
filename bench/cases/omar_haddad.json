@@ -1,0 +1,30 @@
+{
+ "name": "omar_haddad",
+ "title": "Senior Site Reliability Engineer",
+ "seniority": "senior",
+ "sector": "tech",
+ "resume": "omar_haddad.txt",
+ "keywords": [
+  "SRE",
+  "Kubernetes",
+  "Terraform",
+  "AWS",
+  "observability",
+  "Prometheus",
+  "incident response",
+  "SLOs",
+  "on-call",
+  "CI/CD",
+  "Go",
+  "Python",
+  "cost optimization",
+  "automation"
+ ],
+ "company": "Cloudharbor",
+ "from_role": "DevOps Engineer",
+ "job_desc": "Senior Site Reliability Engineer - Cloudharbor (Dallas / Remote US)\nKeep a platform serving 2B API requests a day fast and available.\nYou will: define SLOs and error budgets with service teams; run and scale Kubernetes on AWS with Terraform; build observability with Prometheus, Grafana and OpenTelemetry; lead incident response and blameless postmortems; automate toil in Go or Python; drive cloud cost optimization.\nRequirements: 5+ years SRE, DevOps or infrastructure; Kubernetes in production; Terraform; AWS; strong Linux; on-call experience; Go a plus; CKA a plus.",
+ "interview": {
+  "question": "Describe an incident you led and what changed afterward.",
+  "answer": "We had an outage where the database ran out of connections. I was on call and we restarted things and it came back. After that we added an alert."
+ }
+}

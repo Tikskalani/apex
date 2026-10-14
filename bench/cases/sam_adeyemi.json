@@ -1,0 +1,30 @@
+{
+ "name": "sam_adeyemi",
+ "title": "AI Engineer",
+ "seniority": "mid",
+ "sector": "tech",
+ "resume": "sam_adeyemi.txt",
+ "keywords": [
+  "LLMs",
+  "RAG",
+  "embeddings",
+  "vector database",
+  "prompt engineering",
+  "evaluation",
+  "Python",
+  "TypeScript",
+  "OpenAI API",
+  "LangChain",
+  "agents",
+  "fine-tuning",
+  "APIs",
+  "production"
+ ],
+ "company": "Northstar AI",
+ "from_role": "Full-Stack Developer",
+ "job_desc": "AI Engineer - Northstar AI (Chicago, Hybrid)\nWe build AI assistants for insurance and financial services teams.\nYou will: build LLM features end to end, from prompt design to production APIs; build retrieval-augmented generation (RAG) over large document sets with embeddings and vector databases; design evaluations to measure quality and catch regressions; build tool-using agents; work with customers to turn workflows into AI products.\nRequirements: 3+ years software engineering; Python and TypeScript; hands-on experience shipping LLM features (OpenAI or Anthropic APIs); RAG and vector databases; evaluation of LLM output; fine-tuning a plus; insurance or fintech domain a plus.",
+ "interview": {
+  "question": "How would you know if your RAG system is giving wrong answers?",
+  "answer": "I would test it with some questions and see if the answers look right. Users can also report bad answers. Then I would tweak the prompt."
+ }
+}

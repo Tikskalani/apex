@@ -116,3 +116,7 @@ exports/
 *.pyc
 TODO.local.md
 NOTES.local.md
+
+# One-click launcher (launch_apex.pyw)
+apex.log
+apex.pid

@@ -1,0 +1,30 @@
+{
+ "name": "nina_volkova",
+ "title": "Senior Machine Learning Engineer",
+ "seniority": "senior",
+ "sector": "tech",
+ "resume": "nina_volkova.txt",
+ "keywords": [
+  "machine learning",
+  "PyTorch",
+  "recommendation systems",
+  "ranking",
+  "MLOps",
+  "feature store",
+  "model serving",
+  "Kubernetes",
+  "A/B testing",
+  "Python",
+  "Spark",
+  "AWS",
+  "LLMs",
+  "mentoring"
+ ],
+ "company": "Lumen Commerce",
+ "from_role": "Machine Learning Engineer",
+ "job_desc": "Senior Machine Learning Engineer, Personalization - Lumen Commerce (Seattle / Remote)\nOwn the models that rank millions of products for 20M shoppers.\nYou will: design and ship retrieval and ranking models for recommendations and search; build training and serving pipelines (MLOps) with our feature store; run online A/B tests and read results rigorously; keep model serving fast and reliable on Kubernetes; explore LLM-based ranking and embeddings; mentor ML engineers.\nRequirements: 5+ years building production ML; Python and PyTorch; recommendation or search ranking experience; Spark; AWS; experience serving models at low latency; strong experimentation skills.",
+ "interview": {
+  "question": "How do you decide a new model is ready to replace the one in production?",
+  "answer": "I train it and check the offline metrics like AUC. If it is better I run an A/B test and if that goes well we ship it."
+ }
+}

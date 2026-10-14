@@ -14,7 +14,7 @@ How this works.
                  disappear. A resume without a summary gets a virtual S slot.
   2. diagnose()  Recruiter rubric per bullet + one targeted question where the
                  candidate's own number would unlock the biggest gain.
-  3. rewrite()   Expert playbook, edits by id. Split/merge allowed within a role.
+  3. rewrite()   Expert playbook, edits by id. A bullet may split; content never moves between ids.
                  Long resumes go in batches of one or more roles (BATCH blocks).
   4. verify      Per bullet: deterministic fact gate (every number, tool and name
                  must already exist in the source or the candidate's answers), then
@@ -776,7 +776,8 @@ Summary
 - Must name the target title or its closest true equivalent, and 3-5 top SUPPORTED keywords, naturally.
 Truth (non-negotiable)
 - Every fact you write must already be in the SOURCE resume or the candidate's ANSWERS: no new tools, numbers,
-  scope, team sizes, titles, employers, outcomes, or seniority. You may reword, reorder, split, merge within a role,
+  scope, team sizes, titles, employers, outcomes, or seniority. You may reword, reorder, split, draw context (the
+  product, the system) from the bullet's own role,
   use the standard industry name for something the source clearly demonstrates, and count items the source lists."""
 
 DIAGNOSE_SYSTEM = ('You are a hiring manager and senior technical recruiter for the target role. You read resumes the '
@@ -944,7 +945,8 @@ MOST RELEVANT TO THE TARGET: {_safe(", ".join(str(x) for x in docx.get('most_rel
 {chr(10).join(extra)}
 Rewrite these ids: {", ".join(part)}.
 For each id return the new text as a list of lines (one line for the summary; a bullet may become 1-2 bullets,
-no marker characters). Within each role, return the order you want its bullets in ("order"), most relevant to the
+no marker characters). A bullet keeps its own achievement: never move another bullet's achievement into it (that
+bullet stays on the page, so the fact would appear twice). Within each role, return the order you want its bullets in ("order"), most relevant to the
 target first, using the ORIGINAL ids (all of that role's ids). {sec}
 Return the unchanged text when no edit improves it.
 
@@ -1062,15 +1064,24 @@ def _evidence_ids(items, field, prefix, cap):
     return ids
 
 
+# A blank the candidate fills in ("cut p99 latency by [X%]"): advice may use one where a
+# fact would help and only the candidate knows it. Items marked 'blanks' let them through;
+# a blank claims nothing, so the gate reads the text without them.
+BLANK = re.compile(r'\[[^\[\]\n]{1,80}\]')
+BLANKS_NOTE = ('Where an item has "blanks": true, text in square brackets such as [your number] or [X%] is a blank the '
+               'candidate fills in only if true: it claims nothing. Judge only what such a text states outright.')
+
+
 def check_texts(llm, items, unsupported=(), allowed_words=(), note=''):
-    """items: {key: {'text', 'evidence', 'context'?, 'source'?}} -> {key: [problems]}.
+    """items: {key: {'text', 'evidence', 'context'?, 'source'?, 'blanks'?}} -> {key: [problems]}.
     A key absent from the result passed both checks. Empty texts are skipped."""
     res, passed = {}, {}
     for k, it in items.items():
         text = str(it.get('text') or '').strip()
         if not text:
             continue
-        probs = fact_gate(text, it.get('evidence') or '', unsupported, it.get('source') or '',
+        gate_text = BLANK.sub('', text) if it.get('blanks') else text
+        probs = fact_gate(gate_text, it.get('evidence') or '', unsupported, it.get('source') or '',
                           list(allowed_words or ()) + list(PROSE_OK), context=it.get('context') or '')
         if probs:
             res[k] = probs
@@ -1092,8 +1103,11 @@ def _check_batch(llm, items, note):
             p['context'] = cx[it['context'][:6000]]
         if it.get('source'):
             p['rewrites'] = it['source']
+        if it.get('blanks'):
+            p['blanks'] = True
         payload.append(p)
-    raw = llm(VERIFY_SYSTEM, f"""{TEXT_CHECK_NOTE} {note}
+    blanks = BLANKS_NOTE if any(it.get('blanks') for it in items.values()) else ''
+    raw = llm(VERIFY_SYSTEM, f"""{TEXT_CHECK_NOTE} {note} {blanks}
 Check every claim each TEXT makes about the candidate against its EVIDENCE (the candidate's own resume and answers).
 CONTEXT, where given, is the job posting: the text may name the employer, the role and what the posting asks for,
 but a claim that the candidate has a skill, tool, credential or experience must be in the EVIDENCE. Where an item
@@ -1122,12 +1136,15 @@ Return ONLY JSON: {{"results": [{{"id": "...", "ok": true|false, "problems": ["q
 def _repair(llm, items, problems, note):
     ev = _evidence_ids(items, 'evidence', 'E', 12000)
     payload = [{'id': k, 'evidence': ev.get((it.get('evidence') or '')[:12000]), 'text': it['text'],
-                'problems': problems.get(k) or []} for k, it in items.items()]
-    raw = llm(REPAIR_SYSTEM, f"""{TEXT_CHECK_NOTE} {note}
+                'problems': problems.get(k) or [], **({'blanks': True} if it.get('blanks') else {})}
+               for k, it in items.items()]
+    blanks = (BLANKS_NOTE + ' In such an item you may turn a flagged number or detail into a short blank.'
+              if any(it.get('blanks') for it in items.values()) else '')
+    raw = llm(REPAIR_SYSTEM, f"""{TEXT_CHECK_NOTE} {note} {blanks}
 A fact check rejected each item below for the listed problems. Rewrite each one so it makes no claim about the
 candidate that its EVIDENCE does not support: remove or soften exactly the flagged claims, and never replace them
-with other claims the evidence lacks. Keep everything else, including length, line breaks and voice. If an item
-cannot be saved, return "" for it.
+with other claims the evidence lacks. When two separate facts were joined into one claim, state them separately.
+Keep everything else, including length, line breaks and voice. If an item cannot be saved, return "" for it.
 {DATA_RULE}
 
 EVIDENCE:
@@ -1145,22 +1162,57 @@ Return ONLY JSON: {{"fixed": [{{"id": "...", "text": "..."}}]}}""", max_tokens=4
     return out
 
 
+_QUOTED = re.compile(r'["“”]([^"“”\n]{2,400})["“”]')
+
+
+def _prune(text, problems, min_total=3, min_ratio=0.6):
+    """`text` without the sentences the problems quote, or '' when that would leave too
+    little (fewer than min_total sentences to start with, or under min_ratio of them)
+    or no quoted sentence is found."""
+    frags = []
+    for p in problems:
+        for q in _QUOTED.findall(str(p)):
+            frags += [f.strip(' .,;:').lower() for f in re.split(r'\.\.\.|…', q) if len(f.strip(' .,;:')) >= 2]
+    if not frags:
+        return ''
+    def flagged(s):
+        s = s.lower()
+        return any((f in s) if len(f) >= 6 else re.search(r'(?<!\w)' + re.escape(f) + r'(?!\w)', s) for f in frags)
+    out, total, kept = [], 0, 0
+    for line in text.split('\n'):
+        sents = [s for s in re.split(r'(?<=[.!?])\s+', line) if s.strip()]
+        keep = [s for s in sents if not flagged(s)]
+        total, kept = total + len(sents), kept + len(keep)
+        out.append(' '.join(keep))
+    if total < min_total or kept == total or kept < max(min_total - 1, min_ratio * total):
+        return ''
+    return re.sub(r'\n{3,}', '\n\n', '\n'.join(out)).strip()
+
+
 def verify_texts(llm, items, unsupported=(), allowed_words=(), note='', repair=True):
-    """Fact-check model-written text; repair failures once with the reasons; withhold
-    what still fails. items as in check_texts.
-    Returns (ok {key: verified text}, withheld {key: [problems]})."""
+    """Fact-check model-written text; repair failures once with the reasons; if a
+    repaired text still fails, drop just the sentences the check quotes (when most of
+    the text survives) and check what is left; withhold what still fails.
+    items as in check_texts. Returns (ok {key: verified text}, withheld {key: [problems]})."""
     probs = check_texts(llm, items, unsupported, allowed_words, note)
     ok = {k: str(it.get('text') or '').strip() for k, it in items.items()
           if k not in probs and str(it.get('text') or '').strip()}
     if probs and repair:
-        fixed = _repair(llm, {k: dict(items[k], text=str(items[k].get('text') or '')) for k in probs}, probs, note)
+        latest = {k: str(items[k].get('text') or '') for k in probs}
+        fixed = _repair(llm, {k: dict(items[k], text=latest[k]) for k in probs}, probs, note)
         again = {k: dict(items[k], text=t) for k, t in fixed.items()}
         probs2 = check_texts(llm, again, unsupported, allowed_words, note) if again else {}
         for k in again:
             if k in probs2:
-                probs[k] = probs2[k]
+                probs[k], latest[k] = probs2[k], again[k]['text']
             else:
                 ok[k] = again[k]['text']
+                probs.pop(k, None)
+        trimmed = {k: dict(items[k], text=t) for k in probs if (t := _prune(latest[k], probs[k]))}
+        probs3 = check_texts(llm, trimmed, unsupported, allowed_words, note) if trimmed else {}
+        for k in trimmed:
+            if k not in probs3:
+                ok[k] = trimmed[k]['text']
                 probs.pop(k, None)
     return ok, probs
 
@@ -1275,6 +1327,16 @@ def _verify(llm, doc, target, diag, answers, proposals, log):
         for i in retry_ids:
             if i not in ok:
                 rejected[i] = feedback.get(i) or fb_before.get(i) or ['failed verification']
+        # The summary is the most-read line: rather than lose a good one to one bad
+        # phrase, drop the sentences the check quotes and verify what is left.
+        if 'S' in rejected and (retry.get('S') or {}).get('lines'):
+            cut = _prune('\n'.join(retry['S']['lines']), rejected['S'], min_total=2, min_ratio=0.5)
+            if cut:
+                ok = screen({'S': dict(retry['S'], lines=[x for x in cut.split('\n') if x.strip()])})
+                if ok:
+                    accepted.update(ok)
+                    rejected.pop('S')
+                    log('  ✂ Summary kept without the sentence that could not be verified')
     return accepted, rejected
 
 
@@ -1305,6 +1367,15 @@ def _result(doc, diag, edits, notes, rejected, order, answers):
         if vals:
             scores[b['id']] = round(sum(vals) / len(vals), 1)
     document = diag.get('document') or {}
+    # Only 8 are asked: the lines most relevant to the target role whose impact the reader
+    # cannot see come first (a missing number there moves the score most), then resume order.
+    top = set(document.get('most_relevant') or []) if isinstance(document.get('most_relevant'), list) else set()
+
+    def value(q):
+        dx = diag['blocks'].get(q['id']) or {}
+        num = lambda k, d: dx[k] if isinstance(dx.get(k), (int, float)) else d
+        return num('relevance', 3) + (5 - num('impact', 3)) + (2 if q['id'] in top else 0)
+    questions.sort(key=value, reverse=True)
     return {'final': final, 'lines': doc.lines, 'changes': changes, 'questions': questions[:8],
             'order': orders, 'section_order': sec,
             'rejected': [{'id': i, 'line': doc.by_id[i]['text'][:240], 'why': w} for i, w in rejected.items()],

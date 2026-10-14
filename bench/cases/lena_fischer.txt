@@ -1,0 +1,27 @@
+LENA FISCHER
+Denver, CO | lena.fischer@email.com | lenafischer.dev
+
+SUMMARY
+Frontend developer who likes building clean, fast user interfaces. Good team player.
+
+EXPERIENCE
+Frontend Developer - Peakline Software (B2B SaaS), Denver CO
+2021 - Present
+- Responsible for the frontend of the analytics dashboard
+- Worked on migrating the app from JavaScript to TypeScript
+- Built reusable components for the design system
+- Improved page load time
+- Helped with accessibility fixes after an audit
+
+Web Developer - Front Range Credit Union, Boulder CO
+2019 - 2021
+- Maintained the public website and online banking pages
+- Built forms and landing pages in Angular
+- Worked with the marketing team on updates
+
+EDUCATION
+B.A. Graphic Design, University of Colorado Boulder, 2018
+Frontend Web Development Bootcamp, Turing School, 2019
+
+SKILLS
+React, TypeScript, JavaScript, Angular, HTML, CSS, Storybook, Jest, Figma, Git

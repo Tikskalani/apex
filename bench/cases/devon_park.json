@@ -20,5 +20,12 @@
   "payments",
   "gRPC",
   "Terraform"
- ]
+ ],
+ "company": "Paystream",
+ "from_role": "Senior Software Engineer",
+ "job_desc": "Staff Backend Engineer, Payments Platform - Paystream (Remote, US)\nPaystream moves billions in card and bank payments. We need a staff engineer to set technical direction for our payments platform.\nWhat you'll do: design and evolve distributed systems for authorization, clearing and settlement; lead event-driven architecture on Kafka; raise reliability and observability standards; mentor senior and mid-level engineers; lead system design reviews; participate in on-call.\nWhat we look for: 8+ years backend engineering; Go or Python; Kafka; Kubernetes; PostgreSQL; AWS; payments or fintech experience; Terraform a plus; gRPC a plus.",
+ "interview": {
+  "question": "Describe a technical decision you made that you would make differently today.",
+  "answer": "We moved to Kafka for the ledger and it went fine but it took long. Maybe I would plan more. Also we had some issues with consumers but we fixed them."
+ }
 }

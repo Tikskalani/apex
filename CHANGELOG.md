@@ -30,8 +30,21 @@ Everything APEX writes about you is now fact-checked, runs can be cancelled, a b
   - The fact check withheld good outreach for ordinary words: message openers ("Would", "Please"), plural nouns starting a sentence ("Containers"), and plain slash compounds ("team/product").
   - JSearch fetched its three pages one after another and missed the deadline; now in parallel.
   - `/tailor` now reports its measured cost (`cost_data`).
+- **Found by the feature benchmark (six tech resumes, APEX vs. asking Claude directly):**
+  - One unverifiable sentence threw away a whole cover letter, follow-up email or improved interview answer, so the page showed nothing usable. `engine.verify_texts` now, after its one repair, drops just the sentences the check quotes when at least 60% of the text survives, and checks what is left; only a text that still fails is withheld.
+  - The engine lost good new summaries the same way (one phrase such as "data-heavy" failed twice, so "Good team player" shipped). A rejected summary is now trimmed to its verifiable sentences and checked again.
+  - A rewrite could pull another bullet's achievement into its own line while that bullet stayed, so the fact appeared twice. Each bullet now keeps its own achievement.
+  - A cover letter that joined separate resume facts in every paragraph could be neither repaired nor trimmed. It now gets one fresh draft that is told which claims to avoid. Letters also stop copying weak resume phrasing ("worked on", "helped with") and keep separate facts separate.
+  - Weakness X-Ray and Bullets "fixes" kept the weak verbs they criticised, because a stronger verb would overstate the candidate's role. They now offer the stronger verb as a choice to confirm ("[Led / Co-led] the migration").
+  - Job titles missed postings spelled another way: "ML Engineer" for Machine Learning, "Front-End", "SRE", "SWE", "LLM", "Member of Technical Staff" (`canon_title`). A new-grad search required "new" and "grad" in the title. A posting for a different kind of role ("Account Executive, AI" for "AI Engineer", "Engineering Manager" for an engineer) or the other end of the ladder (staff roles for a new-grad search, internships for a senior one) no longer matches (`seniority_band`).
+  - Most of the curated Greenhouse and Lever company boards no longer existed (they answered with nothing).
 
 ### Added
+
+- **Company job boards as a source** (`company_board_jobs`): full postings from the public Greenhouse, Ashby and Lever boards of 53 tech and AI employers (OpenAI, Anthropic, Databricks, Stripe, Snowflake, Cloudflare and others), checked live. Used by the market scan for tech, AI/data, cloud and security roles and for `general`, by Live Jobs, and by the salary brief. Most US postings there state pay, so `/negotiate` has real ranges far more often. One fetch per title is shared for 15 minutes.
+- **Salary from postings at your level.** An entry-level search counts only entry-level postings and a senior search senior ones (`posted_pay`); `posted_pay.companies` and `basis_note` name the employers the figures mostly come from.
+- **Blanks you fill in.** Suggested rewrites (Bullets, Weakness X-Ray), Career Bridge reframes and answers, interview sample answers and the improved version of a graded answer may leave a short blank, e.g. "cut p99 latency [by X%]", where only you know the fact; the page highlights it. The fact check treats a blank as no claim, and everything stated outright is still checked. Rewrites must be clearly stronger than the original (no synonym swaps).
+- `tools/feature_bench.py`: every AI feature run as APEX and as a plain request to the same model, judged blind in both orders, with an independent count of unsupported claims on each side. Five tech cases join `bench/cases` (ML, AI engineering, frontend, SRE, new grad).
 
 - **Starts without a key.** The page shows a setup card and turns Launch off; model routes answer `503 {"error", "setup": true}`. `GET /config` adds `AI_READY`, `AI_PROBLEM`, `VOICE_READY`, `MODEL`, `VERSION`.
 - **Judge veto.** If the blind hiring-manager review scores the rewrite below your original, the original ships and the page says why (`veto`, `vetoed_changes`, `notice` event).

@@ -1,0 +1,28 @@
+Sam Adeyemi
+Chicago, IL | sam.adeyemi@email.com | (312) 555-0164 | github.com/samadeyemi
+
+Summary
+Full-stack developer with 4 years of experience. Recently started building with LLMs and want to move into AI engineering.
+
+Experience
+Full-Stack Developer, Clearpath Insurance, Chicago IL
+Jan 2022 - Present
+- Build customer-facing features in React and TypeScript with a Node.js / Express backend
+- Built an internal claims-summary tool that uses the OpenAI API to summarize adjuster notes; used by 35 adjusters
+- Added retrieval over policy documents with embeddings stored in pgvector
+- Wrote integration tests and set up GitHub Actions CI for the claims team's services
+- Worked with product and design in two-week sprints
+
+Junior Web Developer, Lakeshore Digital Agency, Chicago IL
+Jul 2020 - Dec 2021
+- Built marketing websites for clients in WordPress and React
+- Fixed bugs and handled small feature requests from 10+ clients
+
+Projects
+- DocChat: open-source app for chatting with PDFs (Python, LangChain, Chroma); 400 GitHub stars
+
+Education
+B.S. Information Technology, DePaul University, 2020
+
+Skills
+TypeScript, JavaScript, React, Node.js, Python, PostgreSQL, pgvector, OpenAI API, LangChain, Docker, GitHub Actions

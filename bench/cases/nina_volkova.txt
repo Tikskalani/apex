@@ -1,0 +1,27 @@
+NINA VOLKOVA
+Seattle, WA | nina.volkova@email.com | github.com/nvolkova
+
+SUMMARY
+Machine learning engineer with 5 years of experience building models for recommendations and search.
+
+EXPERIENCE
+Machine Learning Engineer - Trailhead Outdoors (e-commerce), Seattle WA
+Apr 2022 - Present
+- Built the product recommendation model (two-tower retrieval + gradient boosted ranker) used on the homepage and product pages
+- A/B test showed a 6.2% lift in add-to-cart rate from the new ranker
+- Moved model training from notebooks to scheduled pipelines on Kubeflow
+- Worked on the feature store with the data platform team
+- Served models with FastAPI on Kubernetes, p95 latency under 40ms
+
+Data Scientist - Brightwave Media, Portland OR
+Jun 2019 - Mar 2022
+- Built churn prediction models in Python (scikit-learn, XGBoost)
+- Created dashboards for subscription metrics in Looker
+- Ran experiments on email campaigns with the marketing team
+
+EDUCATION
+M.S. Computer Science (Machine Learning), University of Washington, 2019
+B.S. Mathematics, Oregon State University, 2017
+
+SKILLS
+Python, PyTorch, scikit-learn, XGBoost, SQL, Spark, Kubeflow, Kubernetes, FastAPI, AWS SageMaker, Docker

@@ -1,0 +1,30 @@
+{
+ "name": "kevin_tran",
+ "title": "Software Engineer (New Grad)",
+ "seniority": "entry",
+ "sector": "tech",
+ "resume": "kevin_tran.txt",
+ "keywords": [
+  "Python",
+  "Java",
+  "JavaScript",
+  "React",
+  "REST APIs",
+  "SQL",
+  "data structures",
+  "algorithms",
+  "Git",
+  "testing",
+  "Linux",
+  "cloud",
+  "collaboration",
+  "debugging"
+ ],
+ "company": "Fieldnote",
+ "from_role": "Computer Science Student",
+ "job_desc": "Software Engineer, New Grad 2026 - Fieldnote (San Jose, CA)\nFieldnote builds mobile and web tools for field service teams. Join our new grad program.\nYou will: build features across our React frontend and Python / Java services; write REST APIs and SQL; write tests and review code; debug production issues with your team; learn our cloud stack (AWS).\nRequirements: B.S. in Computer Science or related (2026 grad); strong data structures and algorithms; at least one of Python, Java or JavaScript; internship or substantial project experience; Git; clear communication.",
+ "interview": {
+  "question": "Tell me about a bug that was hard to find and how you fixed it.",
+  "answer": "In my internship there was a bug in the data pipeline. I looked through the code and found the problem and fixed it. It took a while."
+ }
+}
