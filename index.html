@@ -2224,6 +2224,7 @@ const ACTIONS = {
   clip:        el => copyText(CLIP.get(el.dataset.arg)),
   kitExport:   el => kitExport(el),
   letterExport: el => letterExport(el.dataset.arg, el.dataset.src, el),
+  letterRefresh: el => letterRefresh(el),
   tailorExport: el => tailorExport(el.dataset.arg, el),
   tailorSave:  el => tailorSave(el),
   verRestore:  el => versionRestore(el.dataset.arg),
@@ -3056,7 +3057,9 @@ async function engineAnswer(btn) {
       ev => { if (ev.type === 'error') failed = ev.msg; else handleEvent(ev); }, { signal });
     if (failed) throw new Error(failed);
     runFinish('done', 'Rewritten with your answers');
-    toast('Rewritten with your answers', 'ok');
+    toast($('cl-content').querySelector('[data-action="letterRefresh"]')
+      ? 'Rewritten with your answers · press "Rewrite with my latest resume" on Cover Letter to use them there too'
+      : 'Rewritten with your answers', 'ok');
   } catch (e) {
     runFinish(isAbort(e) ? 'cancelled' : 'failed', isAbort(e) ? 'Cancelled' : e.message);
     if (!isAbort(e)) toast(e.message, 'err');
@@ -3110,11 +3113,38 @@ const exportBtns = (action, extra = '') => ['pdf', 'docx', 'txt'].map(f =>
 
 function renderCoverLetter(letter, withheld) {
   window._coverLetter = letter || '';
+  // The run writes the letter before you answer APEX's questions; this rewrites it from
+  // the resume as it is now (your kept edits and answers included), fact-checked again.
+  const refresh = `<button class="copy-btn" data-action="letterRefresh" title="Write the letter again from your resume as it is now, including the facts from your answers">Rewrite with my latest resume</button>`;
   $('cl-content').innerHTML = letter ? `
     <div class="card">
-      <div class="card-h"><h3>Letter</h3>${VERIFIED}<span class="kit-actions"><button class="copy-btn" data-action="copy" data-arg="coverLetter">Copy</button>${exportBtns('letterExport', ' data-src="cl"')}</span></div>
+      <div class="card-h"><h3>Letter</h3>${VERIFIED}<span class="kit-actions">${refresh}<button class="copy-btn" data-action="copy" data-arg="coverLetter">Copy</button>${exportBtns('letterExport', ' data-src="cl"')}</span></div>
       <div class="block"><div class="text">${escHtml(letter)}</div></div>
-    </div>` : `<div class="card"><div class="card-h"><h3>Letter</h3></div><div class="block">${withheldNote(withheld)}</div></div>`;
+    </div>` : `<div class="card"><div class="card-h"><h3>Letter</h3><span class="kit-actions">${refresh}</span></div><div class="block">${withheldNote(withheld)}</div></div>`;
+}
+
+// The resume the tools should use: the edited version you are reviewing (kept edits,
+// and the lines rewritten with your answers) when there is one, else the Launch box.
+function latestResume() {
+  const E = state.engine;
+  return (E && E.text) || $('resume-text').value.trim();
+}
+
+async function letterRefresh(btn) {
+  const resume = latestResume();
+  if (!resume) return toast('Paste your resume in Launch first', 'err');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Writing…';
+  try {
+    const j = await api('/draft-cover-letter', { resume, jobTitle: $('job-title').value.trim(), posting: $('job-desc').value.trim(),
+                                                 sector: state.sector });
+    if (state.run && state.run.tabs) state.run.tabs.cover_letter = { letter: j.letter, withheld: null };
+    renderCoverLetter(j.letter, null);
+    saveStateSoon();
+    toast('New letter written from your latest resume', 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+    btn.disabled = false; btn.textContent = 'Rewrite with my latest resume';
+  }
 }
 
 function renderInterview(d) {
@@ -5284,7 +5314,7 @@ async function viOnStop(mime) {
         question: VI.current.q,
         answer: transcript,
         jobTitle: $('job-title').value || 'this role',
-        sector: state.sector, resume: $('resume-text').value.trim(),
+        sector: state.sector, resume: latestResume(),
       }, (ev) => {
         if (ev.type === 'answer_grade' && ev.data) viRenderGrade(ev.data);
         else if (ev.type === 'error') failed = ev.msg;

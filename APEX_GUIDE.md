@@ -59,7 +59,7 @@ When it finishes, each tab that has new results gets a dot. Start with **Resume 
 | **PDF Templates** | Download your resume as PDF, Word or text in six styles (Modern, Classic, Tech, Executive, Creative, Minimal). PDFs have a real text layer that application systems can read, and keep accented names (Zoë, Łukasiewicz). You choose: the edited resume (with your Keep choices) or your original. |
 | **Live Jobs** | Search live postings, filter (remote, posted within N days, text), hide duplicates, see how well each matches your resume, and open **Tailor & Apply** on any job (which can save the job and its apply kit to the Tracker). |
 | **Job Alerts** | Email alerts for new postings (needs your email settings; optional). |
-| **Cover Letter** | A fact-checked letter; download as PDF, Word or text. |
+| **Cover Letter** | A fact-checked letter; download as PDF, Word or text. The run writes it before you answer APEX's questions, so after answering press **Rewrite with my latest resume** to get a letter that uses those facts (it reads your edited resume, with the edits you kept). |
 | **Interview** | Likely questions with example answers built only from your real experience (answers it couldn't verify are hidden, with the reason), questions to ask them, how to address weak spots, and voice practice (needs an OpenAI key). |
 | **LinkedIn** | Headline, About section and experience bullets, all fact-checked; a skills list limited to skills your resume shows. |
 | **Outreach** | LinkedIn message, cold email, referral request, thank-you note, negotiation email, all fact-checked. |

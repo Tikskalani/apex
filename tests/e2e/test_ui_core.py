@@ -453,3 +453,26 @@ def test_tailor_modal_ignores_stale_answers(ui):
     assert page.evaluate("TA.job.company") == 'BetaCo'
     page.keyboard.press('Escape')
     expect(page.locator('#ta-modal')).not_to_have_class(re.compile(r'\bopen\b'))
+
+
+def test_cover_letter_rewrites_from_the_latest_resume(ui):
+    """The run writes the letter before the questions are answered; the button rewrites
+    it from the edited resume (answers included), not the original in the Launch box."""
+    page = ui.page
+    sent = []
+
+    def letter(route):
+        body = json.loads(route.request.post_data)
+        sent.append(body)
+        route.fulfill(status=200, content_type='application/json',
+                      body=json.dumps({'letter': 'NEW LETTER citing ' + body['resume'][-10:], 'verified': True}))
+    page.route('**/draft-cover-letter', letter)
+    page.evaluate("document.getElementById('resume-text').value = 'ORIGINAL ' + 'x'.repeat(200)")
+    page.evaluate("document.getElementById('job-title').value = 'Data Analyst'")
+    page.evaluate("handleEvent({type: 'cover_letter_data', letter: 'FIRST LETTER'})")
+    page.evaluate("state.engine = {text: 'EDITED ' + 'y'.repeat(200) + ' 9 MANAGERS', data: {}}")
+    go(page, 'cl')
+    page.click('#cl-content [data-action="letterRefresh"]')
+    expect(page.locator('#cl-content')).to_contain_text('NEW LETTER citing 9 MANAGERS')
+    assert sent[0]['resume'].startswith('EDITED') and sent[0]['jobTitle'] == 'Data Analyst'
+    assert page.evaluate("window._coverLetter").startswith('NEW LETTER')
