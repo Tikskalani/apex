@@ -26,5 +26,13 @@
  "interview": {
   "question": "Tell me about a time you improved the performance of a web app.",
   "answer": "At Peakline the dashboard was slow so I worked on making it faster. I did some code splitting and it loaded faster after."
- }
+ },
+ "facts": [
+  "Lena led the JavaScript-to-TypeScript migration: she planned it, wrote the migration guide, and converted about 60% of the 120,000-line codebase herself over 8 months.",
+  "Page load time for the analytics dashboard dropped from 4.2 seconds to 1.6 seconds after Lena added code splitting and memoized the heavy charts.",
+  "The design system has 45 components in Storybook, used by 3 product teams.",
+  "Lena fixed about 70 of the 110 issues from the accessibility audit; the app now meets WCAG 2.1 AA on its main flows.",
+  "The analytics dashboard is used by about 300 customer companies.",
+  "At Front Range Credit Union the online banking pages served about 80,000 members."
+ ]
 }

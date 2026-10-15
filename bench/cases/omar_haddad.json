@@ -26,5 +26,13 @@
  "interview": {
   "question": "Describe an incident you led and what changed afterward.",
   "answer": "We had an outage where the database ran out of connections. I was on call and we restarted things and it came back. After that we added an alert."
- }
+ },
+ "facts": [
+  "The platform serves about 400 million API requests a day.",
+  "Omar defined SLOs for the 10 most critical services and set up error-budget alerts in Grafana.",
+  "Mean time to recovery for major incidents dropped from about 90 minutes to 25 minutes after the new alerting and runbooks.",
+  "Omar was incident commander for 12 major incidents and wrote the postmortem template the team uses.",
+  "The $18K a month AWS saving came from rightsizing and moving stateless workloads to spot nodes, about 30% of the compute bill.",
+  "Deploy lead time went from about a week to under an hour with the GitHub Actions and Argo CD pipelines."
+ ]
 }

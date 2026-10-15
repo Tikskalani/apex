@@ -16,6 +16,8 @@ It scrapes live job postings, measures what employers are actually asking for, r
 | Control | One block of text | Every edit shown with its reason; keep or untick each one |
 | Quality check | None | Blind before/after review by a simulated hiring manager for your target role; if it prefers your original, your original is kept |
 
+Answering those questions is where most of the gain comes from: on five tech bench resumes, a simulated candidate answering from facts the resume left out raised the blind judge's score by +11.8 on average, against +6.8 for the rewrite alone, and the cover letter written afterwards won all 4 head-to-heads that had both letters (`tools/answer_bench.py`).
+
 `tools/benchmark.py` measures this on your resumes: the same model, run through APEX and asked plainly, scored by the same judges, with invented claims counted. `tools/feature_bench.py` does the same for every other AI feature, judged blind head to head.
 
 ---

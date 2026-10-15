@@ -318,6 +318,8 @@ class _Handler(BaseHTTPRequestHandler):
             })
         elif 'Interview prep for:' in user:             # /analyze Phase 8 interview prep
             content = json.dumps(INTERVIEW)
+        elif 'You write interview answers' in system:    # /grade-answer: redraft after a withheld answer
+            content = 'I built weekly reports with SQL for my team. Next time I would track [the time it saved].'
         elif 'Grade this interview answer' in user:      # /grade-answer
             content = json.dumps({'score': 70, 'grade': 'B', 'verdict': 'solid', 'strengths': ['clear'],
                                   'weaknesses': ['no result'], 'ideal_answer_structure': 'STAR',

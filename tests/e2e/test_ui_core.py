@@ -476,3 +476,25 @@ def test_cover_letter_rewrites_from_the_latest_resume(ui):
     expect(page.locator('#cl-content')).to_contain_text('NEW LETTER citing 9 MANAGERS')
     assert sent[0]['resume'].startswith('EDITED') and sent[0]['jobTitle'] == 'Data Analyst'
     assert page.evaluate("window._coverLetter").startswith('NEW LETTER')
+
+
+def test_bullets_and_grading_show_the_whole_review(ui):
+    """Bullets: verdict, the fixes that matter most, what is weak, highlighted blanks and the
+    question that unlocks each one. Grading: what the question probes and likely follow-ups."""
+    page = ui.page
+    page.evaluate("""handleEvent({type: 'bullet_data', data: {overall_verdict: 'Duties, not results.', average_score: 48,
+        top_fixes: ['Rewrite the summary first'],
+        ranked_bullets: [{text: 'Improved page load time', score: 30, rank: 2, weaknesses: ['no metric'],
+                          rewrite: 'Cut dashboard load time [by X%]', ask: 'How fast was it before and after?'}]}})""")
+    go(page, 'bullets')
+    out = page.locator('#bullets-out')
+    for text in ('Duties, not results.', 'Fix these first', 'Rewrite the summary first', 'Weak: no metric',
+                 'Ask yourself: How fast was it before and after?'):
+        expect(out).to_contain_text(text)
+    expect(out.locator('mark.blank')).to_have_text('[by X%]')
+    page.evaluate("""viRenderGrade({score: 55, grade: 'C', verdict: 'Vague.', ideal_answer_structure: 'Ownership of a hard call.',
+        follow_up_questions: ['What would you do differently?'], better_version: 'I [describe the decision].'})""")
+    grade = page.locator('#vi-grade')
+    expect(grade).to_contain_text('What this question is probing')
+    expect(grade).to_contain_text('What would you do differently?')
+    expect(grade.locator('mark.blank')).to_have_text('[describe the decision]')

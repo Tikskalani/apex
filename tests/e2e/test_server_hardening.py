@@ -135,6 +135,16 @@ def test_grade_answer_rewrite_only_uses_what_they_said(app):
     assert g['better_version'] == 'I built weekly reports with SQL.', 'the invented "50%" sentence was repaired away'
 
 
+def test_grade_answer_redrafts_an_answer_it_cannot_repair(app):
+    # STUBBORN: the repair changes nothing and two sentences are too few to trim, so one redraft
+    # told what to avoid replaces it (its blank claims nothing).
+    events = sse(app, '/grade-answer', {'question': 'Tell me about a report.', 'jobTitle': 'Data Analyst',
+                                       'answer': 'I built weekly reports with SQL for my team. STUBBORN'})
+    g = [e for e in events if e.get('type') == 'answer_grade'][-1]['data']
+    assert g['better_version'].startswith('I built weekly reports with SQL for my team.') and '50%' not in g['better_version']
+    assert '[the time it saved]' in g['better_version'] and 'better_version_withheld' not in g
+
+
 def test_inbox_errors_are_reported_not_hidden(app):
     st, j = call(app, 'POST', '/inbox/scan', {'user': 'a@example.com', 'password': 'x', 'host': '127.0.0.1'})
     assert st == 502 and 'Could not reach 127.0.0.1' in j['error']

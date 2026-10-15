@@ -27,5 +27,14 @@
  "interview": {
   "question": "Describe a technical decision you made that you would make differently today.",
   "answer": "We moved to Kafka for the ledger and it went fine but it took long. Maybe I would plan more. Also we had some issues with consumers but we fixed them."
- }
+ },
+ "facts": [
+  "The payments service processes about 3 million card and ACH transactions a day, roughly $40M in volume.",
+  "The ledger migration to Kafka finished with zero downtime and no lost transactions; it let the team ship ledger changes weekly instead of monthly.",
+  "Pages for the payments on-call fell from about 120 a month to about 70 a month after the runbooks and alert cleanup.",
+  "The p99 latency work on the authorization API cut timeouts at checkout by about half.",
+  "Two of the three junior engineers Devon mentored were promoted to mid-level within 18 months.",
+  "The shipment tracking APIs at ShipFast handled about 5 million requests a day.",
+  "The Airflow ETL jobs replaced a manual weekly export and saved the analytics team about 10 hours a week."
+ ]
 }

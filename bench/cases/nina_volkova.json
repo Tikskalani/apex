@@ -26,5 +26,13 @@
  "interview": {
   "question": "How do you decide a new model is ready to replace the one in production?",
   "answer": "I train it and check the offline metrics like AUC. If it is better I run an A/B test and if that goes well we ship it."
- }
+ },
+ "facts": [
+  "The recommendation model serves about 4 million product pages a day.",
+  "The 6.2% add-to-cart lift was worth about $3M in extra annual revenue according to the finance team.",
+  "Moving training to Kubeflow pipelines cut model retraining time from 2 days to 6 hours and made weekly retraining possible.",
+  "Nina led the ranker project end to end with one other engineer.",
+  "The churn model at Brightwave flagged at-risk subscribers well enough to cut monthly churn from 4.1% to 3.6% after a retention campaign used it.",
+  "Nina mentored two data scientists on moving notebooks to production code."
+ ]
 }

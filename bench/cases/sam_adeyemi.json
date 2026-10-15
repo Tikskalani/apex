@@ -26,5 +26,12 @@
  "interview": {
   "question": "How would you know if your RAG system is giving wrong answers?",
   "answer": "I would test it with some questions and see if the answers look right. Users can also report bad answers. Then I would tweak the prompt."
- }
+ },
+ "facts": [
+  "The claims-summary tool cut the time adjusters spend reading notes by about 30%, from roughly 20 minutes to 14 minutes per claim.",
+  "Sam designed the prompts for the claims-summary tool and built its evaluation set of 200 real claims with adjuster ratings.",
+  "The pgvector retrieval over policy documents is a separate internal search tool, used by about 60 underwriters.",
+  "The GitHub Actions CI Sam set up cut failed deployments on the claims team from about 6 a month to 1.",
+  "DocChat has about 400 GitHub stars and 30 forks; 4 outside contributors have merged pull requests."
+ ]
 }

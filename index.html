@@ -3306,6 +3306,13 @@ function renderMatch(d) {
 }
 
 function renderBullets(d) {
+  // The verdict and the 3 fixes that matter most, then every bullet with what is weak,
+  // a stronger version (blanks to fill only if true) and the question that unlocks it.
+  const head = (d.overall_verdict || arr(d.top_fixes).length) ? `
+    <div class="block">
+      ${d.overall_verdict ? `<div style="color:var(--fg-0);font-size:14px;line-height:1.6;margin-bottom:8px"><b>${escHtml(d.overall_verdict)}</b>${d.average_score != null ? ` <span style="color:var(--fg-3)">· average ${toScore(d.average_score)}/100</span>` : ''}</div>` : ''}
+      ${arr(d.top_fixes).length ? `<div class="label">Fix these first</div><ol style="padding-left:20px;font-size:13px;line-height:1.7">${arr(d.top_fixes).map(f => `<li>${escHtml(f)}</li>`).join('')}</ol>` : ''}
+    </div>` : '';
   const rows = (d.ranked_bullets||[]).map(b => `
     <div class="block">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -3313,9 +3320,11 @@ function renderBullets(d) {
         <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:${toScore(b.score)>=70?'var(--green-soft)':toScore(b.score)>=50?'var(--amber)':'var(--red-soft)'}">${toScore(b.score)}/100</span>
       </div>
       <div style="color:var(--fg-0);font-size:13.5px;line-height:1.7;margin-bottom:8px">${escHtml(b.text||'')}</div>
+      ${arr(b.weaknesses).length ? `<div style="color:var(--fg-3);font-size:12px;margin-bottom:6px">Weak: ${escHtml(arr(b.weaknesses).join(' · '))}</div>` : ''}
       ${b.rewrite ? `<div style="color:var(--green-soft);font-size:12.5px;border-top:1px solid var(--line);padding-top:8px;line-height:1.7">→ ${withBlanks(b.rewrite)}</div>` : b.rewrite_withheld ? withheldNote(b.rewrite_withheld) : ''}
+      ${b.ask ? `<div style="color:var(--acc-soft);font-size:12.5px;margin-top:6px">Ask yourself: ${escHtml(b.ask)}</div>` : ''}
     </div>`).join('');
-  $('bullets-out').innerHTML = rows || '<div class="empty">No bullets ranked.</div>';
+  $('bullets-out').innerHTML = rows ? head + rows : '<div class="empty">No bullets ranked.</div>';
 }
 
 function renderNegotiate(d) {
@@ -5347,7 +5356,9 @@ function viRenderGrade(d) {
       '<p style="color:var(--fg-1);font-size:14px;line-height:1.6;margin-bottom:var(--s3)"><b>' + escHtml(d.verdict || '') + '</b></p>' +
       (strengths ? '<div class="block"><div class="label" style="color:var(--green-soft)">Strengths</div><ul style="padding-left:18px;font-size:13px;line-height:1.7">' + strengths + '</ul></div>' : '') +
       (weaknesses ? '<div class="block"><div class="label" style="color:var(--red-soft)">Weaknesses</div><ul style="padding-left:18px;font-size:13px;line-height:1.7">' + weaknesses + '</ul></div>' : '') +
+      (d.ideal_answer_structure ? '<div class="block"><div class="label">What this question is probing</div><div class="text">' + escHtml(d.ideal_answer_structure) + '</div></div>' : '') +
       better +
+      (arr(d.follow_up_questions).length ? '<div class="block"><div class="label">Be ready for these follow-ups</div><ul style="padding-left:18px;font-size:13px;line-height:1.7">' + arr(d.follow_up_questions).map(q => '<li>' + escHtml(q) + '</li>').join('') + '</ul></div>' : '') +
       (d.coaching_tip ? '<div class="block"><div class="label" style="color:var(--purple)">Coaching tip</div><div class="text">' + escHtml(d.coaching_tip) + '</div></div>' : '') +
       '<div style="margin-top:var(--s3); display:flex; gap:var(--s2)"><button class="btn btn-primary btn-sm" data-action="viNext">Next Question →</button></div>' +
     '</div>';
