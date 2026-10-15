@@ -522,3 +522,30 @@ def test_focus_mode_shows_the_core_tools_and_skips_the_extra_tabs(ui):
     page.click('#run-btn')
     page.wait_for_timeout(800)
     assert sent and sent[0]['extras'] is False
+
+
+def test_apply_queue_from_profile_to_applied(ui, fixture_resume):
+    """The Apply queue tab: create a profile, scan (saved postings), approve one, apply."""
+    page = ui.page
+    page.evaluate('r => { document.getElementById("resume-text").value = r; }', fixture_resume)
+    go(page, 'queue')
+    page.click('[data-action="agNew"]')                         # other tests may have made profiles already
+    expect(page.locator('#ag-editor')).to_be_visible()
+    page.fill('#ag-name', 'Me')
+    page.fill('#ag-targets', 'Data Analyst')
+    page.fill('#ag-minfit', '0')
+    page.fill('#ag-limit', '2')
+    page.uncheck('#ag-active')
+    page.click('[data-action="agUseResume"]')
+    assert page.input_value('#ag-resume').startswith(fixture_resume[:30])
+    page.click('[data-action="agSave"]')
+    expect(page.locator('#ag-editor')).to_be_hidden()
+    page.click('#ag-scan')
+    approve = page.locator('#ag-list [data-action="agApprove"]').first
+    expect(approve).to_be_visible(timeout=30000)
+    approve.click()
+    expect(page.locator('#ag-list [data-action="agApplied"]').first).to_be_visible(timeout=30000)
+    expect(page.locator('#ag-list')).to_contain_text('Ready to apply')
+    page.locator('#ag-list [data-action="agApplied"]').first.click()
+    expect(page.locator('#ag-list')).to_contain_text('Applied · in the Tracker')
+    ui.assert_clean()

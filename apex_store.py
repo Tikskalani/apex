@@ -23,7 +23,10 @@ from datetime import date, datetime, timedelta, timezone
 
 STATUSES = ('saved', 'applied', 'interview', 'offer', 'rejected', 'withdrawn')
 ACTIVE = ('saved', 'applied', 'interview')          # still in play
-SOURCES = ('manual', 'tailor', 'gmail', 'jobs', 'import')
+SOURCES = ('manual', 'tailor', 'gmail', 'jobs', 'import', 'agent')
+QUEUE_STATUSES = ('proposed', 'approved', 'preparing', 'ready', 'applied', 'skipped', 'failed')
+MAX_PROFILES_PER_OWNER = 10
+MAX_QUEUE_PER_PROFILE = 3000        # old skipped / applied rows are kept so a job is never proposed twice
 ARTIFACT_KINDS = ('tailored_resume', 'cover_letter', 'followup', 'outreach', 'note')
 FOLLOWUP_AFTER_DAYS = 7
 MAX_TEXT = 200_000           # per artifact; a resume is ~5 KB
@@ -72,6 +75,43 @@ CREATE TABLE IF NOT EXISTS score_history (
     keywords     TEXT NOT NULL DEFAULT '[]',   -- the run's requirements [{name, pct}]: the drift baseline
     created_at   TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS profiles (       -- one per person the job agent searches for
+    id           TEXT PRIMARY KEY,
+    owner        TEXT NOT NULL DEFAULT '',
+    name         TEXT NOT NULL CHECK (length(trim(name)) > 0),
+    base_resume  TEXT NOT NULL DEFAULT '',
+    targets      TEXT NOT NULL DEFAULT '[]',   -- job titles, e.g. ["AI Engineer", "Backend Engineer"]
+    location     TEXT NOT NULL DEFAULT '',
+    remote_ok    INTEGER NOT NULL DEFAULT 1,
+    daily_limit  INTEGER NOT NULL DEFAULT 30,
+    min_fit      INTEGER NOT NULL DEFAULT 35,
+    active       INTEGER NOT NULL DEFAULT 1,   -- scanned every morning
+    last_scan    TEXT,                         -- YYYY-MM-DD (local) of the last scan
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS queue (          -- jobs the agent proposed, and what happened to each
+    id             TEXT PRIMARY KEY,
+    owner          TEXT NOT NULL DEFAULT '',
+    profile_id     TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    job_key        TEXT NOT NULL,              -- company + title (+ url): the same job is never proposed twice
+    title          TEXT NOT NULL,
+    company        TEXT NOT NULL DEFAULT '',
+    location       TEXT NOT NULL DEFAULT '',
+    url            TEXT NOT NULL DEFAULT '',
+    source         TEXT NOT NULL DEFAULT '',
+    salary         TEXT NOT NULL DEFAULT '',
+    posted         TEXT NOT NULL DEFAULT '',
+    posting        TEXT NOT NULL DEFAULT '',   -- the posting text the kit is tailored to
+    fit            INTEGER NOT NULL DEFAULT 0,
+    reasons        TEXT NOT NULL DEFAULT '{}', -- {matched: [...], missing: [...]}
+    status         TEXT NOT NULL CHECK (status IN ('proposed','approved','preparing','ready','applied','skipped','failed')),
+    kit            TEXT NOT NULL DEFAULT '{}', -- {resume, cover_letter, changes, gaps, error}
+    application_id TEXT,
+    scanned_on     TEXT NOT NULL,              -- YYYY-MM-DD the agent found it
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS spend (
     day   TEXT PRIMARY KEY,              -- UTC YYYY-MM-DD
     units INTEGER NOT NULL DEFAULT 0     -- AI cost units used that day (hosted demo)
@@ -85,6 +125,8 @@ CREATE INDEX IF NOT EXISTS applications_owner ON applications (owner, updated_at
 CREATE INDEX IF NOT EXISTS events_app ON events (application_id, at);
 CREATE INDEX IF NOT EXISTS artifacts_app ON artifacts (application_id, kind, created_at);
 CREATE INDEX IF NOT EXISTS score_owner_title ON score_history (owner, lower(job_title), created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS queue_job ON queue (owner, profile_id, job_key);
+CREATE INDEX IF NOT EXISTS queue_status ON queue (owner, profile_id, status, fit);
 """
 
 
@@ -505,3 +547,200 @@ def purge_inactive_owners(days):
             conn.execute('DELETE FROM score_history WHERE owner = ?', (o,))
         conn.execute("DELETE FROM spend WHERE day < ?", ((datetime.now(timezone.utc) - timedelta(days=90)).date().isoformat(),))
     return n
+
+
+# ── job agent: profiles and the apply queue ──────────────────────────────────
+
+def _profile_row(r):
+    d = dict(r)
+    d.pop('owner', None)
+    d['targets'] = json.loads(d.get('targets') or '[]')
+    d['remote_ok'] = bool(d['remote_ok'])
+    d['active'] = bool(d['active'])
+    return d
+
+
+def _int(v, field, lo, hi, default):
+    try:
+        n = int(v if v not in (None, '') else default)
+    except (TypeError, ValueError):
+        raise StoreError(f'{field} must be a number')
+    return max(lo, min(hi, n))
+
+
+def save_profile(data, *, owner=''):
+    """Create a profile, or update it when data has the id of one of this owner's profiles."""
+    targets = data.get('targets')
+    if isinstance(targets, str):
+        targets = [t for t in (x.strip() for x in targets.replace('\n', ',').split(',')) if t]
+    targets = [_text(t, 'target title', 120) for t in (targets or []) if str(t or '').strip()][:6]
+    rec = {'name': _text(data.get('name'), 'name', 80, required=True),
+           'base_resume': _text(data.get('base_resume'), 'base resume', 40_000),
+           'targets': json.dumps(targets, ensure_ascii=False),
+           'location': _text(data.get('location'), 'location', 120),
+           'remote_ok': 1 if data.get('remote_ok', True) not in (False, 0, '0', 'false') else 0,
+           'daily_limit': _int(data.get('daily_limit'), 'daily limit', 1, 50, 30),
+           'min_fit': _int(data.get('min_fit'), 'minimum fit', 0, 90, 35),
+           'active': 1 if data.get('active', True) not in (False, 0, '0', 'false') else 0}
+    now = _now()
+    with _db(immediate=True) as conn:
+        pid = str(data.get('id') or '')
+        row = conn.execute('SELECT id FROM profiles WHERE id = ? AND owner = ?', (pid, owner)).fetchone() if pid else None
+        vals = (rec['name'], rec['base_resume'], rec['targets'], rec['location'], rec['remote_ok'],
+                rec['daily_limit'], rec['min_fit'], rec['active'])
+        if row:
+            conn.execute('UPDATE profiles SET name = ?, base_resume = ?, targets = ?, location = ?, remote_ok = ?,'
+                         ' daily_limit = ?, min_fit = ?, active = ?, updated_at = ? WHERE id = ? AND owner = ?',
+                         (*vals, now, pid, owner))
+        else:
+            n = conn.execute('SELECT count(*) FROM profiles WHERE owner = ?', (owner,)).fetchone()[0]
+            if n >= MAX_PROFILES_PER_OWNER:
+                raise StoreError(f'at most {MAX_PROFILES_PER_OWNER} profiles')
+            pid = uuid.uuid4().hex
+            conn.execute('INSERT INTO profiles (id, owner, name, base_resume, targets, location, remote_ok, daily_limit,'
+                         ' min_fit, active, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+                         (pid, owner, *vals, now, now))
+    return get_profile(pid, owner=owner)
+
+
+def get_profile(pid, *, owner=''):
+    with _db() as conn:
+        r = conn.execute('SELECT * FROM profiles WHERE id = ? AND owner = ?', (pid, owner)).fetchone()
+    if not r:
+        raise StoreError('profile not found')
+    return _profile_row(r)
+
+
+def list_profiles(*, owner='', active_only=False):
+    with _db() as conn:
+        rows = [_profile_row(r) for r in conn.execute('SELECT * FROM profiles WHERE owner = ? ORDER BY created_at',
+                                                        (owner,))]
+    return [r for r in rows if r['active']] if active_only else rows
+
+
+def delete_profile(pid, *, owner=''):
+    with _db() as conn:
+        n = conn.execute('DELETE FROM profiles WHERE id = ? AND owner = ?', (pid, owner)).rowcount
+    if not n:
+        raise StoreError('profile not found')
+    return True
+
+
+def mark_scanned(pid, day, *, owner=''):
+    with _db() as conn:
+        conn.execute('UPDATE profiles SET last_scan = ? WHERE id = ? AND owner = ?', (day, pid, owner))
+
+
+def _queue_row(r, full=False):
+    d = dict(r)
+    d.pop('owner', None)
+    d['reasons'] = json.loads(d.get('reasons') or '{}')
+    d['kit'] = json.loads(d.get('kit') or '{}')
+    if not full:
+        d['posting'] = d['posting'][:400]
+    return d
+
+
+def job_key(company, title, url=''):
+    """Company + title identify a job across boards; the url only when there is no company."""
+    norm = lambda x: ' '.join(str(x or '').lower().split())
+    return f'{norm(company)}|{norm(title)}' if norm(company) else f'|{norm(title)}|{norm(url)}'
+
+
+def add_queue_items(pid, items, *, owner='', day=None):
+    """Propose jobs for a profile. A job already in the queue (any status) is not added again.
+    items: dicts with title, company, location, url, source, salary, posted, posting, fit, reasons.
+    Returns the number added."""
+    get_profile(pid, owner=owner)
+    now, day = _now(), day or _today()
+    added = 0
+    with _db(immediate=True) as conn:
+        n = conn.execute('SELECT count(*) FROM queue WHERE owner = ? AND profile_id = ?', (owner, pid)).fetchone()[0]
+        for it in items:
+            if n + added >= MAX_QUEUE_PER_PROFILE:
+                break
+            title = _text(it.get('title'), 'title', 300)
+            if not title:
+                continue
+            company = _text(it.get('company'), 'company', 200)
+            url = str(it.get('url') or '')[:2000]
+            url = url if url.lower().startswith(('http://', 'https://')) else ''
+            try:
+                conn.execute(
+                    'INSERT INTO queue (id, owner, profile_id, job_key, title, company, location, url, source, salary,'
+                    ' posted, posting, fit, reasons, status, scanned_on, created_at, updated_at)'
+                    ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    (uuid.uuid4().hex, owner, pid, job_key(company, title, url), title, company,
+                     _text(it.get('location'), 'location', 200), url, _text(it.get('source'), 'source', 60),
+                     _text(it.get('salary'), 'salary', 120), _text(it.get('posted'), 'posted', 40),
+                     str(it.get('posting') or '')[:20_000], _int(it.get('fit'), 'fit', 0, 100, 0),
+                     json.dumps(it.get('reasons') or {}, ensure_ascii=False)[:4000], 'proposed', day, now, now))
+                added += 1
+            except sqlite3.IntegrityError:
+                continue                     # proposed before (or skipped, or applied): never again
+    return added
+
+
+_QUEUE_ORDER = {'ready': 0, 'preparing': 1, 'approved': 2, 'proposed': 3, 'failed': 4, 'applied': 5, 'skipped': 6}
+
+
+def list_queue(pid, *, owner='', statuses=None, limit=500):
+    """A profile's queue: ready first, then preparing, approved, proposed (best fit first), failed, applied, skipped."""
+    with _db() as conn:
+        rows = conn.execute('SELECT * FROM queue WHERE owner = ? AND profile_id = ? ORDER BY fit DESC, created_at DESC',
+                            (owner, pid)).fetchall()
+    rows = [r for r in rows if not statuses or r['status'] in statuses]
+    rows.sort(key=lambda r: _QUEUE_ORDER.get(r['status'], 9))         # stable: fit order kept within a status
+    return [_queue_row(r) for r in rows[:int(limit)]]
+
+
+def get_queue_item(qid, *, owner='', full=True):
+    with _db() as conn:
+        r = conn.execute('SELECT * FROM queue WHERE id = ? AND owner = ?', (qid, owner)).fetchone()
+    if not r:
+        raise StoreError('queue item not found')
+    return _queue_row(r, full=full)
+
+
+def set_queue_status(ids, status, *, owner='', only_from=None):
+    """Move items to `status` (only those currently in `only_from`, when given). Returns how many moved."""
+    if status not in QUEUE_STATUSES:
+        raise StoreError(f'status must be one of: {", ".join(QUEUE_STATUSES)}')
+    moved, now = 0, _now()
+    with _db(immediate=True) as conn:
+        for qid in [str(i) for i in (ids or [])][:500]:
+            r = conn.execute('SELECT status FROM queue WHERE id = ? AND owner = ?', (qid, owner)).fetchone()
+            if not r or (only_from and r['status'] not in only_from):
+                continue
+            moved += conn.execute('UPDATE queue SET status = ?, updated_at = ? WHERE id = ? AND owner = ?',
+                                  (status, now, qid, owner)).rowcount
+    return moved
+
+
+def update_queue_item(qid, *, owner='', status=None, kit=None, application_id=None):
+    """Set any of status, kit and application_id; the others keep their value."""
+    if status is not None and status not in QUEUE_STATUSES:
+        raise StoreError('bad queue status')
+    kit_json = None if kit is None else json.dumps(kit, ensure_ascii=False)[:MAX_TEXT]
+    with _db() as conn:
+        conn.execute('UPDATE queue SET status = COALESCE(?, status), kit = COALESCE(?, kit),'
+                     ' application_id = COALESCE(?, application_id), updated_at = ? WHERE id = ? AND owner = ?',
+                     (status, kit_json, application_id, _now(), qid, owner))
+
+
+def claim_approved(*, owner=''):
+    """The best approved item, moved to 'preparing' in the same transaction (one worker per item)."""
+    with _db(immediate=True) as conn:
+        r = conn.execute("SELECT id FROM queue WHERE owner = ? AND status = 'approved' ORDER BY fit DESC, created_at"
+                         ' LIMIT 1', (owner,)).fetchone()
+        if not r:
+            return None
+        conn.execute("UPDATE queue SET status = 'preparing', updated_at = ? WHERE id = ?", (_now(), r['id']))
+    return get_queue_item(r['id'], owner=owner)
+
+
+def reset_stuck_preparing(*, owner=''):
+    """After a restart nothing is preparing any more: put those items back to approved."""
+    with _db() as conn:
+        return conn.execute("UPDATE queue SET status = 'approved' WHERE owner = ? AND status = 'preparing'",
+                            (owner,)).rowcount

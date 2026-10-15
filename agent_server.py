@@ -706,6 +706,10 @@ def title_matches(title, query):
     has = lambda w: f' {w} ' in t or f' {w}s ' in t
     if {seniority_band(query), seniority_band(title)} == {'entry', 'senior'}:
         return False
+    # A supporting role is a different job: "Physical Therapist Assistant" for a physical therapist.
+    support = {'assistant', 'aide', 'technician', 'tech'}
+    if any(has(w) for w in support) and not any(f' {w} ' in f' {_norm(canon_title(query))} ' for w in support):
+        return False
     if not core:
         return not generic or any(has(w) for w in generic)
     if not all(has(w) for w in core):
@@ -1158,11 +1162,36 @@ def parse_location_from_query(q):
         return ql.replace('remote',' ').strip(), 'Remote'
     return q.strip(), ''
 
+def _state_of(loc):
+    """(abbr, full name) of the US state a location names ("Austin, TX", "Austin, Texas"), else None."""
+    tail = re.split(r',\s*', (loc or '').lower().strip())[-1].strip()
+    tail = re.sub(r'\s+\d{5}$', '', tail)                     # "TX 77001"
+    for name, abbr in US_STATE_NAMES.items():
+        if tail in (abbr, name):
+            return abbr, name
+    return None
+
+
+def location_matches_state(job_location, loc):
+    """True when the job is in the same US state as the searched location."""
+    st = _state_of(loc)
+    if not st:
+        return False
+    jl = (job_location or '').lower()
+    return bool(re.search(r'(?<![a-z])(' + re.escape(st[0]) + r'|' + re.escape(st[1]) + r')(?![a-z])', jl))
+
+
 def location_aliases(loc):
     """Expand 'Houston' → {'houston','tx','texas','houston tx','houston, tx','houston, texas'} for fuzzy matching."""
     if not loc: return set()
     base = loc.lower().strip()
     aliases = {base}
+    # "Austin, TX" / "Austin, Texas": the city with its state, in every spelling postings use.
+    m = re.match(r"^([a-z .'-]+?),\s*([a-z .]+)$", base)
+    st = _state_of(base) if m else None
+    if m and st:
+        city = m.group(1).strip()
+        aliases |= {f'{city}, {st[0]}', f'{city} {st[0]}', f'{city}, {st[1]}', f'{city} {st[1]}'}
     # If base is a known city, add CITY+STATE combos only — never bare state
     # (otherwise 'Houston' would match 'Dallas, TX' which is wrong).
     state = US_CITY_STATE.get(base)
@@ -1332,15 +1361,37 @@ def relevance_score(job, query_words, location, aliases):
 
 # ── LOCATION-AWARE SOURCES (only fire when a location is given) ─────────────
 
+_JSEARCH_CACHE, _JSEARCH_LOCK = {}, threading.Lock()
+JSEARCH_CACHE_SECONDS = 12 * 3600     # the free plan allows 200 requests a month: reuse a search for 12 hours
+
+
 def src_jsearch_local(query, location):
-    """JSearch — by far the best for US local jobs across all industries."""
+    """JSearch — by far the best for US local jobs across all industries. Both pages are
+    fetched at once (one after the other could miss the 25-second deadline), and a search
+    is reused for 12 hours so the morning scan and Live Jobs share it."""
     if not JSEARCH_KEY: return []
+    key = (_norm(query), _norm(location))
+    with _JSEARCH_LOCK:
+        hit = _JSEARCH_CACHE.get(key)
+        if hit and time.time() - hit[0] < JSEARCH_CACHE_SECONDS:
+            return [dict(j) for j in hit[1]]
+    out = _jsearch_local_fetch(query, location)
+    if out:
+        with _JSEARCH_LOCK:
+            if len(_JSEARCH_CACHE) > 200:
+                _JSEARCH_CACHE.clear()
+            _JSEARCH_CACHE[key] = (time.time(), out)
+    return [dict(j) for j in out]
+
+
+def _jsearch_local_fetch(query, location):
     hdrs = {'X-RapidAPI-Key': JSEARCH_KEY, 'X-RapidAPI-Host': 'jsearch.p.rapidapi.com', 'Accept': 'application/json'}
     q = (query + ' in ' + location).strip() if location else query
     out = []
-    for page in range(1, 3):
-        raw = http_get(f'https://jsearch.p.rapidapi.com/search?query={quote_plus(q)}&page={page}&num_pages=1&date_posted=month',
-                       headers=hdrs, timeout=18)
+    pages = parallel_map(lambda page: http_get(
+        f'https://jsearch.p.rapidapi.com/search?query={quote_plus(q)}&page={page}&num_pages=1&date_posted=month',
+        headers=hdrs, timeout=18), [1, 2], seconds=20)
+    for raw in pages:
         if not raw: continue
         try:
             for j in json.loads(raw).get('data', [])[:25]:
@@ -1361,6 +1412,7 @@ def src_jsearch_local(query, location):
                     'posted': (j.get('job_posted_at_datetime_utc','') or '')[:10],
                     'snippet': clean(j.get('job_description',''))[:240],
                     'salary': sal,
+                    'text': clean(j.get('job_description', ''))[:8000],
                 })
         except Exception: pass
     return out
@@ -1378,7 +1430,8 @@ def src_themuse_local(query, location):
                 'url': (j.get('refs',{}) or {}).get('landing_page',''),
                 'source': 'TheMuse',
                 'posted': (j.get('publication_date','') or '')[:10],
-                'snippet': clean(j.get('contents',''))[:240], 'salary': ''})
+                'snippet': clean(j.get('contents',''))[:240], 'salary': '',
+                'text': clean(j.get('contents', ''))[:8000]})
     except Exception: pass
     return out
 
@@ -1410,8 +1463,10 @@ def src_usajobs_local(query, location):
 
 
 # ── STRUCTURED JOB FETCHER (returns dicts for the live Jobs Feed UI) ────────
-def fetch_structured_jobs(query, limit=50, location=''):
-    """Fetch real job postings as structured dicts. Used by /live-jobs and alerts.
+def fetch_structured_jobs(query, limit=50, location='', full=False):
+    """Fetch real job postings as structured dicts. Used by /live-jobs, alerts and the job agent.
+    full=True keeps each posting's whole text in 'text' (the agent tailors to it); otherwise
+    only the 240-character snippet is returned.
     Auto-extracts location from query if location is empty. Uses alias-based fuzzy
     matching so 'Houston' matches 'Houston, TX', 'TX', 'Texas', etc."""
     # Smart query parsing: if no location given, try to extract one from the query
@@ -1428,8 +1483,11 @@ def fetch_structured_jobs(query, limit=50, location=''):
         if key in seen or not key[0]: return
         # Junk filter: drop company directory pages, homepages, aggregator landings
         if not is_real_job_title(j.get('title','')): return
-        # Smart location filter: use alias set to match city/state/state-abbr
-        if aliases and not location_matches(j.get('location',''), aliases):
+        # Smart location filter: use alias set to match city/state/state-abbr. A source that
+        # searched near the location itself (JSearch, USAJobs) also returns its suburbs
+        # ("Cedar Park" for Austin): those count when they are in the same state.
+        if aliases and not location_matches(j.get('location',''), aliases) and not (
+                j.get('source') in ('JSearch', 'USAJobs') and location_matches_state(j.get('location', ''), location)):
             return
         seen.add(key); jobs.append(j)
 
@@ -1445,7 +1503,8 @@ def fetch_structured_jobs(query, limit=50, location=''):
                  'url': j.get('url',''),'source': 'Remotive',
                  'posted': (j.get('publication_date','') or '')[:10],
                  'snippet': clean(j.get('description',''))[:240],
-                 'salary': j.get('salary','') or ''} for j in json.loads(raw).get('jobs', [])[:25]] if raw else []
+                 'salary': j.get('salary','') or '',
+                 'text': clean(j.get('description', ''))[:8000]} for j in json.loads(raw).get('jobs', [])[:25]] if raw else []
 
     def arbeitnow():
         raw = http_get(f'https://arbeitnow.com/api/job-board-api?search={quote_plus(query)}', headers={'Accept':'application/json'})
@@ -1454,7 +1513,8 @@ def fetch_structured_jobs(query, limit=50, location=''):
         return [{'title': j.get('title',''),'company': j.get('company_name',''),
                  'location': j.get('location','') or 'Remote','url': j.get('url',''),
                  'source': 'Arbeitnow','posted': str(j.get('created_at','') or '')[:10],
-                 'snippet': clean(j.get('description',''))[:240],'salary': ''} for j in rows[:20]]
+                 'snippet': clean(j.get('description',''))[:240],'salary': '',
+                 'text': clean(j.get('description', ''))[:8000]} for j in rows[:20]]
 
     def jobicy():
         raw = http_get(f'https://jobicy.com/api/v2/remote-jobs?count=30&tag={quote_plus(query)}', headers={'Accept':'application/json'})
@@ -1465,7 +1525,8 @@ def fetch_structured_jobs(query, limit=50, location=''):
                         'location': j.get('jobGeo','') or 'Remote','url': j.get('url',''),
                         'source': 'Jobicy','posted': (j.get('pubDate','') or '')[:10],
                         'snippet': clean(j.get('jobDescription',''))[:240],
-                        'salary': (f"${sal_min} - ${j.get('annualSalaryMax','')}") if sal_min else ''})
+                        'salary': (f"${sal_min} - ${j.get('annualSalaryMax','')}") if sal_min else '',
+                        'text': clean(j.get('jobDescription', ''))[:8000]})
         return out
 
     def remoteok():
@@ -1480,14 +1541,15 @@ def fetch_structured_jobs(query, limit=50, location=''):
                         'url': j.get('url','') or f"https://remoteok.com/remote-jobs/{j.get('id','')}",
                         'source': 'RemoteOK','posted': (j.get('date','') or '')[:10],
                         'snippet': clean(j.get('description',''))[:240],
-                        'salary': (f"${sal_min}-${j.get('salary_max','')}") if sal_min else ''})
+                        'salary': (f"${sal_min}-${j.get('salary_max','')}") if sal_min else '',
+                        'text': clean(j.get('description', ''))[:8000]})
         return out
 
     named = [('Remotive', remotive), ('Arbeitnow', arbeitnow), ('Jobicy', jobicy), ('RemoteOK', remoteok),
              ('JSearch', lambda: src_jsearch_local(query, location)),
              ('TheMuse', lambda: src_themuse_local(query, location)),
              ('USAJobs', lambda: src_usajobs_local(query, location)),
-             ('Company boards', lambda: [{k: v for k, v in j.items() if k != 'text'} for j in company_board_jobs(query)]),
+             ('Company boards', lambda: company_board_jobs(query)),
              ('HN Hiring', lambda: src_hn_who_is_hiring(query))]
     counts = {}
     def pull(item):
@@ -1507,9 +1569,11 @@ def fetch_structured_jobs(query, limit=50, location=''):
     for j in jobs:
         j['_score'] = relevance_score(j, query_words, location, aliases)
     jobs.sort(key=lambda j: j.get('_score', 0), reverse=True)
-    # Strip internal score before returning
+    # Strip internal score (and, unless asked for, the full text) before returning
     for j in jobs:
         j.pop('_score', None)
+        if not full:
+            j.pop('text', None)
     return {'jobs': jobs[:limit], 'parsed_location': location, 'parsed_query': query, 'sources': counts}
 
 
@@ -3753,6 +3817,175 @@ def render_template(template_id, struct):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# JOB AGENT — every morning: find matches, propose them, prepare what is approved
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# A profile (one per person) holds a base resume and target titles. Each morning
+# (APEX_AGENT_HOUR, local time; also "Scan now") the agent searches every target,
+# keeps postings whose title is the right role at the right level, scores each
+# against the base resume locally (no model call), and proposes the best
+# `daily_limit` that pass `min_fit`. Nothing costs money until the user approves:
+# then a worker tailors the resume to that posting with the Evidence Engine and
+# writes a cover letter, both fact-checked. The user opens the posting, applies,
+# and marks it applied, which files it (with the kit) in the Tracker. APEX never
+# submits an application itself.
+AGENT_HOUR = int(os.environ.get('APEX_AGENT_HOUR', '7'))
+_AGENT_SCANNING = set()                 # profile ids with a scan in flight
+_AGENT_LOCK = threading.Lock()
+_AGENT_WORKER = {'thread': None}
+
+
+def _local_today():
+    return time.strftime('%Y-%m-%d')
+
+
+def agent_fit(resume, posting, title, domain):
+    """(fit 0-100, matched terms, missing terms) of a posting against a resume, locally (no model).
+    Mostly the share of the skills and tools the posting asks for (apex_domains.MATCH_TERMS,
+    whole words) that the resume shows, the way a recruiter reads it; a little general word
+    overlap breaks ties. Short postings (a snippet) ask for little, so they score on overlap."""
+    hay_p, hay_r = _norm(posting), _norm(resume)
+    terms = apex_domains.MATCH_TERMS.get(domain) or [t.strip() for t in (apex_domains.PACKS.get(domain) or {})
+                                                      .get('vocabulary', '').split(',') if t.strip()]
+    asked = list(dict.fromkeys(t for t in terms if _present(t, hay_p)))
+    matched = [t for t in asked if _present(t, hay_r)]
+    lw, shared = lightweight_match_score(resume, posting, title)
+    lw = lw or 0
+    if len(asked) >= 4:
+        # Postings list whole stacks, so even a strong match covers part of it: the square root
+        # spreads the useful range (25% covered -> 50, 50% -> 71, 80% -> 89).
+        fit = 0.8 * 100 * (len(matched) / len(asked)) ** 0.5 + 0.2 * lw
+    else:
+        fit = lw
+    return max(0, min(100, round(fit))), (matched or shared)[:8], [t for t in asked if t not in matched][:6]
+
+
+def _agent_jobs(target, profile):
+    """Postings for one target title: in the profile's location, plus remote ones when allowed."""
+    jobs = fetch_structured_jobs(target, limit=150, location=profile['location'], full=True)['jobs']
+    if profile['location'] and profile['remote_ok']:
+        jobs += [j for j in fetch_structured_jobs(target, limit=150, location='remote', full=True)['jobs']]
+    return [j for j in jobs if title_matches(j.get('title') or '', target)]
+
+
+def agent_scan(pid, owner=''):
+    """Search, score and propose today's matches for one profile. Returns {found, matched, added}."""
+    prof = store.get_profile(pid, owner=owner)
+    if len(prof['base_resume']) < 100:
+        raise store.StoreError('Add a base resume to this profile first (paste it, or use the one in Launch).')
+    if not prof['targets']:
+        raise store.StoreError('Add at least one target job title to this profile.')
+    with _AGENT_LOCK:
+        if pid in _AGENT_SCANNING:
+            raise store.StoreError('A scan for this profile is already running.')
+        _AGENT_SCANNING.add(pid)
+    try:
+        found, seen, cands = 0, set(), []
+        for target in prof['targets']:
+            domain = apex_domains.detect(target)
+            for j in _agent_jobs(target, prof):
+                found += 1
+                key = store.job_key(j.get('company'), j.get('title'), j.get('url'))
+                if key in seen:
+                    continue
+                seen.add(key)
+                posting = j.get('text') or j.get('snippet') or ''
+                fit, matched, missing = agent_fit(prof['base_resume'], posting, j.get('title'), domain)
+                if fit < prof['min_fit']:
+                    continue
+                cands.append({'title': j.get('title'), 'company': j.get('company'), 'location': j.get('location'),
+                              'url': j.get('url'), 'source': j.get('source'), 'salary': j.get('salary'),
+                              'posted': j.get('posted'), 'posting': posting, 'fit': fit,
+                              'reasons': {'target': target, 'matched': matched, 'missing': missing,
+                                          'full_posting': bool(j.get('text'))}})
+        cands.sort(key=lambda c: (c['fit'], c['reasons']['full_posting']), reverse=True)
+        added = store.add_queue_items(pid, cands[:prof['daily_limit']], owner=owner, day=_local_today())
+        store.mark_scanned(pid, _local_today(), owner=owner)
+        print(f'  [agent] {prof["name"]}: {found} postings, {len(cands)} fit, {added} new proposed', flush=True)
+        return {'found': found, 'matched': len(cands), 'added': added}
+    finally:
+        with _AGENT_LOCK:
+            _AGENT_SCANNING.discard(pid)
+
+
+def agent_prepare(item, owner=''):
+    """Tailor the profile's base resume to one approved posting and write the cover letter."""
+    prof = store.get_profile(item['profile_id'], owner=owner)
+    events = []
+    job_tailor(item['posting'], prof['base_resume'], item['title'], apex_domains.sector(apex_domains.detect(item['title'])),
+               events.append)
+    err = next((e.get('msg') for e in events if e.get('type') == 'error'), None)
+    data = next((e.get('data') for e in events if e.get('type') == 'tailor_data'), None) or {}
+    if err or not data.get('tailored_resume'):
+        raise RuntimeError(err or 'the tailored resume came back empty')
+    letter = cover_letter(item['title'], 'general', data['tailored_resume'], company=item['company'],
+                          posting=item['posting'])
+    return {'resume': data['tailored_resume'], 'cover_letter': letter['letter'], 'letter_withheld': letter['withheld'],
+            'changes': len(data.get('changes') or []), 'gaps': (data.get('gaps') or [])[:8],
+            'score_before': data.get('match_score_before'), 'score_after': data.get('match_score_after')}
+
+
+def agent_worker(owner=''):
+    """Prepare approved items one by one until none is left. One worker at a time."""
+    while True:
+        item = store.claim_approved(owner=owner)
+        if not item:
+            return
+        try:
+            kit = agent_prepare(item, owner)
+            store.update_queue_item(item['id'], owner=owner, status='ready', kit=kit)
+        except Exception as e:
+            store.update_queue_item(item['id'], owner=owner, status='failed', kit={'error': str(e)[:300]})
+            print(f'  [agent] could not prepare {item["title"]} at {item["company"]}: {e}', flush=True)
+
+
+def agent_kick(owner=''):
+    """Start the worker if it is not already running."""
+    with _AGENT_LOCK:
+        t = _AGENT_WORKER['thread']
+        if t and t.is_alive():
+            return False
+        t = threading.Thread(target=agent_worker, args=(owner,), daemon=True)
+        _AGENT_WORKER['thread'] = t
+        t.start()
+        return True
+
+
+def agent_mark_applied(qid, owner=''):
+    """File an applied job in the Tracker with its kit; the queue item points at it."""
+    item = store.get_queue_item(qid, owner=owner)
+    if item['status'] not in ('ready', 'proposed', 'failed'):
+        raise store.StoreError('Only a prepared (or proposed) job can be marked applied.')
+    app, _ = store.create_application({'company': item['company'] or '(unknown company)', 'role': item['title'],
+                                       'url': item['url'], 'location': item['location'], 'status': 'applied',
+                                       'source': 'agent'}, owner=owner)
+    kit = item['kit'] or {}
+    if kit.get('resume'):
+        store.add_artifact(app['id'], 'tailored_resume', kit['resume'], owner=owner)
+    if kit.get('cover_letter'):
+        store.add_artifact(app['id'], 'cover_letter', kit['cover_letter'], owner=owner)
+    store.update_queue_item(qid, owner=owner, status='applied', application_id=app['id'])
+    return app
+
+
+def job_agent_loop():
+    """Local only: each morning after AGENT_HOUR, scan every active profile once."""
+    store.reset_stuck_preparing()
+    agent_kick()                                  # approvals left from before a restart
+    while True:
+        try:
+            if int(time.strftime('%H')) >= AGENT_HOUR and not AI_PROBLEM:
+                for prof in store.list_profiles(active_only=True):
+                    if prof.get('last_scan') != _local_today():
+                        try:
+                            agent_scan(prof['id'])
+                        except Exception as e:
+                            print(f'  [agent] scan for {prof["name"]} failed: {e}', flush=True)
+        except Exception as e:
+            print(f'  [agent] {e}', flush=True)
+        time.sleep(600)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # JOB ALERTS — SMTP via Gmail. Persistent subscriptions.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -4521,6 +4754,10 @@ class Handler(BaseHTTPRequestHandler):
     def _api(self, method, path, qs, body):
         b = body if isinstance(body, dict) else {}
         q = lambda k: (qs.get(k) or [''])[0]
+        if path.startswith('/api/agent'):
+            if HOSTED:
+                self._send_json(403, {'error': 'The job agent runs only in your local APEX.'}); return
+            return self._agent_api(method, path, q, b)
         try:
             if method == 'GET':
                 if path == '/api/applications':
@@ -4547,6 +4784,52 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(201, {'artifact_id': aid}); return
                 if path == '/api/applications/followup-sent':
                     self._send_json(200, {'application': store.record_followup_sent(b.get('id', ''), owner=self.owner)}); return
+            self._send_json(404, {'error': 'not found'})
+        except store.StoreError as e:
+            self._send_json(404 if 'not found' in str(e) else 400, {'error': str(e)})
+        except Exception as e:
+            traceback.print_exc()
+            self._send_json(500, {'error': f'internal error ({type(e).__name__}); see the server window'})
+
+    def _agent_api(self, method, path, q, b):
+        """The job agent (local only): profiles, scans, the apply queue and approvals."""
+        ids = lambda: [str(x) for x in (b.get('ids') or [])] if isinstance(b.get('ids'), list) else []
+        try:
+            if method == 'GET' and path == '/api/agent/profiles':
+                self._send_json(200, {'profiles': store.list_profiles(), 'scan_hour': AGENT_HOUR}); return
+            if method == 'GET' and path == '/api/agent/queue':
+                pid = q('profile')
+                self._send_json(200, {'items': store.list_queue(pid), 'scanning': pid in _AGENT_SCANNING,
+                                      'preparing': bool(_AGENT_WORKER['thread'] and _AGENT_WORKER['thread'].is_alive())}); return
+            if method == 'GET' and path == '/api/agent/item':
+                self._send_json(200, {'item': store.get_queue_item(q('id'))}); return
+            if method == 'POST' and path == '/api/agent/profiles':
+                self._send_json(200, {'profile': store.save_profile(b)}); return
+            if method == 'POST' and path == '/api/agent/profiles/delete':
+                store.delete_profile(str(b.get('id') or ''))
+                self._send_json(200, {'deleted': True}); return
+            if method == 'POST' and path == '/api/agent/scan':
+                pid = str(b.get('profile') or '')
+                store.get_profile(pid)                         # 404 before starting anything
+                if pid in _AGENT_SCANNING:
+                    self._send_json(200, {'started': False, 'msg': 'Already scanning'}); return
+                def run():
+                    try:
+                        agent_scan(pid)
+                    except Exception as e:
+                        print(f'  [agent] scan failed: {e}', flush=True)
+                threading.Thread(target=run, daemon=True).start()
+                self._send_json(200, {'started': True}); return
+            if method == 'POST' and path == '/api/agent/approve':
+                if AI_PROBLEM:
+                    self._send_json(503, {'error': AI_PROBLEM, 'setup': True}); return
+                n = store.set_queue_status(ids(), 'approved', only_from=('proposed', 'failed', 'skipped'))
+                agent_kick()
+                self._send_json(200, {'approved': n}); return
+            if method == 'POST' and path == '/api/agent/skip':
+                self._send_json(200, {'skipped': store.set_queue_status(ids(), 'skipped', only_from=('proposed', 'ready', 'failed'))}); return
+            if method == 'POST' and path == '/api/agent/applied':
+                self._send_json(200, {'application': agent_mark_applied(str(b.get('id') or ''))}); return
             self._send_json(404, {'error': 'not found'})
         except store.StoreError as e:
             self._send_json(404 if 'not found' in str(e) else 400, {'error': str(e)})
@@ -5058,6 +5341,7 @@ def run():
     smtp_ok = bool(smtp_cfg['user'] and smtp_cfg['pass'])
     if not HOSTED:
         threading.Thread(target=alerts_background_loop, daemon=True).start()
+        threading.Thread(target=job_agent_loop, daemon=True).start()
     else:
         threading.Thread(target=purge_loop, daemon=True).start()
     bar = '=' * 64

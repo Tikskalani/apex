@@ -50,6 +50,13 @@ When it finishes, each tab that has new results gets a dot. Start with **Resume 
 
 ## 4. Every tab
 
+APEX is built for two fields: **AI and software engineering** (including ML and data roles) and **physical therapy**. For a target title in either field it reads a field guide of what hiring managers there screen for, so its review, rewrites and scoring follow that field's standards.
+
+**Focus mode** (on by default) shows only Home, Resume X-Ray, PDF Templates, Apply Queue, Live Jobs, Cover Letter and Tracker. The **⋯ More tools** button at the bottom of the left bar shows the rest (Market Intel, Gap Report, Interview, LinkedIn and the single tools). In focus mode a run skips the interview, LinkedIn, outreach and velocity tabs, so it is faster and cheaper.
+
+**Apply Queue (the job agent).** Make a profile for each person: a name, the job titles to look for, a location, and the base resume you are happy with. Every morning (after 7 am, while APEX is running) and whenever you press **Scan now**, APEX searches for new postings for each title, keeps the ones for the right role at the right level, and lists the best matches with a fit score and which of the posting's skills you show. Nothing costs money until you approve: press **Approve** (or **Approve all**) and APEX tailors your resume to that posting and writes a cover letter, both fact-checked, about 30¢ each. Then **Open posting**, apply with **Resume PDF** and **Copy cover letter**, and press **Mark applied**: the job goes into the Tracker with its resume and letter. APEX never submits an application for you, and never proposes the same job twice.
+
+
 | Tab | What you get |
 |---|---|
 | **Home** | Start here; shows the setup card if no AI key is set, and the cost of your last run. |

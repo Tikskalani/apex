@@ -1357,6 +1357,7 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
       <button class="dock-item core" data-view="resume" data-tip="Resume X-Ray" aria-label="Resume X-Ray"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2 H6 A2 2 0 0 0 4 4 V20 A2 2 0 0 0 6 22 H18 A2 2 0 0 0 20 20 V8 Z M14 2 V8 H20 M9 13 H15 M9 17 H13"/></svg></button>
       <button class="dock-item" data-view="gap" data-tip="Gap Report" aria-label="Gap Report"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3 V21 H21 M7 14 L10 11 L14 15 L20 9"/></svg></button>
       <button class="dock-item core" data-view="templates" data-tip="PDF Templates" aria-label="PDF Templates"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></button>
+      <button class="dock-item core local-only" data-view="queue" data-tip="Apply Queue" aria-label="Apply Queue"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11 L12 14 L22 4 M21 12 V19 A2 2 0 0 1 19 21 H5 A2 2 0 0 1 3 19 V5 A2 2 0 0 1 5 3 H16"/></svg></button>
       <button class="dock-item core" data-view="jobs" data-tip="Live Jobs" aria-label="Live Jobs"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21 V5 a2 2 0 0 0 -2 -2 H10 a2 2 0 0 0 -2 2 V21"/></svg></button>
       <button class="dock-item local-only" data-view="alerts" data-tip="Job Alerts" aria-label="Job Alerts"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8 a6 6 0 0 1 12 0 c0 7 3 9 3 9 H3 s3 -2 3 -9 M10 21 a2 2 0 0 0 4 0"/></svg></button>
       <div class="dock-divider"></div>
@@ -1790,6 +1791,45 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
         </section>
 
         <!-- ═══ TRACKER ═══ -->
+        <section class="view" id="view-queue">
+          <div class="view-header">
+            <div class="view-eyebrow">Job agent</div>
+            <h1 class="view-title">Apply queue</h1>
+            <p class="view-subtitle">Every morning APEX searches for new jobs that fit each profile and lists the best ones here. Approve the ones you want: APEX tailors the resume to each posting and writes a cover letter, both fact-checked (about 30¢ each). Then open the posting, apply, and mark it applied. APEX never submits an application for you.</p>
+          </div>
+          <div class="card" style="margin-bottom:var(--s4)">
+            <div style="display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center">
+              <label for="ag-profile" style="font-size:13px;color:var(--fg-2)">Profile</label>
+              <select id="ag-profile" aria-label="Profile" style="min-width:180px"></select>
+              <button class="btn btn-sm" data-action="agEdit">Edit profile</button>
+              <button class="btn btn-sm" data-action="agNew">New profile</button>
+              <button class="btn btn-primary btn-sm" data-action="agScan" id="ag-scan">Scan now</button>
+            </div>
+            <div id="ag-status" role="status" style="margin-top:var(--s3);font-size:13px;color:var(--fg-2)"></div>
+          </div>
+          <div class="card" id="ag-editor" hidden style="margin-bottom:var(--s4)">
+            <div class="card-h"><h3 id="ag-editor-title">Profile</h3></div>
+            <div style="display:grid;gap:var(--s3);grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+              <label>Name <input id="ag-name" placeholder="e.g. Me, or Partner (PT)"></label>
+              <label>Target job titles (comma-separated) <input id="ag-targets" placeholder="AI Engineer, Backend Engineer"></label>
+              <label>Location <input id="ag-location" placeholder="Houston, TX (blank: anywhere)"></label>
+              <label>Jobs proposed per day <input id="ag-limit" type="number" min="1" max="50" value="30"></label>
+              <label>Minimum fit (0-90) <input id="ag-minfit" type="number" min="0" max="90" value="35"></label>
+              <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-remote" checked> Include remote jobs</label>
+              <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-active" checked> Scan every morning</label>
+            </div>
+            <label for="ag-resume" style="display:block;margin-top:var(--s3)">Base resume (the one every application is tailored from)</label>
+            <textarea id="ag-resume" rows="8" placeholder="Paste the resume you are happy with, or use the one in Launch"></textarea>
+            <div style="display:flex;gap:var(--s2);flex-wrap:wrap;margin-top:var(--s3)">
+              <button class="btn btn-sm" data-action="agUseResume">Use my current resume</button>
+              <button class="btn btn-primary btn-sm" data-action="agSave">Save profile</button>
+              <button class="btn btn-sm" data-action="agDelete" id="ag-delete">Delete profile</button>
+              <button class="btn btn-sm" data-action="agCloseEditor">Close</button>
+            </div>
+          </div>
+          <div id="ag-list"><div class="empty">Create a profile to start: a name, the job titles you want, and your base resume.</div></div>
+        </section>
+
         <section class="view" id="view-tracker">
           <div class="view-header">
             <div class="view-eyebrow">18 · Pipeline</div>
@@ -2205,6 +2245,168 @@ function dockLabel(b) {
     (due ? ` (${due.textContent} follow-up${due.textContent === '1' ? '' : 's'} due)` : ''));
 }
 
+// ─── Job agent: profiles and the apply queue ───
+const AG = { profiles: [], pid: '', items: [], timer: null };
+
+async function agLoad() {
+  try {
+    const j = await api('/api/agent/profiles');
+    AG.profiles = j.profiles || [];
+    let last = ''; try { last = localStorage.getItem('apex.agentProfile') || ''; } catch (e) {}
+    AG.pid = (AG.profiles.find(p => p.id === (AG.pid || last)) || AG.profiles[0] || {}).id || '';
+    $('ag-profile').innerHTML = AG.profiles.map(p => `<option value="${escHtml(p.id)}"${p.id === AG.pid ? ' selected' : ''}>${escHtml(p.name)}</option>`).join('')
+      || '<option value="">No profiles yet</option>';
+    $('ag-scan').disabled = !AG.pid;
+    if (!AG.profiles.length) { agEditor(null); $('ag-list').innerHTML = '<div class="empty">Create a profile to start: a name, the job titles you want, and your base resume.</div>'; return; }
+    await agQueue();
+  } catch (e) { $('ag-status').textContent = 'Could not load the job agent: ' + e.message; }
+}
+$('ag-profile').addEventListener('change', ev => {
+  AG.pid = ev.target.value;
+  try { localStorage.setItem('apex.agentProfile', AG.pid); } catch (e) {}
+  agQueue();
+});
+
+function agEditor(p) {
+  $('ag-editor').hidden = false;
+  $('ag-editor-title').textContent = p ? 'Edit ' + p.name : 'New profile';
+  $('ag-name').value = p ? p.name : '';
+  $('ag-targets').value = p ? (p.targets || []).join(', ') : ($('job-title').value || '');
+  $('ag-location').value = p ? p.location : '';
+  $('ag-limit').value = p ? p.daily_limit : 30;
+  $('ag-minfit').value = p ? p.min_fit : 35;
+  $('ag-remote').checked = p ? p.remote_ok : true;
+  $('ag-active').checked = p ? p.active : true;
+  $('ag-resume').value = p ? p.base_resume : latestResume();
+  $('ag-delete').hidden = !p;
+  $('ag-editor').dataset.id = p ? p.id : '';
+  $('ag-name').focus();
+}
+
+async function agSave(btn) {
+  btn.disabled = true;
+  try {
+    const j = await api('/api/agent/profiles', { id: $('ag-editor').dataset.id || undefined, name: $('ag-name').value,
+      targets: $('ag-targets').value, location: $('ag-location').value, daily_limit: $('ag-limit').value,
+      min_fit: $('ag-minfit').value, remote_ok: $('ag-remote').checked, active: $('ag-active').checked,
+      base_resume: $('ag-resume').value });
+    AG.pid = j.profile.id;
+    try { localStorage.setItem('apex.agentProfile', AG.pid); } catch (e) {}
+    $('ag-editor').hidden = true;
+    toast('Profile saved', 'ok');
+    await agLoad();
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+
+async function agDelete() {
+  const id = $('ag-editor').dataset.id; if (!id) return;
+  if (!window.confirm('Delete this profile and its queue? Applications already in the Tracker stay.')) return;
+  try { await api('/api/agent/profiles/delete', { id }); AG.pid = ''; $('ag-editor').hidden = true; await agLoad(); }
+  catch (e) { toast(e.message, 'err'); }
+}
+
+async function agScan(btn) {
+  if (!AG.pid) return;
+  btn.disabled = true;
+  try { await api('/api/agent/scan', { profile: AG.pid }); $('ag-status').textContent = 'Scanning job boards…'; agPoll(); }
+  catch (e) { toast(e.message, 'err'); btn.disabled = false; }
+}
+
+function agPoll() { clearTimeout(AG.timer); AG.timer = setTimeout(agQueue, 4000); }
+
+async function agQueue() {
+  if (!AG.pid) return;
+  try {
+    const j = await api('/api/agent/queue?profile=' + encodeURIComponent(AG.pid));
+    AG.items = j.items || [];
+    const prof = AG.profiles.find(p => p.id === AG.pid) || {};
+    const n = st => AG.items.filter(i => i.status === st).length;
+    $('ag-status').textContent = j.scanning ? 'Scanning job boards…'
+      : `${n('proposed')} to review · ${n('approved') + n('preparing')} being prepared · ${n('ready')} ready to apply · ${n('applied')} applied`
+        + (prof.last_scan ? ` · last scan ${prof.last_scan}` : ' · not scanned yet');
+    $('ag-scan').disabled = !!j.scanning;
+    agRender();
+    if (j.scanning || j.preparing || n('approved') + n('preparing')) agPoll();
+  } catch (e) { $('ag-status').textContent = 'Could not load the queue: ' + e.message; }
+}
+
+function agCard(i) {
+  const r = i.reasons || {}, k = i.kit || {};
+  const meta = [i.company, i.location, i.salary, i.posted && 'posted ' + i.posted, i.source].filter(Boolean).map(escHtml).join(' · ');
+  const why = (arr(r.matched).length ? `<div style="font-size:12.5px;color:var(--green-soft)">You show: ${escHtml(arr(r.matched).join(', '))}</div>` : '')
+    + (arr(r.missing).length ? `<div style="font-size:12.5px;color:var(--fg-3)">Not on your resume: ${escHtml(arr(r.missing).join(', '))}</div>` : '');
+  const link = i.url ? `<a class="copy-btn" href="${escHtml(i.url)}" target="_blank" rel="noopener noreferrer">Open posting</a>` : '';
+  let act = '';
+  if (i.status === 'proposed') act = `<button class="btn btn-primary btn-sm" data-action="agApprove" data-arg="${escHtml(i.id)}">Approve</button><button class="btn btn-sm" data-action="agSkip" data-arg="${escHtml(i.id)}">Skip</button>${link}`;
+  else if (i.status === 'approved' || i.status === 'preparing') act = `<span class="spinner"></span><span style="font-size:13px">Tailoring the resume and writing the cover letter…</span>${link}`;
+  else if (i.status === 'ready') act = `${link}<button class="copy-btn" data-action="agPdf" data-arg="${escHtml(i.id)}">Resume PDF</button><button class="copy-btn" data-action="agCopy" data-arg="${escHtml(i.id)}" data-what="resume">Copy resume</button>`
+    + (k.cover_letter ? `<button class="copy-btn" data-action="agCopy" data-arg="${escHtml(i.id)}" data-what="cover_letter">Copy cover letter</button>` : '')
+    + `<button class="btn btn-primary btn-sm" data-action="agApplied" data-arg="${escHtml(i.id)}">Mark applied</button><button class="btn btn-sm" data-action="agSkip" data-arg="${escHtml(i.id)}">Skip</button>`;
+  else if (i.status === 'failed') act = `<span style="font-size:13px;color:var(--red-soft)">Could not prepare: ${escHtml(k.error || 'unknown error')}</span><button class="btn btn-sm" data-action="agApprove" data-arg="${escHtml(i.id)}">Try again</button>`;
+  else if (i.status === 'applied') act = `<span style="font-size:13px;color:var(--green-soft)">Applied · in the Tracker</span>${link}`;
+  const ready = i.status === 'ready' ? `<div style="font-size:12.5px;color:var(--fg-2);margin-top:6px">${k.changes || 0} verified edit${k.changes === 1 ? '' : 's'} for this posting`
+    + (k.score_before != null && k.score_after != null ? ` · fit ${k.score_before} → ${k.score_after}` : '')
+    + (arr(k.gaps).length ? ` · not shown (never added): ${escHtml(arr(k.gaps).slice(0, 5).join(', '))}` : '')
+    + (k.letter_withheld && arr(k.letter_withheld).length ? ' · cover letter withheld by the fact check' : '') + '</div>' : '';
+  return `<div class="block" data-qid="${escHtml(i.id)}">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline">
+      <div><b>${escHtml(i.title)}</b><div style="font-size:12.5px;color:var(--fg-2)">${meta}</div></div>
+      <span class="match-badge ${i.fit >= 65 ? 'strong' : i.fit >= 45 ? 'good' : 'weak'}"><span class="pct">${toScore(i.fit)}% fit</span></span>
+    </div>${why}${ready}
+    <div style="display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center;margin-top:8px">${act}</div>
+  </div>`;
+}
+
+function agRender() {
+  const groups = [['ready', 'Ready to apply'], ['preparing', 'Being prepared'], ['approved', 'Approved'], ['proposed', 'New matches to review'],
+                  ['failed', 'Could not prepare'], ['applied', 'Applied']];
+  const proposed = AG.items.filter(i => i.status === 'proposed').length;
+  const html = groups.map(([st, label]) => {
+    const items = AG.items.filter(i => i.status === st);
+    if (!items.length) return '';
+    const extra = st === 'proposed' ? `<button class="btn btn-primary btn-sm" data-action="agApproveAll">Approve all ${proposed}</button>` : '';
+    return `<div class="card" style="margin-bottom:var(--s4)"><div class="card-h"><h3>${label}</h3><span class="h-sub">${items.length}</span>${extra}</div>${items.map(agCard).join('')}</div>`;
+  }).join('');
+  $('ag-list').innerHTML = html || '<div class="empty">No matches yet. Press Scan now, or wait for the morning scan.</div>';
+}
+
+async function agAct(path, ids, btn) {
+  if (btn) btn.disabled = true;
+  try { await api(path, { ids }); await agQueue(); }
+  catch (e) { toast(e.message, 'err'); if (btn) btn.disabled = false; }
+}
+
+async function agApproveAll(btn) {
+  const ids = AG.items.filter(i => i.status === 'proposed').map(i => i.id);
+  if (!ids.length) return;
+  if (!window.confirm(`Approve all ${ids.length}? APEX will tailor a resume and write a cover letter for each (about $${(ids.length * 0.3).toFixed(2)} in AI usage).`)) return;
+  await agAct('/api/agent/approve', ids, btn);
+}
+
+async function agItem(id) { return (await api('/api/agent/item?id=' + encodeURIComponent(id))).item; }
+
+async function agCopy(btn) {
+  try { const it = await agItem(btn.dataset.arg); copyText((it.kit || {})[btn.dataset.what] || ''); }
+  catch (e) { toast(e.message, 'err'); }
+}
+
+async function agPdf(btn) {
+  try {
+    const it = await agItem(btn.dataset.arg);
+    const { struct } = await parseResumeText((it.kit || {}).resume || '');
+    const st = Object.assign({}, struct);
+    if (!st.name && state.resumeStruct) st.name = state.resumeStruct.struct.name;
+    await atsExport('pdf', st, 'tailored_' + slugTag(it.company || 'job'), btn);
+  } catch (e) { toast('Could not export: ' + e.message, 'err'); }
+}
+
+async function agApplied(btn) {
+  btn.disabled = true;
+  try { await api('/api/agent/applied', { id: btn.dataset.arg }); toast('Marked applied and added to the Tracker', 'ok'); await agQueue(); }
+  catch (e) { toast(e.message, 'err'); btn.disabled = false; }
+}
+
 // ─── Delegated actions ───
 // The page's Content-Security-Policy forbids inline on*= handlers, so every
 // clickable control declares data-action (+ data-arg) and is routed here.
@@ -2245,6 +2447,19 @@ const ACTIONS = {
   verDelete:   el => versionDelete(el.dataset.arg),
   setupOpen:   () => switchTab('home'),
   toggleTools: () => setFocus(!document.body.classList.contains('focus')),
+  agEdit:      () => agEditor(AG.profiles.find(p => p.id === AG.pid) || null),
+  agNew:       () => agEditor(null),
+  agCloseEditor: () => { $('ag-editor').hidden = true; },
+  agUseResume: () => { $('ag-resume').value = latestResume(); },
+  agSave:      el => agSave(el),
+  agDelete:    () => agDelete(),
+  agScan:      el => agScan(el),
+  agApprove:   el => agAct('/api/agent/approve', [el.dataset.arg], el),
+  agApproveAll: el => agApproveAll(el),
+  agSkip:      el => agAct('/api/agent/skip', [el.dataset.arg], el),
+  agApplied:   el => agApplied(el),
+  agCopy:      el => agCopy(el),
+  agPdf:       el => agPdf(el),
 };
 document.addEventListener('click', ev => {
   const el = ev.target.closest('[data-action]');
@@ -2271,6 +2486,7 @@ function switchTab(view) {
   clearNew(view);
   if (view === 'templates') initTemplatesTab();
   if (view === 'tracker') loadPipeline();
+  if (view === 'queue') agLoad();
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   document.querySelector('.canvas').scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
 }

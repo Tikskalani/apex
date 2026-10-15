@@ -105,6 +105,44 @@ PACKS = {
 }
 
 
+# Skills and tools a posting in the field may ask for: the job agent's fit score is the share
+# of these that a posting asks for and the resume shows (whole words). Broader than the
+# prompt vocabulary on purpose: it has to recognise what a posting wants.
+MATCH_TERMS = {
+    AI_SWE: [
+        # AI / ML
+        'LLM', 'large language models', 'generative AI', 'AI agents', 'agentic', 'RAG', 'embeddings', 'vector database', 'pgvector', 'Pinecone', 'evals', 'prompt engineering',
+        'fine-tuning', 'guardrails', 'tool use', 'function calling', 'MCP', 'OpenAI', 'Anthropic', 'Claude', 'GPT',
+        'LangChain', 'LlamaIndex', 'Hugging Face', 'PyTorch', 'TensorFlow', 'scikit-learn', 'XGBoost',
+        'machine learning', 'deep learning', 'NLP', 'computer vision', 'speech recognition', 'recommendation',
+        'MLOps', 'model serving', 'inference', 'feature store', 'A/B testing', 'experimentation',
+        # languages and frameworks
+        'Python', 'TypeScript', 'JavaScript', 'Go', 'Golang', 'Java', 'Kotlin', 'C++', 'Rust', 'Scala', 'Ruby',
+        'SQL', 'FastAPI', 'Django', 'Flask', 'Node.js', 'Express', 'React', 'Next.js', 'Vue', 'GraphQL', 'REST',
+        'gRPC', 'asyncio', 'microservices',
+        # data and infrastructure
+        'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'Elasticsearch', 'Kafka', 'Spark', 'Airflow', 'dbt',
+        'Snowflake', 'Databricks', 'BigQuery', 'data pipelines', 'ETL', 'Supabase', 'Prisma',
+        'AWS', 'GCP', 'Azure', 'Docker', 'Kubernetes', 'Terraform', 'Linux', 'nginx', 'serverless', 'Vercel',
+        'CI/CD', 'GitHub Actions', 'observability', 'distributed systems', 'system design',
+        'authentication', 'webhooks', 'unit tests', 'pytest',
+        'integration tests', 'code review', 'Git', 'Twilio', 'telephony', 'mentoring',
+    ],
+    PHYSICAL_THERAPY: [
+        'DPT', 'physical therapist license', 'BLS', 'CPR', 'ACLS', 'outpatient', 'inpatient',
+        'acute care', 'ICU', 'skilled nursing', 'SNF', 'home health', 'pediatrics', 'pediatric', 'geriatrics', 'neuro',
+        'neurologic', 'stroke', 'orthopedic', 'orthopedics', 'sports', 'spine', 'vestibular', 'pelvic health',
+        'cardiopulmonary', 'post-operative', 'post-op', 'ACL', 'total joint', 'manual therapy', 'therapeutic exercise',
+        'dry needling', 'gait training', 'balance', 'falls prevention', 'modalities', 'aquatic therapy',
+        'home exercise program', 'patient education', 'plan of care', 'discharge planning', 'DME',
+        'EMR', 'WebPT', 'Epic', 'Net Health', 'Raintree', 'Medicare', 'productivity', 'caseload',
+        'FOTO', 'OCS', 'SCS', 'NCS', 'GCS', 'PCS', 'CSCS', 'McKenzie', 'Graston', 'ASTYM', 'LSVT',
+        'clinical instructor', 'mentorship', 'new grad', 'residency', 'fellowship', 'interdisciplinary', 'PRN',
+        'school-based', 'early mobility',
+    ],
+}
+
+
 def brief(domain):
     """The text the engine reads for a pack: the screening guide, the vocabulary and example lines."""
     p = PACKS.get(domain)

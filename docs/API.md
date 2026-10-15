@@ -394,6 +394,20 @@ against that line's role in `original`. Keywords are never woven in; they come b
 
 ### Local-only routes (403 in hosted mode)
 
+The job agent (`/api/agent/*`, JSON, local only):
+
+| Method | Path | Body / query | Response |
+|---|---|---|---|
+| GET | `/api/agent/profiles` | | `{"profiles": [{id, name, base_resume, targets, location, remote_ok, daily_limit, min_fit, active, last_scan}], "scan_hour"}` |
+| POST | `/api/agent/profiles` | `id` (to update), `name` (required), `targets` (list or comma-separated, up to 6), `base_resume`, `location`, `remote_ok`, `daily_limit` (1-50, 30), `min_fit` (0-90, 35), `active` | `{"profile"}` |
+| POST | `/api/agent/profiles/delete` | `id` | `{"deleted": true}` (its queue goes with it; Tracker rows stay) |
+| POST | `/api/agent/scan` | `profile` | `{"started": true}`; the scan runs in the background |
+| GET | `/api/agent/queue` | `?profile=` | `{"items": [{id, title, company, location, url, source, salary, posted, posting (first 400 chars), fit, reasons {target, matched, missing}, status, kit, application_id, scanned_on}], "scanning", "preparing"}`. Status: `proposed`, `approved`, `preparing`, `ready`, `applied`, `skipped`, `failed` |
+| GET | `/api/agent/item` | `?id=` | `{"item"}` with the full posting and kit `{resume, cover_letter, letter_withheld, changes, gaps, score_before, score_after}` or `{error}` |
+| POST | `/api/agent/approve` | `ids` | `{"approved": n}` (from proposed, failed or skipped); starts preparing. `503` without an AI key |
+| POST | `/api/agent/skip` | `ids` | `{"skipped": n}` |
+| POST | `/api/agent/applied` | `id` | `{"application"}`: created in the Tracker (status applied, source `agent`) with the tailored resume and cover letter as artifacts |
+
 | Route | Request fields | Response |
 |---|---|---|
 | `/alerts/subscribe` | `email`, `jobTitle` (both required), `location`, `sector`, `keywords`, `resumeSummary`, `frequency` (`instant` 30 min, `hourly`, `daily`; anything else is `daily`) | `{"subscription", "smtp_configured"}`. Stored in `alerts.json`. If SMTP is set, sends a confirmation and starts a scan (unless one is running). |

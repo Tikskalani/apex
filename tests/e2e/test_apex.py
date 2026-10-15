@@ -11,7 +11,7 @@ import pytest
 from playwright.sync_api import expect
 
 MARGIN_PT = 0.75 * 72        # ATS.MARGIN in index.html
-EXPECTED_TABS = ['Home', 'Market Intel', 'Resume X-Ray', 'Gap Report', 'PDF Templates', 'Live Jobs',
+EXPECTED_TABS = ['Home', 'Market Intel', 'Resume X-Ray', 'Gap Report', 'PDF Templates', 'Apply Queue', 'Live Jobs',
                  'Job Alerts', 'Cover Letter', 'Interview', 'LinkedIn', 'Outreach', 'Velocity', 'Bullets',
                  'Tailor', 'Match', 'Weakness X-Ray', 'Negotiate', 'Career Bridge', 'Tracker']
 PLACEHOLDERS = ['Your Name', 'Recent Company', 'Senior PM', 'TechCorp', 'Skill 1']
@@ -99,7 +99,7 @@ def test_1_smoke(probe):
     assert tabs == EXPECTED_TABS
     # Focus mode: only the core tools show until "More tools".
     shown = page.eval_on_selector_all('.dock-item[data-view]', 'els => els.filter(e => e.offsetParent).map(e => e.dataset.tip)')
-    assert shown == ['Home', 'Resume X-Ray', 'PDF Templates', 'Live Jobs', 'Cover Letter', 'Tracker'], shown
+    assert shown == ['Home', 'Resume X-Ray', 'PDF Templates', 'Apply Queue', 'Live Jobs', 'Cover Letter', 'Tracker'], shown
 
     page.wait_for_timeout(500)   # let late script/font loads report
     probe.assert_clean()
