@@ -1817,10 +1817,30 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
               <label>Location <input id="ag-location" placeholder="Houston, TX (blank: anywhere)"></label>
               <label>Jobs proposed per day <input id="ag-limit" type="number" min="1" max="50" value="30"></label>
               <label>Minimum fit (0-90) <input id="ag-minfit" type="number" min="0" max="90" value="35"></label>
-              <label>Prepare the best N automatically after each scan (about 30¢ each) <input id="ag-auto" type="number" min="0" max="20" value="5"></label>
+              <label>Apply to the best N each day (about 30¢ each to tailor) <input id="ag-auto" type="number" min="0" max="20" value="10"></label>
               <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-remote" checked> Include remote jobs</label>
               <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-active" checked> Scan every morning</label>
+              <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-submit" checked> Apply for me: APEX submits the applications itself</label>
             </div>
+            <details style="margin-top:var(--s3)" open>
+              <summary style="cursor:pointer;font-weight:600">Application answers <span style="font-weight:400;color:var(--fg-2);font-size:13px">(used on every form; APEX never guesses these)</span></summary>
+              <div style="display:grid;gap:var(--s3);grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-top:var(--s2)" id="ag-answers">
+                <label>Authorized to work in the U.S.? <select data-ans="authorized"><option value="">Not set</option><option>Yes</option><option>No</option></select></label>
+                <label>Need visa sponsorship (now or later)? <select data-ans="sponsorship"><option value="">Not set</option><option>No</option><option>Yes</option></select></label>
+                <label>Willing to relocate? <select data-ans="relocate"><option value="">Not set</option><option>Yes</option><option>No</option></select></label>
+                <label>Salary expectation <input data-ans="salary" placeholder="e.g. $140,000 (blank: open to an offer)"></label>
+                <label>Earliest start <input data-ans="start" placeholder="Two weeks after an offer"></label>
+                <label>City <input data-ans="city" placeholder="Houston"></label>
+                <label>State <input data-ans="state" placeholder="Texas"></label>
+                <label>Preferred first name <input data-ans="preferred_name" placeholder="(your first name)"></label>
+                <label>Gender <input data-ans="gender" placeholder="blank: decline to answer"></label>
+                <label>Race / ethnicity <input data-ans="race" placeholder="blank: decline to answer"></label>
+                <label>Hispanic or Latino? <input data-ans="hispanic" placeholder="blank: decline to answer"></label>
+                <label>Veteran status <input data-ans="veteran" placeholder="blank: decline to answer"></label>
+                <label>Disability <input data-ans="disability" placeholder="blank: decline to answer"></label>
+                <label>Pronouns <input data-ans="pronouns" placeholder="blank: leave empty"></label>
+              </div>
+            </details>
             <label for="ag-resume" style="display:block;margin-top:var(--s3)">Base resume (the one every application is tailored from)</label>
             <textarea id="ag-resume" rows="8" placeholder="Paste the resume you are happy with, or use the one in Launch"></textarea>
             <div style="display:flex;gap:var(--s2);flex-wrap:wrap;margin-top:var(--s3)">
@@ -2316,6 +2336,9 @@ function agEditor(p) {
   $('ag-auto').value = p ? p.auto_prepare : 5;
   $('ag-remote').checked = p ? p.remote_ok : true;
   $('ag-active').checked = p ? p.active : true;
+  $('ag-submit').checked = p ? p.auto_submit : true;
+  const ans = (p && p.answers) || {};
+  document.querySelectorAll('#ag-answers [data-ans]').forEach(el => { el.value = ans[el.dataset.ans] || ''; });
   $('ag-resume').value = p ? p.base_resume : latestResume();
   $('ag-delete').hidden = !p;
   $('ag-editor').dataset.id = p ? p.id : '';
@@ -2414,6 +2437,8 @@ async function agSave(btn) {
     const j = await api('/api/agent/profiles', { id: $('ag-editor').dataset.id || undefined, name: $('ag-name').value,
       targets: $('ag-targets').value, location: $('ag-location').value, daily_limit: $('ag-limit').value,
       min_fit: $('ag-minfit').value, auto_prepare: $('ag-auto').value, remote_ok: $('ag-remote').checked, active: $('ag-active').checked,
+      auto_submit: $('ag-submit').checked,
+      answers: Object.fromEntries([...document.querySelectorAll('#ag-answers [data-ans]')].map(el => [el.dataset.ans, el.value.trim()])),
       base_resume: $('ag-resume').value });
     AG.pid = j.profile.id;
     try { localStorage.setItem('apex.agentProfile', AG.pid); } catch (e) {}
@@ -2475,8 +2500,15 @@ function agCard(i) {
     + (k.cover_letter ? `<button class="copy-btn" data-action="agCopy" data-arg="${escHtml(i.id)}" data-what="cover_letter">Copy cover letter</button>` : '')
     + `<button class="btn btn-sm" data-action="agApplied" data-arg="${escHtml(i.id)}">I submitted it</button><button class="btn btn-sm" data-action="agSkip" data-arg="${escHtml(i.id)}">Skip</button>`;
   else if (i.status === 'failed') act = `<span style="font-size:13px;color:var(--red-soft)">Could not prepare: ${escHtml(k.error || 'unknown error')}</span><button class="btn btn-sm" data-action="agApprove" data-arg="${escHtml(i.id)}">Try again</button>`;
-  else if (i.status === 'applied') act = `<span style="font-size:13px;color:var(--green-soft)">Applied · in the Tracker</span>${link}`;
-  const ready = i.status === 'ready' ? `<div style="font-size:12.5px;color:var(--fg-2);margin-top:6px">${k.changes || 0} verified edit${k.changes === 1 ? '' : 's'} for this posting`
+  else if (i.status === 'applied') act = k.submission
+      ? `<span style="font-size:13px;color:var(--green-soft)">✓ Submitted by APEX ${escHtml(k.submission.at || '')} · in the Tracker</span>${link}`
+      : `<span style="font-size:13px;color:var(--green-soft)">Applied · in the Tracker</span>${link}`;
+  const ATTEMPT = { needs_you: 'needs your answer to: ', captcha: 'the site wants a bot check', invalid: 'the site flagged: ',
+                    unconfirmed: 'no confirmation seen after Submit', error: '' };
+  const tried = i.status === 'ready' && k.attempt && k.attempt.status !== 'filled' ? `<div style="font-size:12.5px;color:var(--amber);margin-top:6px">APEX tried to apply ${escHtml(k.attempt.at || '')}: `
+    + escHtml((ATTEMPT[k.attempt.status] ?? k.attempt.status) + (k.attempt.status === 'needs_you' ? arr(k.attempt.missing).slice(0, 3).join('; ') : k.attempt.detail || ''))
+    + '. Press Apply to finish it in the APEX window.</div>' : '';
+  const ready = i.status === 'ready' ? tried + `<div style="font-size:12.5px;color:var(--fg-2);margin-top:6px">${k.changes || 0} verified edit${k.changes === 1 ? '' : 's'} for this posting`
     + (k.score_before != null && k.score_after != null ? ` · fit ${k.score_before} → ${k.score_after}` : '')
     + (arr(k.gaps).length ? ` · not shown (never added): ${escHtml(arr(k.gaps).slice(0, 5).join(', '))}` : '')
     + (k.letter_withheld && arr(k.letter_withheld).length ? ' · cover letter withheld by the fact check' : '') + '</div>' : '';
@@ -2546,12 +2578,18 @@ async function agApply(btn, id) {
     if (!st.name && state.resumeStruct) st.name = state.resumeStruct.struct.name;
     const out = await ATS.pdf(st, 'tailored', state.selectedTemplate, { blob: true });
     const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(out.blob); });
+    if (btn) btn.innerHTML = '<span class="spinner"></span>Applying…';
     const j = await api('/api/agent/apply', { id, pdf_b64: b64 });
+    if (j.status === 'submitted') { toast(`Submitted ✓ ${it.title} at ${it.company}. It is in the Tracker.`, 'ok'); agQueue(); loadPipeline(); return; }
     if (j.mode === 'link') {
       const w = window.open(j.url, '_blank', 'noopener');
       toast(w ? 'Posting opened. Attach the resume (Resume PDF) and paste the cover letter there.' : 'Allow pop-ups to open the posting, or use Open posting', 'ok');
     } else if (j.error) toast(j.error, 'err');
-    else toast(`Application opened in the APEX browser window and filled: ${(j.filled || []).join(', ') || 'nothing recognised'}. Check it, answer the rest, press Submit there, then "I submitted it" here.`, 'ok');
+    else if (j.status === 'needs_you') toast(`Filled in the APEX window. It needs you for: ${(j.missing || []).slice(0, 3).join('; ')}. Answer it there, press Submit, then "I submitted it" here.`, '');
+    else if (j.status === 'captcha') toast('Filled in the APEX window. The site wants a bot check: complete it and press Submit there, then "I submitted it" here.', '');
+    else if (j.status === 'invalid' || j.status === 'unconfirmed') toast(`APEX pressed Submit but ${j.status === 'invalid' ? 'the site flagged: ' + (j.detail || 'some fields') : 'saw no confirmation'}. Check the APEX window.`, 'err');
+    else toast(`Filled in the APEX window (${(j.filled || []).length} fields). Check it, press Submit there, then "I submitted it" here.`, 'ok');
+    agQueue();
   } catch (e) { toast('Could not open the application: ' + e.message, 'err'); }
   finally { if (btn) { btn.disabled = false; btn.textContent = 'Apply'; } }
 }

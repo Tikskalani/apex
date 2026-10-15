@@ -156,3 +156,22 @@ def test_the_agent_proposes_hands_on_roles(title, ok):
     ('Remote - US', False)])
 def test_remote_jobs_must_be_open_to_the_us(server, loc, abroad):
     assert server.foreign_remote(loc) is abroad
+
+
+def test_the_employers_own_application_link_wins(server):
+    j = {'job_apply_link': 'https://www.linkedin.com/jobs/view/1',
+         'apply_options': [{'publisher': 'LinkedIn', 'apply_link': 'https://www.linkedin.com/jobs/view/1', 'is_direct': False},
+                           {'publisher': 'Acme', 'apply_link': 'https://job-boards.greenhouse.io/acme/jobs/9', 'is_direct': True}]}
+    assert server.best_apply_link(j) == 'https://job-boards.greenhouse.io/acme/jobs/9'
+    j = {'job_apply_link': 'https://www.learn4good.com/x', 'apply_options': [
+        {'apply_link': 'https://www.learn4good.com/x'}, {'apply_link': 'https://careers.acme.com/jobs/9'}]}
+    assert server.best_apply_link(j) == 'https://careers.acme.com/jobs/9'
+    assert server.best_apply_link({'job_apply_link': 'https://www.indeed.com/x'}) == 'https://www.indeed.com/x'
+
+
+def test_profile_keeps_application_answers(db):
+    p = S.save_profile({'name': 'Me', 'targets': 'AI Engineer', 'auto_submit': True,
+                        'answers': {'authorized': 'Yes', 'sponsorship': 'No', 'nonsense': 'x', 'gender': ''}})
+    assert p['auto_submit'] is True and p['answers'] == {'authorized': 'Yes', 'sponsorship': 'No'}
+    assert S.save_profile({'id': p['id'], 'name': 'Me'})['auto_submit'] is False
+    assert S.submitted_today(p['id'], '2026-10-15') == 0

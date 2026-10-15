@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS profiles (       -- one per person the job agent sear
     daily_limit  INTEGER NOT NULL DEFAULT 30,
     min_fit      INTEGER NOT NULL DEFAULT 35,
     auto_prepare INTEGER NOT NULL DEFAULT 5,   -- the best N new matches of each scan are prepared without asking
+    auto_submit  INTEGER NOT NULL DEFAULT 0,   -- the agent submits prepared applications itself
+    answers      TEXT NOT NULL DEFAULT '{}',   -- application answers: work authorization, sponsorship, demographics...
     active       INTEGER NOT NULL DEFAULT 1,   -- scanned every morning
     last_scan    TEXT,                         -- YYYY-MM-DD (local) of the last scan
     created_at   TEXT NOT NULL,
@@ -207,6 +209,9 @@ def init():
             conn.execute("ALTER TABLE score_history ADD COLUMN keywords TEXT NOT NULL DEFAULT '[]'")
         if not any(r['name'] == 'auto_prepare' for r in conn.execute("SELECT name FROM pragma_table_info('profiles')")):
             conn.execute('ALTER TABLE profiles ADD COLUMN auto_prepare INTEGER NOT NULL DEFAULT 5')
+        if not any(r['name'] == 'auto_submit' for r in conn.execute("SELECT name FROM pragma_table_info('profiles')")):
+            conn.execute('ALTER TABLE profiles ADD COLUMN auto_submit INTEGER NOT NULL DEFAULT 0')
+            conn.execute("ALTER TABLE profiles ADD COLUMN answers TEXT NOT NULL DEFAULT '{}'")
         conn.execute('DROP INDEX IF EXISTS applications_dedupe')     # pre-owner index
         conn.execute('DROP INDEX IF EXISTS score_title')
         conn.executescript(INDEXES)
@@ -576,6 +581,8 @@ def _profile_row(r):
     d['targets'] = json.loads(d.get('targets') or '[]')
     d['remote_ok'] = bool(d['remote_ok'])
     d['active'] = bool(d['active'])
+    d['auto_submit'] = bool(d.get('auto_submit'))
+    d['answers'] = json.loads(d.get('answers') or '{}')
     return d
 
 
@@ -601,24 +608,27 @@ def save_profile(data, *, owner=''):
            'daily_limit': _int(data.get('daily_limit'), 'daily limit', 1, 50, 30),
            'min_fit': _int(data.get('min_fit'), 'minimum fit', 0, 90, 35),
            'auto_prepare': _int(data.get('auto_prepare'), 'prepared automatically', 0, 20, 5),
-           'active': 1 if data.get('active', True) not in (False, 0, '0', 'false') else 0}
+           'active': 1 if data.get('active', True) not in (False, 0, '0', 'false') else 0,
+           'auto_submit': 1 if data.get('auto_submit') not in (None, False, 0, '0', 'false', '') else 0,
+           'answers': json.dumps(_answers(data.get('answers')), ensure_ascii=False)}
     now = _now()
     with _db(immediate=True) as conn:
         pid = str(data.get('id') or '')
         row = conn.execute('SELECT id FROM profiles WHERE id = ? AND owner = ?', (pid, owner)).fetchone() if pid else None
         vals = (rec['name'], rec['base_resume'], rec['targets'], rec['location'], rec['remote_ok'],
-                rec['daily_limit'], rec['min_fit'], rec['auto_prepare'], rec['active'])
+                rec['daily_limit'], rec['min_fit'], rec['auto_prepare'], rec['active'], rec['auto_submit'], rec['answers'])
         if row:
             conn.execute('UPDATE profiles SET name = ?, base_resume = ?, targets = ?, location = ?, remote_ok = ?,'
-                         ' daily_limit = ?, min_fit = ?, auto_prepare = ?, active = ?, updated_at = ?'
-                         ' WHERE id = ? AND owner = ?', (*vals, now, pid, owner))
+                         ' daily_limit = ?, min_fit = ?, auto_prepare = ?, active = ?, auto_submit = ?, answers = ?,'
+                         ' updated_at = ? WHERE id = ? AND owner = ?', (*vals, now, pid, owner))
         else:
             n = conn.execute('SELECT count(*) FROM profiles WHERE owner = ?', (owner,)).fetchone()[0]
             if n >= MAX_PROFILES_PER_OWNER:
                 raise StoreError(f'at most {MAX_PROFILES_PER_OWNER} profiles')
             pid = uuid.uuid4().hex
             conn.execute('INSERT INTO profiles (id, owner, name, base_resume, targets, location, remote_ok, daily_limit,'
-                         ' min_fit, auto_prepare, active, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                         ' min_fit, auto_prepare, active, auto_submit, answers, created_at, updated_at)'
+                         ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                          (pid, owner, *vals, now, now))
     return get_profile(pid, owner=owner)
 
@@ -833,3 +843,22 @@ def queue_posting_for_application(app_id, *, owner=''):
     with _db() as conn:
         r = conn.execute('SELECT posting FROM queue WHERE application_id = ? AND owner = ?', (app_id, owner)).fetchone()
     return r['posting'] if r else ''
+
+
+ANSWER_KEYS = ('authorized', 'sponsorship', 'relocate', 'salary', 'start', 'hear', 'former', 'restrictions', 'adult',
+               'country', 'city', 'state', 'zip', 'address', 'preferred_name', 'pronouns', 'gender', 'race', 'hispanic',
+               'veteran', 'disability', 'orientation', 'transgender')
+
+
+def _answers(v):
+    """The profile's application answers: known keys only, short strings."""
+    v = v if isinstance(v, dict) else {}
+    return {k: _text(v.get(k), k, 200) for k in ANSWER_KEYS if str(v.get(k) or '').strip()}
+
+
+def submitted_today(pid, day, *, owner=''):
+    """How many of a profile's applications the agent submitted on `day` (YYYY-MM-DD)."""
+    with _db() as conn:
+        rows = conn.execute("SELECT kit FROM queue WHERE owner = ? AND profile_id = ? AND status = 'applied'",
+                            (owner, pid)).fetchall()
+    return sum(1 for r in rows if (json.loads(r['kit'] or '{}').get('submission') or {}).get('day') == day)
