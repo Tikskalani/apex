@@ -5,7 +5,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-APP_FILES = ['agent_server.py', 'apex_engine.py', 'apex_domains.py', 'apex_store.py', 'index.html']
+APP_FILES = ['agent_server.py', 'apex_engine.py', 'apex_domains.py', 'apex_apply.py', 'apex_store.py', 'index.html']
 FONTS = ['assets/NotoSans-Bold.ttf', 'assets/NotoSans-Regular.ttf']
 LICENCE = 'assets/OFL.txt'
 
@@ -22,7 +22,7 @@ def test_dockerignore_is_an_allowlist_of_the_app_files():
 def test_dockerfile_copies_only_app_files_and_drops_root():
     df = (ROOT / 'Dockerfile').read_text()
     copies = re.findall(r'^COPY (.+)$', df, re.M)
-    assert copies == ['requirements.txt ./', 'agent_server.py apex_store.py apex_engine.py apex_domains.py index.html ./',
+    assert copies == ['requirements.txt ./', 'agent_server.py apex_store.py apex_engine.py apex_domains.py apex_apply.py index.html ./',
                       'assets/NotoSans-Regular.ttf assets/NotoSans-Bold.ttf assets/OFL.txt ./assets/']
     assert 'pip install --no-cache-dir -r requirements.txt' in df
     assert 'setpriv --reuid=10001' in df and 'APEX_BIND=0.0.0.0' in df and 'APEX_DB=/data/apex.db' in df

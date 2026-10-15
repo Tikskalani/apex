@@ -44,7 +44,7 @@ class ServerProcess:
 
     def __init__(self, tmp_path_factory, fake_openai, extra_env=None, config=True, config_json=None):
         d = tmp_path_factory.mktemp('apex')
-        for name in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'apex_domains.py', 'index.html'):
+        for name in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'apex_domains.py', 'apex_apply.py', 'index.html'):
             shutil.copy(ROOT / name, d / name)
         (d / 'assets').mkdir()
         for font in (ROOT / 'assets').glob('*.ttf'):           # PDF export embeds these
@@ -60,6 +60,7 @@ class ServerProcess:
             env['OPENAI_API_KEY'] = 'sk-test-stub-not-a-real-key'     # how a container gets its key
         self.port = _free_port()
         env['APEX_PORT'] = str(self.port)
+        env['APEX_FORM_FILL'] = '0'            # never open a real browser window from a test server
         env.update(extra_env or {})
         self.dir, self.url = d, f'http://localhost:{self.port}'
         self._log_path = d / 'server.log'

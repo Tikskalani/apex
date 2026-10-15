@@ -179,7 +179,7 @@ def test_refuses_to_listen_publicly_without_an_access_code(tmp_path_factory, fak
     from conftest import ROOT
     d = tmp_path_factory.mktemp('nogate')
     import shutil
-    for n in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'apex_domains.py', 'index.html'):
+    for n in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'apex_domains.py', 'apex_apply.py', 'index.html'):
         shutil.copy(ROOT / n, d / n)
     import os
     env = dict(os.environ, OPENAI_API_KEY='sk-x', APEX_BIND='0.0.0.0', APEX_PORT='0')

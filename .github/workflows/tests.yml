@@ -27,7 +27,7 @@ jobs:
           python -m pip install -r requirements-dev.txt
           python -m playwright install --with-deps chromium
       - name: Lint (errors only)
-        run: python -m ruff check --select F,E9 agent_server.py apex_engine.py apex_domains.py apex_store.py tools tests
+        run: python -m ruff check --select F,E9 agent_server.py apex_engine.py apex_domains.py apex_apply.py apex_store.py tools tests
       - name: Regression suites
         run: python tests/run_all.py
       - name: Unit, API, security and browser tests (offline model stub, saved job postings)

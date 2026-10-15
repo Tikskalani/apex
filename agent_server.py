@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import apex_store as store
 import apex_engine as engine
 import apex_domains
+import apex_apply
 
 # The startup banner prints ✓ / ⚠. On Windows, stdout redirected to a file or
 # pipe is cp1252 and those characters crash the server before it binds.
@@ -136,6 +137,10 @@ MODEL_FAST = _model_setting('MODEL_FAST', 'claude-haiku-5-5' if _CLAUDE_ONLY els
 # writer, so a model is not grading its own work (errors stop being correlated).
 MODEL_AUDIT = _model_setting('MODEL_AUDIT', MODEL)
 MODEL_JUDGE = _model_setting('MODEL_JUDGE', MODEL_AUDIT)
+# The engine's recruiter review. Measured (2026-10-15, 4 bench resumes): with the review and the
+# fact checks on claude-sonnet-5-5 the engine took ~65 s instead of ~85 s and gained +7.0 instead
+# of +9.0, so quality stays the default and speed is a setting (MODEL_REVIEW / MODEL_AUDIT).
+MODEL_REVIEW = _model_setting('MODEL_REVIEW', MODEL)
 
 # USD per 1M tokens (input, output), standard tier, from OpenAI's pricing page
 # (checked 2026-10-08). Unknown models are costed at the most expensive known
@@ -611,6 +616,8 @@ def engine_llm(system, user, **kw):
     on another model (MODEL_AUDIT / MODEL_JUDGE) so the writer never grades itself."""
     if system == engine.VERIFY_SYSTEM:
         kw.setdefault('model', MODEL_AUDIT)
+    elif system == engine.DIAGNOSE_SYSTEM:
+        kw.setdefault('model', MODEL_REVIEW)
     elif system == engine.JUDGE_SYSTEM:
         kw.setdefault('model', MODEL_JUDGE)
     return gpt(system, user, **kw)
@@ -3831,7 +3838,8 @@ def render_template(template_id, struct):
 AGENT_HOUR = int(os.environ.get('APEX_AGENT_HOUR', '7'))
 _AGENT_SCANNING = set()                 # profile ids with a scan in flight
 _AGENT_LOCK = threading.Lock()
-_AGENT_WORKER = {'thread': None}
+_AGENT_WORKERS = []                     # threads preparing approved items
+AGENT_PARALLEL = 3                      # kits prepared at once (each is a few model calls)
 
 
 def _local_today():
@@ -3900,6 +3908,12 @@ def agent_scan(pid, owner=''):
         cands.sort(key=lambda c: (c['fit'], c['reasons']['full_posting']), reverse=True)
         added = store.add_queue_items(pid, cands[:prof['daily_limit']], owner=owner, day=_local_today())
         store.mark_scanned(pid, _local_today(), owner=owner)
+        # The best new matches are prepared now, so they are ready when the user looks.
+        if added and prof.get('auto_prepare') and not AI_PROBLEM:
+            fresh = [i['id'] for i in store.list_queue(pid, owner=owner, statuses=('proposed',))
+                     if i['scanned_on'] == _local_today()][:prof['auto_prepare']]
+            if store.set_queue_status(fresh, 'approved', owner=owner, only_from=('proposed',)):
+                agent_kick(owner)
         print(f'  [agent] {prof["name"]}: {found} postings, {len(cands)} fit, {added} new proposed', flush=True)
         return {'found': found, 'matched': len(cands), 'added': added}
     finally:
@@ -3919,7 +3933,12 @@ def agent_prepare(item, owner=''):
         raise RuntimeError(err or 'the tailored resume came back empty')
     letter = cover_letter(item['title'], 'general', data['tailored_resume'], company=item['company'],
                           posting=item['posting'])
+    try:                                   # sections for the PDF, so Apply needs no model call
+        struct, _ = verify_struct(parse_resume_struct(data['tailored_resume']), data['tailored_resume'])
+    except Exception:
+        struct = None
     return {'resume': data['tailored_resume'], 'cover_letter': letter['letter'], 'letter_withheld': letter['withheld'],
+            'struct': struct,
             'changes': len(data.get('changes') or []), 'gaps': (data.get('gaps') or [])[:8],
             'score_before': data.get('match_score_before'), 'score_after': data.get('match_score_after')}
 
@@ -3939,15 +3958,52 @@ def agent_worker(owner=''):
 
 
 def agent_kick(owner=''):
-    """Start the worker if it is not already running."""
+    """Start workers up to AGENT_PARALLEL; each takes the next approved item until none is left."""
     with _AGENT_LOCK:
-        t = _AGENT_WORKER['thread']
-        if t and t.is_alive():
-            return False
-        t = threading.Thread(target=agent_worker, args=(owner,), daemon=True)
-        _AGENT_WORKER['thread'] = t
-        t.start()
-        return True
+        _AGENT_WORKERS[:] = [t for t in _AGENT_WORKERS if t.is_alive()]
+        started = 0
+        while len(_AGENT_WORKERS) < AGENT_PARALLEL:
+            t = threading.Thread(target=agent_worker, args=(owner,), daemon=True)
+            _AGENT_WORKERS.append(t)
+            t.start()
+            started += 1
+        return started > 0
+
+
+APPLY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'apex_files', 'apply')
+
+
+def agent_apply(qid, pdf_b64, owner=''):
+    """One-tap Apply: save the tailored resume PDF the page made, then open the application in the
+    APEX browser window and fill it (apex_apply). Never submits. Returns {mode, url, filled, error}."""
+    item = store.get_queue_item(qid, owner=owner)
+    if item['status'] not in ('ready', 'applied'):
+        raise store.StoreError('This job is not prepared yet.')
+    url = item['url']
+    if not url:
+        raise store.StoreError('This posting has no link to apply at.')
+    if not apex_apply.available():
+        return {'mode': 'link', 'url': url, 'filled': [], 'error': ''}
+    pdf_path = ''
+    if pdf_b64:
+        try:
+            data = base64.b64decode(pdf_b64, validate=True)
+        except ValueError:
+            raise store.StoreError('The resume PDF did not arrive intact.')
+        if not data.startswith(b'%PDF') or len(data) > 3_000_000:
+            raise store.StoreError('The resume PDF did not arrive intact.')
+        os.makedirs(APPLY_DIR, exist_ok=True)
+        name = re.sub(r'[^A-Za-z0-9]+', '_', ((item['kit'].get('struct') or {}).get('name') or 'Resume')).strip('_')
+        pdf_path = os.path.join(APPLY_DIR, f'{name}_{re.sub(r"[^A-Za-z0-9]+", "_", item["company"] or "job")[:40]}_Resume.pdf')
+        with open(pdf_path, 'wb') as f:
+            f.write(data)
+    st = item['kit'].get('struct') or {}
+    site = st.get('website') or ''
+    contact = {'name': st.get('name'), 'email': st.get('email'), 'phone': st.get('phone'),
+               'linkedin': st.get('linkedin'), 'location': st.get('location'),
+               'github': site if 'github.com' in site.lower() else '', 'website': '' if 'github.com' in site.lower() else site}
+    filled, err = apex_apply.open_and_fill(url, pdf_path, item['kit'].get('cover_letter') or '', contact)
+    return {'mode': 'filled', 'url': url, 'filled': filled, 'error': err}
 
 
 def agent_mark_applied(qid, owner=''):
@@ -4800,7 +4856,7 @@ class Handler(BaseHTTPRequestHandler):
             if method == 'GET' and path == '/api/agent/queue':
                 pid = q('profile')
                 self._send_json(200, {'items': store.list_queue(pid), 'scanning': pid in _AGENT_SCANNING,
-                                      'preparing': bool(_AGENT_WORKER['thread'] and _AGENT_WORKER['thread'].is_alive())}); return
+                                      'preparing': any(t.is_alive() for t in _AGENT_WORKERS)}); return
             if method == 'GET' and path == '/api/agent/item':
                 self._send_json(200, {'item': store.get_queue_item(q('id'))}); return
             if method == 'POST' and path == '/api/agent/profiles':
@@ -4828,6 +4884,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {'approved': n}); return
             if method == 'POST' and path == '/api/agent/skip':
                 self._send_json(200, {'skipped': store.set_queue_status(ids(), 'skipped', only_from=('proposed', 'ready', 'failed'))}); return
+            if method == 'POST' and path == '/api/agent/apply':
+                self._send_json(200, agent_apply(str(b.get('id') or ''), b.get('pdf_b64') or '')); return
             if method == 'POST' and path == '/api/agent/applied':
                 self._send_json(200, {'application': agent_mark_applied(str(b.get('id') or ''))}); return
             self._send_json(404, {'error': 'not found'})

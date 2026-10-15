@@ -535,6 +535,7 @@ def test_apply_queue_from_profile_to_applied(ui, fixture_resume):
     page.fill('#ag-targets', 'Data Analyst')
     page.fill('#ag-minfit', '0')
     page.fill('#ag-limit', '2')
+    page.fill('#ag-auto', '0')                                   # approve by hand in this test
     page.uncheck('#ag-active')
     page.click('[data-action="agUseResume"]')
     assert page.input_value('#ag-resume').startswith(fixture_resume[:30])

@@ -17,7 +17,8 @@ def wait_for(app, pid, pred, timeout=60):
 
 def test_agent_proposes_prepares_on_approval_and_files_applied_jobs(app, fixture_resume):
     st, j = call(app, 'POST', '/api/agent/profiles', {'name': 'Me', 'targets': 'Data Analyst', 'base_resume': fixture_resume,
-                                                      'min_fit': 0, 'daily_limit': 3, 'active': False})
+                                                      'min_fit': 0, 'daily_limit': 3, 'active': False,
+                                                      'auto_prepare': 0})
     assert st == 200, j
     pid = j['profile']['id']
     assert j['profile']['targets'] == ['Data Analyst'] and j['profile']['daily_limit'] == 3
@@ -70,4 +71,37 @@ def test_agent_profile_needs_a_resume_and_titles_to_scan(app):
     assert st == 404
     st, j = call(app, 'POST', '/api/agent/profiles', {'name': ''})
     assert st == 400 and 'name is required' in j['error']
+    call(app, 'POST', '/api/agent/profiles/delete', {'id': pid})
+
+
+def test_the_best_new_matches_are_prepared_without_asking(app, fixture_resume):
+    """auto_prepare: the top N of each scan are approved and prepared right away (kits ready on arrival)."""
+    st, j = call(app, 'POST', '/api/agent/profiles', {'name': 'Fast', 'targets': 'Senior Data Analyst',
+                                                      'base_resume': fixture_resume, 'min_fit': 0, 'daily_limit': 4,
+                                                      'auto_prepare': 2, 'active': False})
+    pid = j['profile']['id']
+    assert j['profile']['auto_prepare'] == 2
+    call(app, 'POST', '/api/agent/scan', {'profile': pid})
+    q = wait_for(app, pid, lambda j: not j['scanning'] and j['items']
+                 and not any(i['status'] in ('approved', 'preparing') for i in j['items']), timeout=90)
+    st_by_fit = [i['status'] for i in sorted(q['items'], key=lambda i: -i['fit'])]
+    assert st_by_fit.count('ready') == 2, st_by_fit
+    assert all(s == 'proposed' for s in st_by_fit if s != 'ready')
+    call(app, 'POST', '/api/agent/profiles/delete', {'id': pid})
+
+
+def test_apply_opens_the_posting_for_a_prepared_job(app, fixture_resume):
+    """Without the form filler (APEX_FORM_FILL=0 in tests) Apply hands back the posting link; a PDF is checked."""
+    st, j = call(app, 'POST', '/api/agent/profiles', {'name': 'Applier', 'targets': 'Data Analyst II', 'min_fit': 0,
+                                                      'base_resume': fixture_resume, 'daily_limit': 1, 'auto_prepare': 1,
+                                                      'active': False})
+    pid = j['profile']['id']
+    call(app, 'POST', '/api/agent/scan', {'profile': pid})
+    q = wait_for(app, pid, lambda j: not j['scanning'] and j['items'] and j['items'][0]['status'] in ('ready', 'failed'))
+    item = q['items'][0]
+    assert item['status'] == 'ready', item
+    st, j = call(app, 'GET', '/api/agent/item?id=' + item['id'])
+    assert j['item']['kit']['struct']['name'], 'the kit carries the parsed resume for the PDF'
+    st, j = call(app, 'POST', '/api/agent/apply', {'id': item['id'], 'pdf_b64': ''})
+    assert st == 200 and j['mode'] == 'link' and j['url'] == item['url']
     call(app, 'POST', '/api/agent/profiles/delete', {'id': pid})

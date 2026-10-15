@@ -20,7 +20,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 # Code is root-owned and read-only to the app user. .dockerignore admits only
 # these files, so config.json and apex.db can never end up in the image.
-COPY agent_server.py apex_store.py apex_engine.py apex_domains.py index.html ./
+COPY agent_server.py apex_store.py apex_engine.py apex_domains.py apex_apply.py index.html ./
 # Unicode fonts for PDF export (served as /assets/*.ttf).
 COPY assets/NotoSans-Regular.ttf assets/NotoSans-Bold.ttf assets/OFL.txt ./assets/
 

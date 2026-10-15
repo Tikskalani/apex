@@ -231,6 +231,8 @@ resumes.
 
 ---
 
+`MODEL_REVIEW` (config or `APEX_MODEL_REVIEW`, default `MODEL`) runs the engine's recruiter review. For faster runs set it and `MODEL_AUDIT` to `claude-sonnet-5-5`: measured on 4 bench resumes, the engine took about 65 s instead of 85 s, with an average gain of +7.0 instead of +9.0.
+
 ## GET routes
 
 | Path | Query | Response |
@@ -406,6 +408,7 @@ The job agent (`/api/agent/*`, JSON, local only):
 | GET | `/api/agent/item` | `?id=` | `{"item"}` with the full posting and kit `{resume, cover_letter, letter_withheld, changes, gaps, score_before, score_after}` or `{error}` |
 | POST | `/api/agent/approve` | `ids` | `{"approved": n}` (from proposed, failed or skipped); starts preparing. `503` without an AI key |
 | POST | `/api/agent/skip` | `ids` | `{"skipped": n}` |
+| POST | `/api/agent/apply` | `id`, `pdf_b64` (the tailored resume PDF the page made) | One-tap Apply. `{"mode": "filled", "url", "filled": [fields], "error"}`: the application opened in the APEX browser window (a Chromium profile in `apex_browser/`, via `apex_apply.py`) and its contact fields, resume and cover letter were filled; nothing is submitted. `{"mode": "link", "url"}` when Playwright is not installed or `APEX_FORM_FILL=0`: the page opens the posting |
 | POST | `/api/agent/applied` | `id` | `{"application"}`: created in the Tracker (status applied, source `agent`) with the tailored resume and cover letter as artifacts |
 
 | Route | Request fields | Response |

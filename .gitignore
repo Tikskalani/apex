@@ -120,3 +120,5 @@ NOTES.local.md
 # One-click launcher (launch_apex.pyw)
 apex.log
 apex.pid
+apex_files/
+apex_browser/

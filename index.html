@@ -1815,6 +1815,7 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
               <label>Location <input id="ag-location" placeholder="Houston, TX (blank: anywhere)"></label>
               <label>Jobs proposed per day <input id="ag-limit" type="number" min="1" max="50" value="30"></label>
               <label>Minimum fit (0-90) <input id="ag-minfit" type="number" min="0" max="90" value="35"></label>
+              <label>Prepare the best N automatically after each scan (about 30¢ each) <input id="ag-auto" type="number" min="0" max="20" value="5"></label>
               <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-remote" checked> Include remote jobs</label>
               <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-active" checked> Scan every morning</label>
             </div>
@@ -2246,7 +2247,7 @@ function dockLabel(b) {
 }
 
 // ─── Job agent: profiles and the apply queue ───
-const AG = { profiles: [], pid: '', items: [], timer: null };
+const AG = { profiles: [], pid: '', items: [], timer: null, autoApply: new Set() };
 
 async function agLoad() {
   try {
@@ -2275,6 +2276,7 @@ function agEditor(p) {
   $('ag-location').value = p ? p.location : '';
   $('ag-limit').value = p ? p.daily_limit : 30;
   $('ag-minfit').value = p ? p.min_fit : 35;
+  $('ag-auto').value = p ? p.auto_prepare : 5;
   $('ag-remote').checked = p ? p.remote_ok : true;
   $('ag-active').checked = p ? p.active : true;
   $('ag-resume').value = p ? p.base_resume : latestResume();
@@ -2288,7 +2290,7 @@ async function agSave(btn) {
   try {
     const j = await api('/api/agent/profiles', { id: $('ag-editor').dataset.id || undefined, name: $('ag-name').value,
       targets: $('ag-targets').value, location: $('ag-location').value, daily_limit: $('ag-limit').value,
-      min_fit: $('ag-minfit').value, remote_ok: $('ag-remote').checked, active: $('ag-active').checked,
+      min_fit: $('ag-minfit').value, auto_prepare: $('ag-auto').value, remote_ok: $('ag-remote').checked, active: $('ag-active').checked,
       base_resume: $('ag-resume').value });
     AG.pid = j.profile.id;
     try { localStorage.setItem('apex.agentProfile', AG.pid); } catch (e) {}
@@ -2327,6 +2329,10 @@ async function agQueue() {
         + (prof.last_scan ? ` · last scan ${prof.last_scan}` : ' · not scanned yet');
     $('ag-scan').disabled = !!j.scanning;
     agRender();
+    for (const i of AG.items.filter(i => AG.autoApply.has(i.id) && i.status !== 'approved' && i.status !== 'preparing')) {
+      AG.autoApply.delete(i.id);
+      if (i.status === 'ready') agApply(document.querySelector(`[data-action="agApply"][data-arg="${CSS.escape(i.id)}"]`), i.id);
+    }
     if (j.scanning || j.preparing || n('approved') + n('preparing')) agPoll();
   } catch (e) { $('ag-status').textContent = 'Could not load the queue: ' + e.message; }
 }
@@ -2338,11 +2344,11 @@ function agCard(i) {
     + (arr(r.missing).length ? `<div style="font-size:12.5px;color:var(--fg-3)">Not on your resume: ${escHtml(arr(r.missing).join(', '))}</div>` : '');
   const link = i.url ? `<a class="copy-btn" href="${escHtml(i.url)}" target="_blank" rel="noopener noreferrer">Open posting</a>` : '';
   let act = '';
-  if (i.status === 'proposed') act = `<button class="btn btn-primary btn-sm" data-action="agApprove" data-arg="${escHtml(i.id)}">Approve</button><button class="btn btn-sm" data-action="agSkip" data-arg="${escHtml(i.id)}">Skip</button>${link}`;
-  else if (i.status === 'approved' || i.status === 'preparing') act = `<span class="spinner"></span><span style="font-size:13px">Tailoring the resume and writing the cover letter…</span>${link}`;
-  else if (i.status === 'ready') act = `${link}<button class="copy-btn" data-action="agPdf" data-arg="${escHtml(i.id)}">Resume PDF</button><button class="copy-btn" data-action="agCopy" data-arg="${escHtml(i.id)}" data-what="resume">Copy resume</button>`
+  if (i.status === 'proposed') act = `<button class="btn btn-primary btn-sm" data-action="agApplyNow" data-arg="${escHtml(i.id)}">Apply</button><button class="btn btn-sm" data-action="agApprove" data-arg="${escHtml(i.id)}">Prepare only</button><button class="btn btn-sm" data-action="agSkip" data-arg="${escHtml(i.id)}">Skip</button>${link}`;
+  else if (i.status === 'approved' || i.status === 'preparing') act = `<span class="spinner"></span><span style="font-size:13px">Tailoring the resume and writing the cover letter…${AG.autoApply.has(i.id) ? ' The application opens when it is ready.' : ''}</span>${link}`;
+  else if (i.status === 'ready') act = `<button class="btn btn-primary btn-sm" data-action="agApply" data-arg="${escHtml(i.id)}">Apply</button>${link}<button class="copy-btn" data-action="agPdf" data-arg="${escHtml(i.id)}">Resume PDF</button><button class="copy-btn" data-action="agCopy" data-arg="${escHtml(i.id)}" data-what="resume">Copy resume</button>`
     + (k.cover_letter ? `<button class="copy-btn" data-action="agCopy" data-arg="${escHtml(i.id)}" data-what="cover_letter">Copy cover letter</button>` : '')
-    + `<button class="btn btn-primary btn-sm" data-action="agApplied" data-arg="${escHtml(i.id)}">Mark applied</button><button class="btn btn-sm" data-action="agSkip" data-arg="${escHtml(i.id)}">Skip</button>`;
+    + `<button class="btn btn-sm" data-action="agApplied" data-arg="${escHtml(i.id)}">I submitted it</button><button class="btn btn-sm" data-action="agSkip" data-arg="${escHtml(i.id)}">Skip</button>`;
   else if (i.status === 'failed') act = `<span style="font-size:13px;color:var(--red-soft)">Could not prepare: ${escHtml(k.error || 'unknown error')}</span><button class="btn btn-sm" data-action="agApprove" data-arg="${escHtml(i.id)}">Try again</button>`;
   else if (i.status === 'applied') act = `<span style="font-size:13px;color:var(--green-soft)">Applied · in the Tracker</span>${link}`;
   const ready = i.status === 'ready' ? `<div style="font-size:12.5px;color:var(--fg-2);margin-top:6px">${k.changes || 0} verified edit${k.changes === 1 ? '' : 's'} for this posting`
@@ -2399,6 +2405,36 @@ async function agPdf(btn) {
     if (!st.name && state.resumeStruct) st.name = state.resumeStruct.struct.name;
     await atsExport('pdf', st, 'tailored_' + slugTag(it.company || 'job'), btn);
   } catch (e) { toast('Could not export: ' + e.message, 'err'); }
+}
+
+// One tap: make the resume PDF, open the application in the APEX browser window and fill it.
+// The person checks it and presses Submit there, then "I submitted it" here.
+async function agApply(btn, id) {
+  id = id || (btn && btn.dataset.arg);
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Opening…'; }
+  try {
+    const it = await agItem(id);
+    const k = it.kit || {};
+    let st = k.struct;
+    if (!st || !st.name) st = (await parseResumeText(k.resume || '')).struct;
+    st = Object.assign({}, st);
+    if (!st.name && state.resumeStruct) st.name = state.resumeStruct.struct.name;
+    const out = await ATS.pdf(st, 'tailored', state.selectedTemplate, { blob: true });
+    const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(out.blob); });
+    const j = await api('/api/agent/apply', { id, pdf_b64: b64 });
+    if (j.mode === 'link') {
+      const w = window.open(j.url, '_blank', 'noopener');
+      toast(w ? 'Posting opened. Attach the resume (Resume PDF) and paste the cover letter there.' : 'Allow pop-ups to open the posting, or use Open posting', 'ok');
+    } else if (j.error) toast(j.error, 'err');
+    else toast(`Application opened in the APEX browser window and filled: ${(j.filled || []).join(', ') || 'nothing recognised'}. Check it, answer the rest, press Submit there, then "I submitted it" here.`, 'ok');
+  } catch (e) { toast('Could not open the application: ' + e.message, 'err'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'Apply'; } }
+}
+
+// Apply on a job that is not prepared yet: prepare it now, and open the application when it is ready.
+async function agApplyNow(btn) {
+  AG.autoApply.add(btn.dataset.arg);
+  await agAct('/api/agent/approve', [btn.dataset.arg], btn);
 }
 
 async function agApplied(btn) {
@@ -2458,6 +2494,8 @@ const ACTIONS = {
   agApproveAll: el => agApproveAll(el),
   agSkip:      el => agAct('/api/agent/skip', [el.dataset.arg], el),
   agApplied:   el => agApplied(el),
+  agApply:     el => agApply(el),
+  agApplyNow:  el => agApplyNow(el),
   agCopy:      el => agCopy(el),
   agPdf:       el => agPdf(el),
 };
@@ -4332,7 +4370,7 @@ const ATS = {
   },
 
   // ─── PDF: real selectable text via jsPDF ───
-  async pdf(struct, tag, tpl) {
+  async pdf(struct, tag, tpl, opts) {
     const { jsPDF } = await loadLib('jspdf');
     const fonts = await loadPdfFonts();
     const d = this.norm(struct);
@@ -4510,6 +4548,7 @@ const ATS = {
     d.order.forEach(k => R[k]());
 
     doc.setProperties({ title: (d.name ? d.name + ' — ' : '') + 'Resume', creator: 'APEX' });
+    if (opts && opts.blob) return { blob: doc.output('blob'), font: FAM, missing: [...warn.missing] };
     doc.save(this.filename(d, 'pdf', tag));
     return { font: FAM, missing: [...warn.missing] };
   },
