@@ -126,3 +126,33 @@ def test_project_ideas_from_gaps(server, tmp_path, monkeypatch):
     r = server.radar_ideas(pid)
     assert [i['title'] for i in r['ideas']] == ['Eval harness for the RAG bot']
     assert 'evals (70% of postings)' in seen['user'] and 'Built RAG in Python' in seen['user']
+
+
+# ── from the first real scan (2026-10-15) ────────────────────────────────────
+
+def test_skill_match_is_strict_but_knows_synonyms(server):
+    raw = 'Scalable services in Python, Go, or Java. Go live fast. RESTful APIs with large language models; make sure evaluations pass.'
+    h = server._norm(raw)
+    yes = ['Python', 'Go', 'REST', 'LLM', 'generative AI']
+    no = ['Scala', 'Make.com', 'evals', 'Ray']
+    assert [t for t in yes if server.has_term(t, h, raw)] == yes
+    assert [t for t in no if server.has_term(t, h, raw)] == []
+    assert not server.has_term('Go', server._norm('Go live today and go far'), 'Go live today and go far')
+
+
+@pytest.mark.parametrize('title,ok', [
+    ('Senior AI Engineer', True), ('Applied Scientist, LLM', True), ('Member of Technical Staff', True),
+    ('Forward Deployed Architect', True), ('Head of AI Native Operations', False),
+    ('AI Transformation Owner, Product & Design', False), ('Manager, Applied AI Architects', False),
+    ('VP, Applied AI/ML Research', False)])
+def test_the_agent_proposes_hands_on_roles(title, ok):
+    import apex_domains
+    assert apex_domains.builder(title) is ok
+
+
+@pytest.mark.parametrize('loc,abroad', [
+    ('Remote - Brazil', True), ('Remote - Canada', True), ('London, UK', True), ('Houston, Texas', False),
+    ('Remote, Canada; Remote, United States', False), ('Remote, Global', False), ('Anywhere', False), ('Remote', False),
+    ('Remote - US', False)])
+def test_remote_jobs_must_be_open_to_the_us(server, loc, abroad):
+    assert server.foreign_remote(loc) is abroad

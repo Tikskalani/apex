@@ -3886,6 +3886,41 @@ def _local_today():
     return time.strftime('%Y-%m-%d')
 
 
+# Skills that are also everyday words: matched only as written ("Go" the language, not "go live").
+_CASED_TERMS = {
+    'go': re.compile(r'(?:[,/(:]\s*|\band\s+|\bor\s+)Go\b(?!-)|\bGo\s*[,/)]|\bGolang\b'),
+    'rest': re.compile(r'\bREST(?:ful)?\b'),
+    'ray': re.compile(r'\bRay\b(?:\s+(?:Serve|Train|Tune|Data|cluster)|\s*[,/)])'),
+}
+
+
+# Names recruiters treat as the same skill: a resume saying "LLM" shows "large language models".
+_ALIASES = {
+    'llm': ['large language models', 'large language model'], 'large language models': ['llm', 'large language model'],
+    'generative ai': ['genai', 'gen ai', 'llm', 'large language models'], 'prompt engineering': ['prompt design', 'prompting'],
+    'ai agents': ['ai agent', 'agentic', 'autonomous agents'], 'agentic': ['ai agents', 'ai agent'],
+    'node js': ['node', 'nodejs'], 'postgresql': ['postgres'], 'kubernetes': ['k8s', 'eks', 'gke', 'aks'],
+    'javascript': ['js'], 'typescript': ['ts'], 'ci cd': ['continuous integration', 'github actions'],
+    'machine learning': ['ml'], 'aws': ['amazon web services'], 'gcp': ['google cloud'], 'evals': ['eval suite', 'eval set'],
+    'vector database': ['vector store', 'vector db', 'pgvector', 'pinecone', 'weaviate', 'qdrant', 'chroma'],
+    'rag': ['retrieval augmented generation', 'retrieval-augmented generation'],
+}
+
+
+def has_term(term, hay_norm, raw=''):
+    """Strict skill match for the job agent and the radar: the whole term as words (a plural
+    counts), never by stem ("Scala" is not in "scalable", "evals" is not in "evaluate"); a
+    name recruiters treat as the same skill counts ("LLM" for "large language models")."""
+    rx = _CASED_TERMS.get(term.lower())
+    if rx is not None:
+        return bool(rx.search(raw))
+    n = _norm(term)
+    if not n:
+        return False
+    h = f' {hay_norm} '
+    return any(f' {x} ' in h or f' {x}s ' in h or f' {x}es ' in h for x in [n] + [_norm(a) for a in _ALIASES.get(n, [])])
+
+
 def agent_fit(resume, posting, title, domain):
     """(fit 0-100, matched terms, missing terms) of a posting against a resume, locally (no model).
     Mostly the share of the skills and tools the posting asks for (apex_domains.match_terms,
@@ -3893,8 +3928,8 @@ def agent_fit(resume, posting, title, domain):
     overlap breaks ties. Short postings (a snippet) ask for little, so they score on overlap."""
     hay_p, hay_r = _norm(posting), _norm(resume)
     terms = apex_domains.match_terms(domain, title)
-    asked = list(dict.fromkeys(t for t in terms if _present(t, hay_p)))
-    matched = [t for t in asked if _present(t, hay_r)]
+    asked = list(dict.fromkeys(t for t in terms if has_term(t, hay_p, posting)))
+    matched = [t for t in asked if has_term(t, hay_r, resume)]
     lw, shared = lightweight_match_score(resume, posting, title)
     lw = lw or 0
     if len(asked) >= 4:
@@ -3911,7 +3946,24 @@ def _agent_jobs(target, profile):
     jobs = fetch_structured_jobs(target, limit=150, location=profile['location'], full=True)['jobs']
     if profile['location'] and profile['remote_ok']:
         jobs += [j for j in fetch_structured_jobs(target, limit=150, location='remote', full=True)['jobs']]
-    return [j for j in jobs if title_matches(j.get('title') or '', target)]
+    hands_on = apex_domains.builder(target)          # a builder search proposes builder roles only
+    return [j for j in jobs if title_matches(j.get('title') or '', target)
+            and (apex_domains.builder(j.get('title')) or not hands_on) and not foreign_remote(j.get('location'))]
+
+
+_US = re.compile(r'united\s+states|\busa?\b|u\.s\.|americas|north\s+america|anywhere|global|worldwide|\bremote\s*$', re.I)
+_ABROAD = re.compile(
+    r'canada|brazil|brasil|mexico|argentina|colombia|chile|peru|latam|united\s+kingdom|\buk\b|england|london|ireland'
+    r'|germany|france|spain|portugal|italy|netherlands|poland|romania|ukraine|europe|\bemea\b|\beu\b|india|bangalore'
+    r'|bengaluru|pakistan|philippines|singapore|japan|australia|new\s+zealand|\bapac\b|israel|nigeria|kenya|south\s+africa'
+    r'|egypt|turkey|vietnam|indonesia|china|korea|taiwan|uae|dubai', re.I)
+
+
+def foreign_remote(location):
+    """A posting only open outside the US ("Remote - Brazil", "Toronto, Canada"); one that also
+    lists the US, or says anywhere, is kept."""
+    loc = str(location or '')
+    return bool(_ABROAD.search(loc)) and not _US.search(loc)
 
 
 def agent_scan(pid, owner=''):
@@ -3980,7 +4032,7 @@ def radar_count(snap, title, posting):
     hay = _norm(posting)
     snap['postings'] += 1
     for t in _RADAR_TERMS:
-        if _present(t, hay):
+        if has_term(t, hay, posting):
             snap['terms'][t] = snap['terms'].get(t, 0) + 1
 
 
@@ -4008,14 +4060,15 @@ def agent_radar(pid, owner=''):
         return n, terms, fams
     n, terms, fams = total(now)
     n0, terms0, _ = total(before)
-    hay = _norm(prof['base_resume'] + '\n' + vault_text())
+    evidence = prof['base_resume'] + '\n' + vault_text()
+    hay = _norm(evidence)
     skills = []
     for t, c in sorted(terms.items(), key=lambda kv: -kv[1]):
         share = round(100 * c / n) if n else 0
         if share < 5:
             continue
         trend = round(share - 100 * terms0.get(t, 0) / n0) if n0 >= 10 else None
-        skills.append({'term': t, 'share': share, 'shown': _present(t, hay), 'trend': trend})
+        skills.append({'term': t, 'share': share, 'shown': has_term(t, hay, evidence), 'trend': trend})
     fam_n = sum(fams.values()) or 1
     families = [{'family': k, 'label': apex_domains.label(k) if k != 'other' else 'Other', 'share': round(100 * v / fam_n)}
                 for k, v in sorted(fams.items(), key=lambda kv: -kv[1])]
@@ -5672,6 +5725,13 @@ class Handler(BaseHTTPRequestHandler):
 class _CappedServer(ThreadingHTTPServer):
     """ThreadingHTTPServer with a cap on concurrent requests."""
     daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # Browsers open spare connections and drop them unused: not worth a traceback.
+        import sys
+        if isinstance(sys.exc_info()[1], (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
 
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)

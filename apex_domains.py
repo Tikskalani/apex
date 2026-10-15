@@ -21,6 +21,21 @@ _ENGINEERING = re.compile(
     r'|forward\s+deployed|solutions?\s+(?:engineer|architect)|prompt|agent', re.I)
 
 
+_BUILDER = re.compile(
+    r'engineer|developer|programmer|scientist|architect|researcher|\bswe\b|\bsde\b|\bmle\b|\bsre\b|devops|mlops'
+    r'|technical\s+staff|\bcoder\b', re.I)
+
+
+_LEADERSHIP = re.compile(r'\b(?:manager|director|vp|vice\s+president|head\s+of|chief|cto|president)\b', re.I)
+
+
+def builder(title):
+    """Does the title name a hands-on building role (engineer, developer, scientist, architect...)?
+    "Head of AI Operations", "AI Transformation Owner" and "Manager, Applied AI Architects" do not."""
+    t = title or ''
+    return bool(_BUILDER.search(t)) and not _LEADERSHIP.search(t)
+
+
 def detect(title):
     """AI_SWE for a title in the niche (AI, ML and the engineering around them), else None."""
     return AI_SWE if _ENGINEERING.search(title or '') else None
@@ -83,7 +98,7 @@ FAMILIES = {
         'focus': 'Real-time voice pipelines (ASR, LLM, TTS, telephony), latency per turn, barge-in and noise handling, '
                  'call outcomes, and how quality was measured on real calls.',
         'terms': ['ASR', 'TTS', 'speech-to-text', 'text-to-speech', 'Deepgram', 'ElevenLabs', 'Whisper', 'Twilio',
-                  'Telnyx', 'WebRTC', 'telephony', 'real-time', 'streaming', 'latency'],
+                  'Telnyx', 'WebRTC', 'telephony', 'LiveKit', 'Pipecat', 'VAD'],
         'examples': ['Cut median voice-agent turn latency from 1.8 s to 1.0 s by streaming ASR into the LLM and '
                      'starting TTS on the first sentence'],
     },
@@ -94,9 +109,9 @@ FAMILIES = {
         'detect': r'machine\s+learning|\bml\b|deep\s+learning|\bnlp\b|computer\s+vision|recommend|ranking',
         'focus': 'Models taken from data to production: features, training, offline metrics that predicted online '
                  'results, A/B tests and business lift, serving latency, retraining and monitoring for drift.',
-        'terms': ['feature engineering', 'model training', 'hyperparameter', 'ranking', 'retrieval', 'two-tower',
+        'terms': ['feature engineering', 'model training', 'hyperparameter', 'learning to rank', 'two-tower',
                   'transformers', 'BERT', 'CNN', 'ONNX', 'TensorRT', 'Ray', 'SageMaker', 'MLflow', 'Weights & Biases',
-                  'drift', 'online metrics', 'offline metrics'],
+                  'model drift', 'online metrics', 'offline metrics'],
         'examples': ['Shipped a two-tower retrieval model with a gradient-boosted ranker; an A/B test showed a 6% lift '
                      'in add-to-cart'],
     },
@@ -120,8 +135,8 @@ FAMILIES = {
         'detect': r'forward\s+deployed|solutions?\s+(?:engineer|architect)|deployment|customer|consult',
         'focus': 'AI shipped for customers: scoping a messy business problem, building to production fast, the '
                  'customer outcome (hours saved, revenue, accuracy), stakeholder trust, and working in their stack.',
-        'terms': ['customer-facing', 'stakeholders', 'discovery', 'scoping', 'proof of concept', 'POC', 'integration',
-                  'enterprise', 'workflow automation', 'requirements', 'onboarding', 'training'],
+        'terms': ['customer-facing', 'proof of concept', 'POC', 'solutions engineering', 'workflow automation',
+                  'technical discovery', 'pre-sales', 'deployment'],
         'examples': ['Scoped and shipped a claims-summary assistant for an insurer in 6 weeks; adjusters cut note '
                      'reading from 20 to 14 minutes per claim'],
     },
@@ -133,7 +148,7 @@ FAMILIES = {
         'focus': 'AI features users touch: end-to-end ownership from UI to API to model, speed of shipping, product '
                  'judgment, streaming UX, auth and multi-tenancy, and usage or revenue outcomes.',
         'terms': ['React', 'Next.js', 'TypeScript', 'Node.js', 'FastAPI', 'PostgreSQL', 'Supabase', 'Prisma', 'Vercel',
-                  'streaming', 'WebSockets', 'multi-tenant', 'Stripe', 'product', 'end-to-end'],
+                  'WebSockets', 'multi-tenant', 'Stripe', 'Tailwind', 'tRPC'],
         'examples': ['Built and launched the product\'s AI assistant end to end (Next.js, FastAPI, Postgres); 40% of '
                      'weekly active users adopted it in the first month'],
     },
@@ -144,8 +159,8 @@ FAMILIES = {
         'detect': r'research|scientist|technical\s+staff',
         'focus': 'Experiments that changed decisions: rigorous evaluation, baselines and ablations, training or '
                  'fine-tuning at scale, reproducibility, papers or open-source work, and speed from idea to result.',
-        'terms': ['fine-tuning', 'RLHF', 'DPO', 'LoRA', 'pretraining', 'distillation', 'ablation', 'baseline',
-                  'benchmark', 'reproducibility', 'JAX', 'PyTorch', 'distributed training', 'publications', 'arXiv'],
+        'terms': ['fine-tuning', 'RLHF', 'DPO', 'LoRA', 'pretraining', 'distillation', 'ablation',
+                  'reproducibility', 'JAX', 'PyTorch', 'distributed training', 'publications', 'arXiv'],
         'examples': ['Fine-tuned a 7B model with LoRA on 40k domain examples; it beat the prompted baseline by 12 points '
                      'on a held-out eval'],
     },
@@ -156,8 +171,8 @@ FAMILIES = {
         'detect': r'eval|quality|safety|red\s*team|trust',
         'focus': 'Measurement: eval design, held-out and adversarial sets, LLM-as-judge calibration, regression gates in '
                  'CI, red teaming and jailbreak defenses, and the decisions the measurements drove.',
-        'terms': ['evals', 'evaluation', 'LLM-as-judge', 'red teaming', 'jailbreak', 'prompt injection', 'hallucination',
-                  'benchmarks', 'golden set', 'regression', 'guardrails', 'safety', 'calibration'],
+        'terms': ['evals', 'LLM-as-judge', 'red teaming', 'jailbreak', 'prompt injection', 'hallucination',
+                  'golden set', 'guardrails', 'AI safety', 'Braintrust', 'LangSmith', 'Langfuse'],
         'examples': ['Built a 500-case adversarial eval suite and LLM-judge calibrated to human labels (0.86 agreement); '
                      'it blocks releases that regress'],
     },
@@ -169,7 +184,7 @@ FAMILIES = {
         'focus': 'Data that makes AI work: pipelines and data quality, labeling and synthetic data, experiments and '
                  'causal reads, and metrics that decision makers used.',
         'terms': ['data pipelines', 'ETL', 'dbt', 'Airflow', 'Spark', 'Snowflake', 'Databricks', 'BigQuery',
-                  'data quality', 'labeling', 'synthetic data', 'A/B testing', 'statistics', 'SQL', 'pandas'],
+                  'data quality', 'labeling', 'synthetic data', 'A/B testing', 'SQL', 'pandas'],
         'examples': ['Built the labeling and data-quality pipeline behind a support classifier; label noise fell from '
                      '14% to 4% and accuracy rose 9 points'],
     },
@@ -179,7 +194,7 @@ FAMILIES = {
         'detect': r'automation|workflow|integration',
         'focus': 'Business workflows automated with AI: which process, how much time or money it saved, how errors '
                  'are caught (human review, validation), and the systems it connects.',
-        'terms': ['workflow automation', 'n8n', 'Zapier', 'Make', 'RPA', 'integrations', 'APIs', 'webhooks',
+        'terms': ['workflow automation', 'n8n', 'Zapier', 'Make.com', 'RPA', 'UiPath', 'webhooks',
                   'QuickBooks', 'Salesforce', 'HubSpot', 'human-in-the-loop', 'document processing', 'OCR'],
         'examples': ['Automated six-entity financial consolidation with Claude and human review gates; month-end close '
                      'dropped from 5 days to 2'],
