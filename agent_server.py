@@ -2087,9 +2087,47 @@ Return ONLY JSON:
                       json_mode=True, fast=True))
 
 
+def vault_facts():
+    """The evidence vault (local only): facts the candidate confirmed, as the engine reads them."""
+    if HOSTED:
+        return []
+    try:
+        return store.engine_facts()
+    except Exception:
+        return []
+
+
+def vault_text():
+    return '\n'.join(f['text'] for f in vault_facts())
+
+
+def remember_answers(resume, questions, answers):
+    """Save the candidate's answers to the engine's questions in the vault, each tagged with the
+    role or project it is about, so every later resume and application can use them."""
+    if HOSTED or not isinstance(answers, dict):
+        return 0
+    doc = engine.Doc(resume or '')
+    asked = {q.get('id'): q for q in questions or [] if isinstance(q, dict)}
+    saved = 0
+    for i, a in answers.items():
+        a = str(a or '').strip()
+        if not a or i not in doc.by_id:
+            continue
+        b = doc.by_id[i]
+        topic = '' if b['kind'] == 'summary' else str(b['group']).splitlines()[0][:200]
+        q = (asked.get(i) or {}).get('question') or ''
+        text = f'{a} (answering "{q[:160]}" about: {b["text"][:160]})' if q else f'{a} (about: {b["text"][:160]})'
+        try:
+            saved += bool(store.add_fact(text, topic, 'answer'))
+        except store.StoreError:
+            pass
+    return saved
+
+
 def make_target(job_title, seniority, sector, market, supported, unsupported, job_desc=''):
     return {'title': job_title, 'seniority': seniority, 'sector': sector, 'job_desc': job_desc or '',
             'domain': apex_domains.detect(job_title),          # the field's screening guide (apex_domains)
+            'facts': vault_facts(),                            # the evidence vault: confirmed facts
             'keywords': [{'name': k['name'], 'pct': k.get('pct')} for k in market.get('frequency', [])[:25]],
             'supported': list(supported or []), 'unsupported': list(unsupported or [])}
 
@@ -2170,7 +2208,9 @@ def cover_letter(job_title, sector, resume, supported=(), unsupported=(), *, com
              + (f'\nCompany: {company}' if company else '')
              + f'\nSkills the resume demonstrates: {", ".join(list(supported)[:15]) or "(see resume)"}'
              + (f'\n\nJOB POSTING:\n{posting[:6000]}' if posting else '')
-             + f'\n\nCANDIDATE RESUME:\n{resume[:8000]}\n\n{TRUTH_RULE}')
+             + f'\n\nCANDIDATE RESUME:\n{resume[:8000]}'
+             + (f'\n\nMORE FACTS THE CANDIDATE CONFIRMED (true; use the relevant ones):\n{vault_text()[:4000]}' if vault_text() else '')
+             + f'\n\n{TRUTH_RULE}')
     allowed = _words(job_title) + _employer(company)
     bad = {}
     # A letter whose claims are tangled through every paragraph cannot be repaired or
@@ -2179,7 +2219,7 @@ def cover_letter(job_title, sector, resume, supported=(), unsupported=(), *, com
         avoid = ('' if not attempt else '\n\nA previous draft was rejected by a fact check for these claims. Do not '
                  'make them, or any like them:\n- ' + '\n- '.join(str(p)[:300] for p in bad.get('letter') or []))
         letter = _tidy(gpt(sys_p, usr_p + avoid, max_tokens=900, temp=0.4))
-        ok, bad = fact_checked({'letter': {'text': letter, 'evidence': resume, 'context': posting}},
+        ok, bad = fact_checked({'letter': {'text': letter, 'evidence': resume + '\n' + vault_text(), 'context': posting}},
                                unsupported, allowed, 'This item is a cover letter.')
         if ok.get('letter'):
             return {'letter': ok['letter'], 'withheld': []}
@@ -2531,7 +2571,7 @@ sector_signals must be real industry jargon (e.g. real_estate: NOI, cap rate, Ya
     step('analyze','running','Scoring...')
 
     all_kw = [k['name'] for k in market.get('frequency', []) if k.get('name')][:30]
-    supported, unsupported = classify_keywords(resume, all_kw, sector, job_title)
+    supported, unsupported = classify_keywords(resume + '\n' + vault_text(), all_kw, sector, job_title)
     log(f'  ✓ Your resume demonstrates {len(supported)} of the top {len(all_kw)} requirements')
     if unsupported: log(f'  ○ Not demonstrated (reported as gaps, never added): {", ".join(unsupported[:6])}')
 
@@ -3066,7 +3106,7 @@ List up to 20 requirements, most important first.''',
         reqs = list(dict.fromkeys(str(r).strip() for r in (info.get('requirements') or [])
                                   if isinstance(r, str) and 0 < len(r.strip()) <= 60))[:20]
         title = (job_title or info.get('role_title') or 'the role').strip()
-        supported, unsupported = classify_keywords(resume, reqs, sector, title) if reqs else ([], [])
+        supported, unsupported = classify_keywords(resume + '\n' + vault_text(), reqs, sector, title) if reqs else ([], [])
         log(f'  ✓ {len(reqs)} requirements in the posting · {len(supported)} shown on your resume')
         emit({'type': 'step', 'id': 'analyze', 'status': 'done'})
         emit({'type': 'step', 'id': 'rewrite', 'status': 'running', 'msg': 'Rewriting and fact-checking every line...'})
@@ -3969,6 +4009,49 @@ def agent_kick(owner=''):
         return started > 0
 
 
+def github_import(username, limit=12):
+    """Public repositories of a GitHub user into the vault: one fact per repo (what it is, its
+    language, stars, topics) plus one with the start of its README, the candidate's own words.
+    Forks and empty repos are skipped. Returns {imported, repos}."""
+    user = re.sub(r'[^A-Za-z0-9-]', '', username.strip().split('/')[-1])[:39]
+    if not user:
+        raise store.StoreError('Enter your GitHub username.')
+    hdr = {'Accept': 'application/vnd.github+json', 'User-Agent': 'APEX'}
+    raw = http_get(f'https://api.github.com/users/{user}/repos?per_page=100&sort=pushed', headers=hdr, timeout=15)
+    try:
+        repos = json.loads(raw) if raw else None
+    except ValueError:
+        repos = None
+    if not isinstance(repos, list):
+        raise store.StoreError(f'Could not read the public repositories of "{user}" on GitHub.')
+    repos = [r for r in repos if isinstance(r, dict) and not r.get('fork') and (r.get('description') or r.get('stargazers_count'))]
+    repos.sort(key=lambda r: (r.get('stargazers_count') or 0, r.get('pushed_at') or ''), reverse=True)
+    repos = repos[:limit]
+
+    def readme(r):
+        txt = http_get(f'https://api.github.com/repos/{user}/{r["name"]}/readme',
+                       headers=dict(hdr, Accept='application/vnd.github.raw'), timeout=12) or ''
+        txt = re.sub(r'!\[[^\]]*\]\([^)]*\)|<[^>]+>|```.*?```', ' ', txt, flags=re.S)       # images, html, code
+        txt = re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', txt)                                 # links -> their text
+        return r['name'], re.sub(r'\s+', ' ', re.sub(r'^#+\s*|^[=-]{3,}\s*$', '', txt, flags=re.M)).strip()[:1200]
+    texts = dict(parallel_map(readme, repos, seconds=25))
+    added = 0
+    for r in repos:
+        bits = [f'GitHub repository {r["name"]}' + (f': {r["description"].strip().rstrip(".")}' if r.get('description') else '')]
+        if r.get('language'):
+            bits.append(f'written mainly in {r["language"]}')
+        if r.get('stargazers_count'):
+            bits.append(f'{r["stargazers_count"]} stars')
+        if r.get('forks_count'):
+            bits.append(f'{r["forks_count"]} forks')
+        if r.get('topics'):
+            bits.append('topics: ' + ', '.join(r['topics'][:8]))
+        added += bool(store.add_fact('; '.join(bits) + '.', r['name'], 'github'))
+        if texts.get(r['name']):
+            added += bool(store.add_fact(f'README of {r["name"]}: {texts[r["name"]]}', r['name'], 'github'))
+    return {'imported': added, 'repos': [r['name'] for r in repos]}
+
+
 APPLY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'apex_files', 'apply')
 
 
@@ -4809,6 +4892,10 @@ class Handler(BaseHTTPRequestHandler):
     def _api(self, method, path, qs, body):
         b = body if isinstance(body, dict) else {}
         q = lambda k: (qs.get(k) or [''])[0]
+        if path.startswith('/api/facts'):
+            if HOSTED:
+                self._send_json(403, {'error': 'The evidence vault is only in your local APEX.'}); return
+            return self._facts_api(method, path, b)
         if path.startswith('/api/agent'):
             if HOSTED:
                 self._send_json(403, {'error': 'The job agent runs only in your local APEX.'}); return
@@ -4839,6 +4926,26 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(201, {'artifact_id': aid}); return
                 if path == '/api/applications/followup-sent':
                     self._send_json(200, {'application': store.record_followup_sent(b.get('id', ''), owner=self.owner)}); return
+            self._send_json(404, {'error': 'not found'})
+        except store.StoreError as e:
+            self._send_json(404 if 'not found' in str(e) else 400, {'error': str(e)})
+        except Exception as e:
+            traceback.print_exc()
+            self._send_json(500, {'error': f'internal error ({type(e).__name__}); see the server window'})
+
+    def _facts_api(self, method, path, b):
+        """The evidence vault (local only): list, add, delete, import from GitHub."""
+        try:
+            if method == 'GET' and path == '/api/facts':
+                self._send_json(200, {'facts': store.list_facts()}); return
+            if method == 'POST' and path == '/api/facts':
+                f = store.add_fact(b.get('text'), b.get('topic') or '', 'manual')
+                self._send_json(201 if f else 200, {'fact': f, 'duplicate': f is None}); return
+            if method == 'POST' and path == '/api/facts/delete':
+                store.delete_fact(str(b.get('id') or ''))
+                self._send_json(200, {'deleted': True}); return
+            if method == 'POST' and path == '/api/facts/github':
+                self._send_json(200, github_import(str(b.get('username') or ''))); return
             self._send_json(404, {'error': 'not found'})
         except store.StoreError as e:
             self._send_json(404 if 'not found' in str(e) else 400, {'error': str(e)})
@@ -5111,7 +5218,11 @@ class Handler(BaseHTTPRequestHandler):
                 lists = lambda k: g(k) if isinstance(g(k), list) else None
                 # Only the answered lines are rewritten; the kept edits, the order and
                 # the first run's review carry over (no new diagnosis, no new spend).
-                r = engine.revise(engine_llm, _text(p, 'resume'), target, answers, kept=kept, log=log,
+                saved = remember_answers(_text(p, 'resume'), lists('questions'), answers)
+                if saved:
+                    log(f'  ✓ {saved} answer(s) saved to your evidence vault for future resumes')
+                tgt = dict(target, facts=vault_facts()) if isinstance(target, dict) and not HOSTED else target
+                r = engine.revise(engine_llm, _text(p, 'resume'), tgt, answers, kept=kept, log=log,
                                   prior_questions=lists('questions'), order=lists('order') or (),
                                   section_order=lists('section_order'))
                 for k in ('problems', 'strengths'):

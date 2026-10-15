@@ -258,10 +258,39 @@ class Doc:
                             'header': self.lines[h].replace(name, word, 1) if name in self.lines[h] else word,
                             'section': word, 'group': 'summary'}
 
+    facts_by_group = {}          # attach_facts(): confirmed facts per role/project heading
+    facts_all = ''
+
+    def attach_facts(self, facts):
+        """Facts the candidate confirmed (APEX's evidence vault: answers given before, GitHub,
+        notes). A fact whose topic names a role or project joins that group's evidence; every
+        fact is evidence for the summary. Facts are shown to the model beside the resume."""
+        norm = lambda x: re.sub(r'[^a-z0-9]+', ' ', str(x or '').lower()).strip()
+        groups = {b['group'] for b in self.blocks if b['kind'] != 'summary'}
+        by, every = {}, []
+        for f in facts or []:
+            text = str((f.get('text') if isinstance(f, dict) else f) or '').strip()[:600]
+            if not text:
+                continue
+            every.append(text)
+            topic = norm(f.get('topic') if isinstance(f, dict) else '')
+            for g in groups:
+                head = norm(str(g).split('\n')[0])
+                body = norm(' '.join(b['text'] for b in self.blocks if b['group'] == g))
+                if len(topic) >= 3 and head and (topic in head or head in topic
+                                                  or (len(topic) >= 4 and f' {topic} ' in f' {body} ')):
+                    by.setdefault(g, []).append(text)
+        self.facts_by_group, self.facts_all = by, '\n'.join(every)[:8000]
+
+    def evidence_text(self):
+        """The whole resume plus every confirmed fact: what the summary may draw on."""
+        return self.text + ('\n' + self.facts_all if self.facts_all else '')
+
     def group_text(self, block_id):
-        """All text of the role/project a block belongs to (its heading + sibling bullets)."""
+        """All text of the role/project a block belongs to (its heading + sibling bullets),
+        plus the confirmed facts about it."""
         b = self.by_id[block_id]
-        sib = [x['text'] for x in self.blocks if x['group'] == b['group']]
+        sib = [x['text'] for x in self.blocks if x['group'] == b['group']] + self.facts_by_group.get(b['group'], [])
         return b['group'] + '\n' + '\n'.join(sib)
 
     def numbered(self):
@@ -278,6 +307,12 @@ class Doc:
             else:
                 out.append(self.lines[i])
                 i += 1
+        if self.facts_all:
+            out.append('\nFACTS THE CANDIDATE CONFIRMED (true; use them where they make a line stronger):')
+            for g, fs in self.facts_by_group.items():
+                out += [f'- about "{str(g).splitlines()[0][:80]}": {f}' for f in fs]
+            placed = {f for fs in self.facts_by_group.values() for f in fs}
+            out += [f'- {f}' for f in self.facts_all.split('\n') if f and f not in placed]
         return '\n'.join(out)
 
     def sections(self):
@@ -1021,7 +1056,7 @@ def _audit_batch(llm, doc, items, answers):
     for i, lines in items.items():
         g = 'WHOLE RESUME' if doc.by_id[i]['kind'] == 'summary' else doc.by_id[i]['group']
         if g not in groups:
-            groups[g] = doc.text if g == 'WHOLE RESUME' else doc.group_text(i)
+            groups[g] = doc.evidence_text() if g == 'WHOLE RESUME' else doc.group_text(i)
         item = {'id': i, 'evidence_group': g, 'source': doc.by_id[i]['text'], 'rewrite': lines}
         if answers.get(i):
             item['candidate_answer'] = answers[i]
@@ -1318,7 +1353,7 @@ def _verify(llm, doc, target, diag, answers, proposals, log):
     def gate(i, lines):
         b = doc.by_id[i]
         if b['kind'] == 'summary':                     # the summary may draw on the whole resume
-            return fact_gate('\n'.join(lines), doc.text + '\n' + '\n'.join(answers.values()), unsupported,
+            return fact_gate('\n'.join(lines), doc.evidence_text() + '\n' + '\n'.join(answers.values()), unsupported,
                              b['text'], title)
         # A bullet: its own role and its answer only. Title words and SUPPORTED keywords
         # are no blanket allowance: a bullet may use a keyword its own role shows.
@@ -1501,6 +1536,7 @@ def optimize(llm, resume, target, answers=None, log=lambda m: None, judge_it=Tru
     vetoed_changes when the judge kept the original, and note when nothing was editable."""
     answers = _clean_answers(answers)
     doc = Doc(resume)
+    doc.attach_facts(target.get('facts'))
     if not doc.blocks:
         log('  ⚠ Could not find a summary or experience bullets to work on; check the section headers.')
         return {'final': resume, 'lines': doc.lines, 'changes': [], 'questions': [], 'order': [],
@@ -1533,6 +1569,7 @@ def revise(llm, resume, target, answers, kept=None, log=lambda m: None, prior_qu
     (with veto). Returns the optimize() result shape plus 'revised' (ids rewritten)."""
     answers = _clean_answers(answers)
     doc = Doc(resume)
+    doc.attach_facts(target.get('facts'))
     if not doc.by_id:
         return optimize(llm, resume, target, answers, log, judge_it)
     kept = {str(k): [str(x) for x in (v.get('lines') if isinstance(v, dict) else v) or []]

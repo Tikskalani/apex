@@ -105,3 +105,21 @@ def test_apply_opens_the_posting_for_a_prepared_job(app, fixture_resume):
     st, j = call(app, 'POST', '/api/agent/apply', {'id': item['id'], 'pdf_b64': ''})
     assert st == 200 and j['mode'] == 'link' and j['url'] == item['url']
     call(app, 'POST', '/api/agent/profiles/delete', {'id': pid})
+
+
+def test_evidence_vault_api(app):
+    st, j = call(app, 'POST', '/api/facts', {'text': 'Cut p95 latency of the RAG API from 2.1s to 600ms', 'topic': 'ApiCo'})
+    assert st == 201 and j['fact']['source'] == 'manual', j
+    fid = j['fact']['id']
+    st, j = call(app, 'POST', '/api/facts', {'text': 'cut p95 latency of the RAG API from 2.1s to 600ms', 'topic': 'apico'})
+    assert st == 200 and j['duplicate'] is True
+    st, j = call(app, 'GET', '/api/facts')
+    assert st == 200 and any(f['id'] == fid for f in j['facts'])
+    st, j = call(app, 'POST', '/api/facts', {'text': '  '})
+    assert st == 400
+    st, j = call(app, 'POST', '/api/facts/delete', {'id': fid})
+    assert st == 200
+    st, j = call(app, 'POST', '/api/facts/delete', {'id': fid})
+    assert st == 404
+    st, j = call(app, 'POST', '/api/facts/github', {'username': '  '})
+    assert st == 400

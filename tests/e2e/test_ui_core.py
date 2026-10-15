@@ -554,3 +554,19 @@ def test_apply_queue_from_profile_to_applied(ui, fixture_resume):
     page.locator('#ag-list [data-action="agApplied"]').first.click()
     expect(page.locator('#ag-list')).to_contain_text('Applied · in the Tracker')
     ui.assert_clean()
+
+
+def test_evidence_vault_add_and_delete(ui):
+    """The evidence vault card in the Apply queue tab: add a fact, see it, delete it."""
+    page = ui.page
+    go(page, 'queue')
+    page.click('#vault summary')
+    page.fill('#vault-topic', 'VaultCo')
+    page.fill('#vault-text', 'The support bot resolved 94% of chats without a human.')
+    page.click('[data-action="vaultAdd"]')
+    item = page.locator('#vault-list li', has_text='94% of chats')
+    expect(item).to_be_visible()
+    expect(item).to_contain_text('VaultCo')
+    item.locator('[data-action="vaultDelete"]').click()
+    expect(item).to_have_count(0)
+    ui.assert_clean()

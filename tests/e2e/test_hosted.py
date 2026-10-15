@@ -214,3 +214,9 @@ def test_browser_sign_in_flow(browser, hosted):
     expect(page).to_have_url(re.compile(r'/login$'))
     assert not errors, errors
     ctx.close()
+
+
+@pytest.mark.parametrize('path', ['/api/facts', '/api/agent/profiles'])
+def test_vault_and_job_agent_are_local_only(hosted, path):
+    st, _, j = req(hosted, 'GET', path, headers={'Cookie': login(hosted)})
+    assert st == 403 and 'local APEX' in j['error']

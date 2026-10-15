@@ -411,6 +411,15 @@ The job agent (`/api/agent/*`, JSON, local only):
 | POST | `/api/agent/apply` | `id`, `pdf_b64` (the tailored resume PDF the page made) | One-tap Apply. `{"mode": "filled", "url", "filled": [fields], "error"}`: the application opened in the APEX browser window (a Chromium profile in `apex_browser/`, via `apex_apply.py`) and its contact fields, resume and cover letter were filled; nothing is submitted. `{"mode": "link", "url"}` when Playwright is not installed or `APEX_FORM_FILL=0`: the page opens the posting |
 | POST | `/api/agent/applied` | `id` | `{"application"}`: created in the Tracker (status applied, source `agent`) with the tailored resume and cover letter as artifacts |
 
+The evidence vault (`/api/facts`, JSON, local only). Every engine run, tailoring, cover letter and agent kit reads it; `/engine/answer` adds the answers it receives (source `answer`).
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/api/facts` | | `{"facts": [{id, topic, text, source, created_at}]}`, newest first. Source: `manual`, `answer`, `github` |
+| POST | `/api/facts` | `text` (required, up to 2000 chars), `topic` (the role, company or project it is about) | `201 {"fact"}`, or `200 {"fact": null, "duplicate": true}` when the same text about the same topic is already there. Up to 500 facts |
+| POST | `/api/facts/delete` | `id` | `{"deleted": true}`, `404` when not found |
+| POST | `/api/facts/github` | `username` | `{"imported": n, "repos": [names]}`: up to 12 public, non-fork repositories with a description or stars, one fact each plus one with the start of the README |
+
 | Route | Request fields | Response |
 |---|---|---|
 | `/alerts/subscribe` | `email`, `jobTitle` (both required), `location`, `sector`, `keywords`, `resumeSummary`, `frequency` (`instant` 30 min, `hourly`, `daily`; anything else is `daily`) | `{"subscription", "smtp_configured"}`. Stored in `alerts.json`. If SMTP is set, sends a confirmation and starts a scan (unless one is running). |

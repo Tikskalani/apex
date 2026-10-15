@@ -1831,6 +1831,20 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
             </div>
           </div>
           <div id="ag-list"><div class="empty">Create a profile to start: a name, the job titles you want, and your base resume.</div></div>
+          <details class="card" id="vault" style="margin-top:var(--s4)">
+            <summary style="cursor:pointer;font-weight:600">Evidence vault <span id="vault-count" style="font-weight:400;color:var(--fg-2)"></span></summary>
+            <p style="font-size:13px;color:var(--fg-2);margin:var(--s2) 0 var(--s3)">Facts you confirmed once, used as evidence in every resume, cover letter and application APEX writes from now on: your answers to its questions, your GitHub projects, and notes you add. APEX still never states anything that is not here or in your resume.</p>
+            <div style="display:grid;gap:var(--s2);grid-template-columns:minmax(140px,1fr) 3fr auto">
+              <input id="vault-topic" placeholder="About (role, company or project)" aria-label="What the fact is about">
+              <input id="vault-text" placeholder="e.g. The support bot handled 12,000 chats a month at 94% resolution" aria-label="Fact">
+              <button class="btn btn-sm btn-primary" data-action="vaultAdd">Add</button>
+            </div>
+            <div style="display:flex;gap:var(--s2);margin-top:var(--s2);flex-wrap:wrap">
+              <input id="vault-gh" placeholder="GitHub username" aria-label="GitHub username" style="max-width:220px">
+              <button class="btn btn-sm" data-action="vaultGithub">Import public repos</button>
+            </div>
+            <ul id="vault-list" style="list-style:none;padding:0;margin:var(--s3) 0 0;display:grid;gap:6px"></ul>
+          </details>
         </section>
 
         <section class="view" id="view-tracker">
@@ -2294,6 +2308,44 @@ function agEditor(p) {
   $('ag-name').focus();
 }
 
+async function vaultLoad() {
+  try {
+    const facts = (await api('/api/facts')).facts || [];
+    $('vault-count').textContent = facts.length ? `(${facts.length})` : '';
+    const label = { answer: 'your answer', github: 'GitHub', manual: 'note' };
+    $('vault-list').innerHTML = facts.map(f => `<li style="display:flex;gap:8px;align-items:flex-start;font-size:13px">
+      <span class="kw" style="flex:none">${escHtml(label[f.source] || f.source)}</span>
+      <span style="flex:1">${f.topic ? `<b>${escHtml(f.topic)}</b>: ` : ''}${escHtml(f.text)}</span>
+      <button class="btn btn-sm" data-action="vaultDelete" data-arg="${escHtml(f.id)}" aria-label="Delete this fact">Delete</button></li>`).join('')
+      || '<li class="empty" style="font-size:13px">Nothing yet. Answer APEX\'s questions after an optimization, add a fact, or import your GitHub.</li>';
+  } catch (e) { $('vault-list').innerHTML = `<li class="empty">${escHtml(e.message)}</li>`; }
+}
+async function vaultAdd(btn) {
+  const text = $('vault-text').value.trim(); if (!text) { $('vault-text').focus(); return; }
+  btn.disabled = true;
+  try {
+    const j = await api('/api/facts', { text, topic: $('vault-topic').value.trim() });
+    toast(j.duplicate ? 'Already in your vault' : 'Saved to your vault', 'ok');
+    $('vault-text').value = '';
+    await vaultLoad();
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+async function vaultGithub(btn) {
+  const username = $('vault-gh').value.trim(); if (!username) { $('vault-gh').focus(); return; }
+  btn.disabled = true; btn.textContent = 'Importing…';
+  try {
+    const j = await api('/api/facts/github', { username });
+    toast(`Imported ${j.imported} fact${j.imported === 1 ? '' : 's'} from ${j.repos.length} repo${j.repos.length === 1 ? '' : 's'}`, 'ok');
+    await vaultLoad();
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = 'Import public repos'; }
+}
+async function vaultDelete(el) {
+  try { await api('/api/facts/delete', { id: el.dataset.arg }); await vaultLoad(); }
+  catch (e) { toast(e.message, 'err'); }
+}
+
 async function agSave(btn) {
   btn.disabled = true;
   try {
@@ -2507,6 +2559,9 @@ const ACTIONS = {
   agApplyNow:  el => agApplyNow(el),
   agCopy:      el => agCopy(el),
   agPdf:       el => agPdf(el),
+  vaultAdd:    el => vaultAdd(el),
+  vaultGithub: el => vaultGithub(el),
+  vaultDelete: el => vaultDelete(el),
 };
 document.addEventListener('click', ev => {
   const el = ev.target.closest('[data-action]');
@@ -2533,7 +2588,7 @@ function switchTab(view) {
   clearNew(view);
   if (view === 'templates') initTemplatesTab();
   if (view === 'tracker') loadPipeline();
-  if (view === 'queue') agLoad();
+  if (view === 'queue') { agLoad(); vaultLoad(); }
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   document.querySelector('.canvas').scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
 }

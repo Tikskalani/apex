@@ -113,6 +113,14 @@ CREATE TABLE IF NOT EXISTS queue (          -- jobs the agent proposed, and what
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS facts (           -- the evidence vault: things the candidate confirmed are true
+    id         TEXT PRIMARY KEY,
+    owner      TEXT NOT NULL DEFAULT '',
+    topic      TEXT NOT NULL DEFAULT '',      -- the role, project or repo it is about ('' = general)
+    text       TEXT NOT NULL CHECK (length(trim(text)) > 0),
+    source     TEXT NOT NULL DEFAULT 'manual',  -- manual | answer | github
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS spend (
     day   TEXT PRIMARY KEY,              -- UTC YYYY-MM-DD
     units INTEGER NOT NULL DEFAULT 0     -- AI cost units used that day (hosted demo)
@@ -127,6 +135,7 @@ CREATE INDEX IF NOT EXISTS events_app ON events (application_id, at);
 CREATE INDEX IF NOT EXISTS artifacts_app ON artifacts (application_id, kind, created_at);
 CREATE INDEX IF NOT EXISTS score_owner_title ON score_history (owner, lower(job_title), created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS queue_job ON queue (owner, profile_id, job_key);
+CREATE UNIQUE INDEX IF NOT EXISTS facts_text ON facts (owner, lower(topic), lower(text));
 CREATE INDEX IF NOT EXISTS queue_status ON queue (owner, profile_id, status, fit);
 """
 
@@ -748,3 +757,49 @@ def reset_stuck_preparing(*, owner=''):
     with _db() as conn:
         return conn.execute("UPDATE queue SET status = 'approved' WHERE owner = ? AND status = 'preparing'",
                             (owner,)).rowcount
+
+
+# ── evidence vault: facts the candidate confirmed ────────────────────────────
+
+FACT_SOURCES = ('manual', 'answer', 'github')
+MAX_FACTS_PER_OWNER = 500
+
+
+def add_fact(text, topic='', source='manual', *, owner=''):
+    """Save a fact (the same text about the same topic is kept once). Returns the fact, or None
+    when it was already there."""
+    text = _text(text, 'fact', 2000, required=True)
+    topic = _text(topic, 'topic', 200)
+    if source not in FACT_SOURCES:
+        raise StoreError(f'source must be one of: {", ".join(FACT_SOURCES)}')
+    rec = {'id': uuid.uuid4().hex, 'topic': topic, 'text': text, 'source': source, 'created_at': _now()}
+    with _db(immediate=True) as conn:
+        n = conn.execute('SELECT count(*) FROM facts WHERE owner = ?', (owner,)).fetchone()[0]
+        if n >= MAX_FACTS_PER_OWNER:
+            raise StoreError(f'the vault is full ({MAX_FACTS_PER_OWNER} facts); delete some first')
+        try:
+            conn.execute('INSERT INTO facts (id, owner, topic, text, source, created_at) VALUES (?,?,?,?,?,?)',
+                         (rec['id'], owner, topic, text, source, rec['created_at']))
+        except sqlite3.IntegrityError:
+            return None
+    return rec
+
+
+def list_facts(*, owner=''):
+    with _db() as conn:
+        rows = conn.execute('SELECT id, topic, text, source, created_at FROM facts WHERE owner = ? ORDER BY created_at DESC',
+                            (owner,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_fact(fid, *, owner=''):
+    with _db() as conn:
+        n = conn.execute('DELETE FROM facts WHERE id = ? AND owner = ?', (fid, owner)).rowcount
+    if not n:
+        raise StoreError('fact not found')
+    return True
+
+
+def engine_facts(*, owner=''):
+    """The vault as the engine reads it: [{topic, text}]."""
+    return [{'topic': f['topic'], 'text': f['text']} for f in list_facts(owner=owner)]
