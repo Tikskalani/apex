@@ -3848,12 +3848,11 @@ def _local_today():
 
 def agent_fit(resume, posting, title, domain):
     """(fit 0-100, matched terms, missing terms) of a posting against a resume, locally (no model).
-    Mostly the share of the skills and tools the posting asks for (apex_domains.MATCH_TERMS,
+    Mostly the share of the skills and tools the posting asks for (apex_domains.match_terms,
     whole words) that the resume shows, the way a recruiter reads it; a little general word
     overlap breaks ties. Short postings (a snippet) ask for little, so they score on overlap."""
     hay_p, hay_r = _norm(posting), _norm(resume)
-    terms = apex_domains.MATCH_TERMS.get(domain) or [t.strip() for t in (apex_domains.PACKS.get(domain) or {})
-                                                      .get('vocabulary', '').split(',') if t.strip()]
+    terms = apex_domains.match_terms(domain, title)
     asked = list(dict.fromkeys(t for t in terms if _present(t, hay_p)))
     matched = [t for t in asked if _present(t, hay_r)]
     lw, shared = lightweight_match_score(resume, posting, title)
@@ -4767,7 +4766,7 @@ class Handler(BaseHTTPRequestHandler):
                                   'SMTP_CONFIGURED': (not HOSTED) and bool(smtp['user'] and smtp['pass']),
                                   'AI_READY': not AI_PROBLEM, 'AI_PROBLEM': AI_PROBLEM,
                                   'VOICE_READY': bool(OPENAI_KEY), 'MODEL': MODEL if not AI_PROBLEM else '',
-                                  'VERSION': VERSION})
+                                  'VERSION': VERSION, 'ROLES': apex_domains.titles()})
             return
         if path == '/templates':
             self._send_json(200, {'templates': [{'id':k,'name':v['name'],'desc':v['desc']} for k,v in TEMPLATES.items()]})

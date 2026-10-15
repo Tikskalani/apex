@@ -823,8 +823,9 @@ def _target_block(t):
              _safe(f'MARKET KEYWORDS (share of real postings that ask for it): {kw}'),
              _safe(f'SUPPORTED (the resume already demonstrates these; prefer these exact terms): {", ".join(t.get("supported") or []) or "(none)"}'),
              _safe(f'NOT DEMONSTRATED (never add these; they are gaps for the report): {", ".join(t.get("unsupported") or []) or "(none)"}')]
-    if apex_domains.brief(t.get('domain')):     # how this field screens; only a known pack's name selects it
-        lines.append(apex_domains.brief(t.get('domain')))
+    guide = apex_domains.brief(t.get('domain'), t.get('title'))   # the field + role family; only a known name selects it
+    if guide:
+        lines.append(guide)
     if t.get('job_desc'):
         lines.append('TARGET JOB POSTING (highest priority signal):\n' + _data('JOB_POSTING', t['job_desc'][:12000]))
     return _safe(lines[0]) + '\n' + '\n'.join(lines[1:])

@@ -1508,7 +1508,7 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
               <span class="badge" id="jobs-count">—</span>
             </div>
             <div class="jobs-toolbar">
-              <input type="text" id="jobs-q" aria-label="Role to search for" placeholder="Search role… (e.g. 'physical therapist houston')" style="flex:2; min-width:200px">
+              <input type="text" id="jobs-q" aria-label="Role to search for" placeholder="Search role… (e.g. 'AI engineer houston')" style="flex:2; min-width:200px">
               <input type="text" id="jobs-location" aria-label="Location" placeholder="Location — autocompletes as you type" style="flex:1; min-width:200px" list="cities-datalist">
               <datalist id="cities-datalist"></datalist>
               <button class="btn btn-primary" id="jobs-search-btn">Search</button>
@@ -1811,8 +1811,9 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
           <div class="card" id="ag-editor" hidden style="margin-bottom:var(--s4)">
             <div class="card-h"><h3 id="ag-editor-title">Profile</h3></div>
             <div style="display:grid;gap:var(--s3);grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
-              <label>Name <input id="ag-name" placeholder="e.g. Me, or Partner (PT)"></label>
-              <label>Target job titles (comma-separated) <input id="ag-targets" placeholder="AI Engineer, Backend Engineer"></label>
+              <label>Name <input id="ag-name" placeholder="e.g. Me"></label>
+              <label>Target job titles (comma-separated) <input id="ag-targets" placeholder="AI Engineer, Forward Deployed Engineer">
+                <select id="ag-add-role" aria-label="Add a role to the target titles" style="margin-top:6px"><option value="">Add a role…</option></select></label>
               <label>Location <input id="ag-location" placeholder="Houston, TX (blank: anywhere)"></label>
               <label>Jobs proposed per day <input id="ag-limit" type="number" min="1" max="50" value="30"></label>
               <label>Minimum fit (0-90) <input id="ag-minfit" type="number" min="0" max="90" value="35"></label>
@@ -1958,7 +1959,8 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
     </div>
     <div class="drawer-section">
       <label for="job-title">Target job title</label>
-      <input type="text" id="job-title" placeholder="e.g. Senior Software Engineer">
+      <input type="text" id="job-title" placeholder="e.g. AI Engineer, Forward Deployed Engineer" list="ai-roles" autocomplete="off">
+      <datalist id="ai-roles"></datalist>
     </div>
     <div class="drawer-section">
       <label for="industry">Industry</label>
@@ -2263,6 +2265,12 @@ async function agLoad() {
     await agQueue();
   } catch (e) { $('ag-status').textContent = 'Could not load the job agent: ' + e.message; }
 }
+$('ag-add-role').addEventListener('change', ev => {
+  const t = ev.target.value; if (!t) return;
+  const now = $('ag-targets').value.split(',').map(x => x.trim()).filter(Boolean);
+  if (!now.includes(t)) $('ag-targets').value = now.concat(t).join(', ');
+  ev.target.value = '';
+});
 $('ag-profile').addEventListener('change', ev => {
   AG.pid = ev.target.value;
   try { localStorage.setItem('apex.agentProfile', AG.pid); } catch (e) {}
@@ -2626,10 +2634,22 @@ async function loadConfig() {
     if (j.SMTP_CONFIGURED) $('smtp-setup-card').style.display = 'none';
     else { $('smtp-wizard').style.display = 'block'; $('smtp-toggle').setAttribute('aria-expanded', 'true'); }
     setVersion(j.VERSION);
+    fillRoles(j.ROLES);
   } catch(e) {}
   applyAiReadiness();
   viReadiness();
 }
+// The AI-engineering titles APEX is built for (apex_domains.py), grouped by role family:
+// suggestions in the Launch title box, and an "Add a role" list in the job agent's profile.
+function fillRoles(roles) {
+  roles = arr(roles);
+  if (!roles.length) return;
+  const all = [...new Set(roles.flatMap(f => arr(f.titles)))];
+  $('ai-roles').innerHTML = all.map(t => `<option value="${escHtml(t)}"></option>`).join('');
+  $('ag-add-role').innerHTML = '<option value="">Add a role…</option>' + roles.map(f =>
+    `<optgroup label="${escHtml(f.label)}">${arr(f.titles).map(t => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('')}</optgroup>`).join('');
+}
+
 // No AI key: say exactly how to add one, and say why Launch is off.
 function applyAiReadiness() {
   const ready = CFG.AI_READY !== false;
@@ -4143,12 +4163,11 @@ async function initTemplatesTab() {
 // The field of the target title (as in apex_domains.py): which template suits it, how many pages.
 function targetField() {
   const t = ($('job-title').value || '').toLowerCase();
-  if (/physical\s+therap|physiotherap|\bdpt\b|\bpt\b/.test(t)) return 'pt';
-  if (/engineer|developer|software|\bml\b|machine learning|\bai\b|data|devops|\bsre\b|architect|scientist/.test(t)) return 'tech';
+  if (/engineer|developer|software|\bml\b|machine learning|\bai\b|\bllm\b|data|devops|\bsre\b|architect|scientist|agent|prompt/.test(t)) return 'tech';
   return '';
 }
-const recommendedPages = () => ({ pt: 1, tech: 2 })[targetField()] || 0;
-const recommendedTemplate = () => ({ pt: 'classic', tech: 'tech' })[targetField()] || '';
+const recommendedPages = () => targetField() ? 2 : 0;
+const recommendedTemplate = () => targetField() ? 'tech' : '';
 
 function renderTemplateGrid() {
   const rec = recommendedTemplate();

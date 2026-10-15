@@ -70,7 +70,11 @@ def test_drawer_is_a_dialog_escape_closes_and_focus_returns(ui):
     page.keyboard.press('Enter')
     expect(drawer).to_have_class(re.compile(r'\bopen\b'))
     assert drawer.get_attribute('inert') is None
-    page.wait_for_function("document.getElementById('drawer').contains(document.activeElement)")
+    # Polled from here: wait_for_function evaluates a string, which the page's CSP refuses.
+    for _ in range(50):
+        if page.evaluate("document.getElementById('drawer').contains(document.activeElement)"):
+            break
+        page.wait_for_timeout(100)
     for _ in range(40):                      # focus is trapped inside while open
         page.keyboard.press('Tab')
         assert page.evaluate("document.getElementById('drawer').contains(document.activeElement)")

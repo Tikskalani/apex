@@ -166,34 +166,34 @@ def test_entry_level_pay_counts_only_entry_level_postings(server, monkeypatch):
 # ── page budget: cuts that keep what matters ─────────────────────────────────
 
 def test_cuts_fit_the_page_budget_but_never_lose_a_required_skill_or_a_role():
-    filler = ' '.join(['clinic'] * 70)
-    resume = ('JO DOE, PT\n\nEXPERIENCE\nPhysical Therapist - Lakeside Rehab\n2022 - Present\n'
-              f'- Treated outpatient orthopedic patients with dry needling {filler}\n'
-              f'- Ran community health fairs for the clinic {filler}\n'
-              f'- Helped at the front desk on busy days {filler}\n'
-              f'- Covered weekend shifts during the holidays {filler}\n'
-              f'- Ordered supplies for the clinic every month {filler}\n'
-              f'- Cleaned and set up treatment rooms {filler}\n'
-              f'- Answered phones and booked visits {filler}\n'
-              'Physical Therapy Aide - Hill Clinic\n2020 - 2022\n'
-              f'- Set up equipment {filler}\n')
+    filler = ' '.join(['service'] * 150)
+    resume = ('JO DOE\n\nEXPERIENCE\nAI Engineer - Acme\n2022 - Present\n'
+              f'- Built the RAG pipeline over policy documents {filler}\n'
+              f'- Ran weekly demos for the sales team {filler}\n'
+              f'- Helped at the internal hackathon {filler}\n'
+              f'- Covered on-call during the holidays {filler}\n'
+              f'- Ordered laptops for new hires {filler}\n'
+              f'- Cleaned up old dashboards {filler}\n'
+              f'- Answered questions in the help channel {filler}\n'
+              'Support Engineer - Beta\n2020 - 2022\n'
+              f'- Set up the ticket queue {filler}\n')
     doc = E.Doc(resume)
-    target = {'title': 'Physical Therapist', 'domain': 'physical_therapy', 'seniority': 'mid', 'keywords': [],
-              'supported': ['dry needling'], 'unsupported': []}
+    target = {'title': 'AI Engineer', 'domain': 'ai_swe', 'seniority': 'mid', 'keywords': [],
+              'supported': ['RAG'], 'unsupported': []}
     ids = {b['text'].split()[0]: b['id'] for b in doc.editable() if b['kind'] == 'bullet'}
-    llm = scripted_llm({'cuts': [{'id': ids['Treated'], 'why': 'x'},      # only place dry needling shows: kept
-                                 {'id': ids['Set'], 'why': 'x'},          # the aide role's only bullet: kept
+    llm = scripted_llm({'cuts': [{'id': ids['Built'], 'why': 'x'},        # only place RAG shows: kept
+                                 {'id': ids['Set'], 'why': 'x'},          # the support role's only bullet: kept
                                  {'id': ids['Helped'], 'why': 'minor'}, {'id': ids['Cleaned'], 'why': 'minor'},
                                  {'id': ids['Answered'], 'why': 'minor'}, {'id': ids['Ordered'], 'why': 'minor'},
                                  {'id': ids['Covered'], 'why': 'minor'}]})
     cuts = E._fit_budget(llm, doc, target, {}, [], lambda m: None)
-    assert ids['Treated'] not in cuts and ids['Set'] not in cuts
-    assert ids['Helped'] in cuts and all(c['lines'] == [] and c['why'].startswith('Cut to fit 1 page') for c in cuts.values())
+    assert ids['Built'] not in cuts and ids['Set'] not in cuts
+    assert ids['Helped'] in cuts and all(c['lines'] == [] and c['why'].startswith('Cut to fit 2 pages') for c in cuts.values())
     final = doc.render({i: [] for i in cuts})
-    assert len(final.split()) <= 500 + 40 or len(cuts) == 5          # stops once within budget
+    assert len(final.split()) <= 1000 + 40 or len(cuts) == 5          # stops once within budget
 
 
-def test_no_cuts_outside_the_two_fields_or_within_budget():
+def test_no_cuts_outside_the_niche_or_within_budget():
     doc = E.Doc('JO DOE\n\nEXPERIENCE\nAnalyst - Acme\n2020 - Present\n- Built reports\n- Ran meetings\n')
     assert E._fit_budget(scripted_llm(), doc, {'title': 'Accountant', 'domain': None}, {}, [], lambda m: None) == {}
     assert E._fit_budget(scripted_llm(), doc, {'title': 'AI Engineer', 'domain': 'ai_swe'}, {}, [], lambda m: None) == {}

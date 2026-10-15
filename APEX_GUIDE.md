@@ -50,7 +50,7 @@ When it finishes, each tab that has new results gets a dot. Start with **Resume 
 
 ## 4. Every tab
 
-APEX is built for two fields: **AI and software engineering** (including ML and data roles) and **physical therapy**. For a target title in either field it reads a field guide of what hiring managers there screen for, so its review, rewrites and scoring follow that field's standards.
+APEX is built for one niche: **AI engineering and the roles around it**, about 60 titles in 10 families: AI/LLM application engineering, voice and multimodal AI, machine learning, MLOps and AI platform, forward deployed and solutions, full-stack AI products, research engineering, evals and safety, data for AI, and AI automation. Pick a title from the suggestions in the job-title box (or **Add a role** in a job-agent profile). For each title APEX reads what AI hiring managers screen for plus its family's own focus (a platform engineer is judged on serving and cost, a forward deployed engineer on customer outcomes), so its review, rewrites and scoring follow that standard.
 
 **Focus mode** (on by default) shows only Home, Resume X-Ray, PDF Templates, Apply Queue, Live Jobs, Cover Letter and Tracker. The **⋯ More tools** button at the bottom of the left bar shows the rest (Market Intel, Gap Report, Interview, LinkedIn and the single tools). In focus mode a run skips the interview, LinkedIn, outreach and velocity tabs, so it is faster and cheaper.
 

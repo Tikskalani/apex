@@ -1,173 +1,260 @@
-"""Domain packs: what hiring managers in APEX's two fields screen for.
+"""AI engineering: what hiring managers screen for, by role family.
 
-APEX is tuned for two fields: AI and software engineering, and physical therapy. A pack is
-written guidance the engine reads in every step (diagnosis, rewrite, judge) through the
-target's `domain_brief`: what a strong resume in the field shows, the field's vocabulary,
-how to order the page, and the shape of excellent lines. The example lines are patterns
+APEX is built for one niche: AI engineering and the roles around it. Every target title
+in the niche gets the field's screening guide (`BRIEF`) plus its role family's own focus:
+an AI Platform Engineer is judged on serving, scale and cost; a Forward Deployed Engineer
+on customer deployments and outcomes; an Evals Engineer on measurement. The engine reads
+this in its review, rewrite and judge (through the target's `domain`, a known name only),
+and the job agent scores postings with the family's terms. Example lines are patterns
 only; their numbers are invented and the fact gate rejects any that reach a resume.
 
-Roles outside both fields still run, with no pack (the engine's general playbook).
+A title outside the niche runs with no pack (the engine's general playbook).
 """
 import re
 
-AI_SWE = 'ai_swe'
-PHYSICAL_THERAPY = 'physical_therapy'
+AI_SWE = 'ai_swe'           # the one domain; the id is kept for stored data and benchmarks
 
-_DETECT = [
-    (PHYSICAL_THERAPY, re.compile(
-        r'physical\s+therap|physiotherap|\bdpt\b|\bpta\b|\bp\.?t\.?\b(?!\s*time)|rehab(?:ilitation)?\s+(?:therapist|director|manager)'
-        r'|(?:outpatient|orthopedic|sports|acute|inpatient|home\s+health|pediatric|neuro|pelvic|vestibular)\s+(?:physical\s+)?therapist',
-        re.I)),
-    (AI_SWE, re.compile(
-        r'engineer|developer|programmer|software|\bswe\b|\bsde\b|\bml\b|machine\s+learning|\bai\b|artificial\s+intelligence'
-        r'|\bllm\b|data\s+scien|data\s+analy|analytics|applied\s+scien|research\s+scien|\bsre\b|site\s+reliability|devops|mlops|platform'
-        r'|full[\s-]*stack|back[\s-]*end|front[\s-]*end|architect|technical\s+staff', re.I)),
-]
+_ENGINEERING = re.compile(
+    r'engineer|developer|programmer|software|\bswe\b|\bsde\b|\bml\b|machine\s+learning|\bai\b|artificial\s+intelligence'
+    r'|\bllm\b|gen\s*ai|generative|data\s+scien|data\s+analy|analytics|applied\s+scien|research\s+scien|\bsre\b'
+    r'|site\s+reliability|devops|mlops|platform|full[\s-]*stack|back[\s-]*end|front[\s-]*end|architect|technical\s+staff'
+    r'|forward\s+deployed|solutions?\s+(?:engineer|architect)|prompt|agent', re.I)
 
 
 def detect(title):
-    """The pack for a target job title, or None for roles outside both fields."""
-    t = title or ''
-    return next((name for name, rx in _DETECT if rx.search(t)), None)
+    """AI_SWE for a title in the niche (AI, ML and the engineering around them), else None."""
+    return AI_SWE if _ENGINEERING.search(title or '') else None
 
 
-PACKS = {
-    AI_SWE: {
-        'label': 'AI and software engineering',
-        'sector': 'tech',
-        'brief': """WHAT HIRING MANAGERS FOR AI AND SOFTWARE ENGINEERING ROLES SCREEN FOR (apply to this candidate's real evidence)
-- Shipped and used beats built: what the system is, who uses it, and that it runs in production (users, customers,
-  requests or records per day, uptime). A live system with real users outranks any amount of coursework.
-- Engineering rigor, shown with specifics: automated tests and CI gates, code review, observability, incident
-  handling, security and privacy design, migrations done without downtime.
-- For AI and LLM roles: the system around the model, not just "used an LLM": retrieval (RAG, embeddings, vector
-  search), tool use and agents, how quality was measured (eval sets, held-out cases, pass rates, regressions caught),
-  guardrails and human-approval gates, latency and cost per call, and failure analysis that changed the design.
-- Ownership and judgment: what the candidate led or owned end to end, decisions and trade-offs, scope (systems,
-  teams, clients), and outcomes for the business.
-- The numbers that carry weight here: latency (p50/p95/p99), throughput and scale, reliability (uptime, incidents,
-  pages), cost, quality metrics (accuracy, eval pass rate, error rate), and delivery speed (deploys, lead time).
-- The top third of page 1 decides the screen: the target identity and the single strongest relevant system must be
-  readable in 6 seconds. Career changers, new grads and independent builders: the strongest relevant project or
-  client work leads; a PROJECTS section may sit above EXPERIENCE; earlier non-engineering roles shrink to the line
-  that shows transferable value (domain knowledge, users, operations).
-- Skills grouped by area (AI/LLM, languages, frameworks, data, cloud/DevOps, testing), most relevant to the target
-  first. No soft-skill lists. Each group short enough to scan.
+BRIEF = """WHAT HIRING MANAGERS FOR AI ENGINEERING ROLES SCREEN FOR (apply to this candidate's real evidence)
+- Shipped and used beats built: what the AI system is, who uses it, and that it runs in production (users, customers,
+  calls, requests or documents per day). A live system with real users outranks any number of notebooks or courses.
+- The system around the model, not "used an LLM": retrieval (RAG, embeddings, vector search), tool use and agents,
+  orchestration, structured outputs, and the deterministic code that keeps the model safe.
+- Proof of quality: how output quality was measured (eval sets, held-out cases, pass rates, human review), regressions
+  caught before release, and failure analysis that changed the design. This is the strongest AI signal there is.
+- Guardrails and judgment: human-approval gates, safety floors, PII handling, prompt-injection defenses, fallbacks.
+- The numbers that carry weight: latency (p50/p95, time to first token), cost per call or per task, accuracy or eval
+  pass rate, error and hallucination rate, throughput and scale, uptime, and delivery speed.
+- Engineering rigor: automated tests and CI gates, typed code, observability and tracing, incident handling.
+- Ownership: what the candidate designed and owned end to end, the trade-offs chosen, and the business outcome.
+- The top third of page 1 decides the screen: the target identity and the single strongest AI system must be readable
+  in 6 seconds. Career changers and independent builders: the strongest AI project or client work leads (PROJECTS may
+  sit above EXPERIENCE); earlier non-engineering roles shrink to the line that shows domain value.
+- Skills grouped by area (AI and LLM, languages, frameworks, data, cloud and infrastructure, testing), the target's
+  stack first. Name models, providers and frameworks the resume shows. No soft-skill lists.
 - One proof per point: do not repeat the same test counts, metrics or claims across summary, bullets and skills.
-- Cut duty statements ("responsible for"), unbacked adjectives ("passionate", "cutting-edge", "robust"), tutorials.
-- Length: one page under about 5 years of engineering experience, two pages at most.""",
-        'vocabulary': ('LLM applications, AI agents, agentic workflows, tool use, RAG, embeddings, vector databases, evals, '
-                       'prompt engineering, fine-tuning, guardrails, MLOps, model serving, inference latency, Python, '
-                       'TypeScript, FastAPI, React, Next.js, PostgreSQL, Docker, Kubernetes, AWS, GCP, CI/CD, '
-                       'distributed systems, system design, REST APIs, data pipelines, observability'),
-        'examples': [
-            'Built an eval harness of 40 scripted and 12 held-out scenarios that gates every model change; it caught 3 '
-            'regressions before release',
-            'Cut p95 latency of the retrieval API from 900 ms to 220 ms by moving embeddings to pgvector with HNSW indexes',
-            'Shipped a multi-tenant agent platform to 8 paying customers, with per-tenant API keys, audit logs and a '
-            'human-approval queue for every outbound action',
-        ],
+- Cut duty statements ("responsible for"), unbacked adjectives ("cutting-edge", "robust"), tutorials and courses.
+- Length: one page under about 5 years of engineering experience, two pages at most."""
+
+VOCABULARY = ('LLM applications, AI agents, agentic workflows, tool use, function calling, RAG, embeddings, vector '
+              'databases, evals, prompt engineering, context engineering, fine-tuning, guardrails, structured outputs, '
+              'MLOps, model serving, inference latency, Python, TypeScript, FastAPI, React, Next.js, PostgreSQL, '
+              'Docker, Kubernetes, AWS, GCP, CI/CD, distributed systems, system design, observability')
+
+EXAMPLES = [
+    'Built an eval harness of 40 scripted and 12 held-out scenarios that gates every model change; it caught 3 '
+    'regressions before release',
+    'Cut p95 latency of the retrieval API from 900 ms to 220 ms by moving embeddings to pgvector with HNSW indexes',
+    'Shipped a multi-tenant agent platform to 8 paying customers, with per-tenant API keys, audit logs and a '
+    'human-approval queue for every outbound action',
+]
+
+# Role families: the titles in each, how to recognise them, what their managers look for
+# beyond the field brief, extra terms for the job agent's fit score, and example lines.
+FAMILIES = {
+    'llm_app': {
+        'label': 'AI / LLM application engineering',
+        'titles': ['AI Engineer', 'LLM Engineer', 'Generative AI Engineer', 'Applied AI Engineer', 'AI Agent Engineer',
+                   'Agentic AI Engineer', 'Prompt Engineer', 'Conversational AI Engineer', 'Senior AI Engineer'],
+        'detect': r'\bllm\b|gen(?:erative)?\s*ai|\bagent(?:ic|s)?\b|prompt|conversational|applied\s+ai|\bai\s+engineer',
+        'focus': 'Agents and LLM features in production: orchestration, tool use, retrieval, evals and guardrails; '
+                 'reliability of model output (structured outputs, retries, fallbacks); latency and cost per task.',
+        'terms': ['LangGraph', 'CrewAI', 'AutoGen', 'DSPy', 'structured outputs', 'context engineering', 'reranking',
+                  'hybrid search', 'semantic search', 'chunking', 'Bedrock', 'Vertex AI', 'Azure OpenAI', 'Gemini',
+                  'Llama', 'Mistral', 'Ollama', 'vLLM'],
+        'examples': ['Shipped an agent that triages 2,000 support tickets a day with tool calls to 6 internal APIs; '
+                     'a 300-case eval set gates every prompt change'],
     },
-    PHYSICAL_THERAPY: {
-        'label': 'physical therapy',
-        'sector': 'healthcare',
-        'brief': """WHAT PHYSICAL THERAPY HIRING MANAGERS (clinic directors, rehab managers, recruiters) SCREEN FOR
-- Licensure first: the state PT license (and compact privilege if stated), the DPT, BLS/CPR, and certifications
-  (OCS, SCS, NCS, GCS, PCS, CSCS, dry needling, McKenzie/MDT, LSVT BIG, vestibular, ASTYM, Graston, APTA Credentialed
-  Clinical Instructor) in a LICENSES & CERTIFICATIONS section near the top, exactly as held.
-- Setting and population fit: outpatient orthopedics, sports, acute care, inpatient rehab, skilled nursing, home
-  health, pediatrics, neuro, pelvic health, vestibular. The summary names the settings and patient populations the
-  target role serves that the resume shows.
-- Caseload and productivity: patients per day or visits per week, caseload size, productivity percentage, timely
-  documentation, and the EMR used (WebPT, Epic, Net Health, Raintree, Prompt).
-- Outcomes: functional outcome measures (FOTO, LEFS, ODI, NDI, Berg, TUG, 6MWT), discharge to home, return to sport
-  or work, falls reduced, plan-of-care completion, patient satisfaction or NPS, retention.
-- Clinical skills tied to cases: manual therapy, therapeutic exercise, gait and balance training, post-operative
-  protocols (ACL, total knee or hip, rotator cuff), vestibular and neuro rehab, dry needling, home exercise programs.
-- Value beyond the caseload: clinical instructor for DPT students, mentoring, in-services, programs started (falls
-  prevention, return to sport), physician and community outreach, direct access, Medicare and payer compliance.
-- New graduates: each clinical rotation (setting, length, caseload reached by the end), capstone or research, aide or
-  tech experience, certifications in progress.
-- Cut generic duties ("evaluated and treated patients"), adjectives without evidence, and anything unrelated to care.
-- Length: one page; two only with 10+ years or leadership roles.""",
-        'vocabulary': ('physical therapist, DPT, state license, outpatient orthopedics, manual therapy, therapeutic exercise, '
-                       'gait training, balance, post-operative rehabilitation, sports rehabilitation, vestibular, neuro '
-                       'rehab, dry needling, plan of care, home exercise program, functional outcomes, FOTO, caseload, '
-                       'productivity, documentation, WebPT, Epic, Medicare, clinical instructor, patient education'),
-        'examples': [
-            'Managed a caseload of 14-16 outpatient orthopedic patients a day at 92% productivity with same-day '
-            'documentation in WebPT',
-            'Raised average FOTO functional scores for post-operative knee patients 9 points above the risk-adjusted '
-            'national benchmark',
-            'Served as Clinical Instructor for 6 DPT students and built the clinic\'s ACL return-to-sport testing protocol',
-        ],
+    'voice_multimodal': {
+        'label': 'voice, speech and multimodal AI',
+        'titles': ['Voice AI Engineer', 'Speech Engineer', 'Multimodal AI Engineer', 'Conversational Voice Engineer'],
+        'detect': r'voice|speech|multimodal|audio',
+        'focus': 'Real-time voice pipelines (ASR, LLM, TTS, telephony), latency per turn, barge-in and noise handling, '
+                 'call outcomes, and how quality was measured on real calls.',
+        'terms': ['ASR', 'TTS', 'speech-to-text', 'text-to-speech', 'Deepgram', 'ElevenLabs', 'Whisper', 'Twilio',
+                  'Telnyx', 'WebRTC', 'telephony', 'real-time', 'streaming', 'latency'],
+        'examples': ['Cut median voice-agent turn latency from 1.8 s to 1.0 s by streaming ASR into the LLM and '
+                     'starting TTS on the first sentence'],
+    },
+    'ml_engineer': {
+        'label': 'machine learning engineering',
+        'titles': ['Machine Learning Engineer', 'Applied ML Engineer', 'Deep Learning Engineer', 'NLP Engineer',
+                   'Computer Vision Engineer', 'Recommender Systems Engineer', 'Senior Machine Learning Engineer'],
+        'detect': r'machine\s+learning|\bml\b|deep\s+learning|\bnlp\b|computer\s+vision|recommend|ranking',
+        'focus': 'Models taken from data to production: features, training, offline metrics that predicted online '
+                 'results, A/B tests and business lift, serving latency, retraining and monitoring for drift.',
+        'terms': ['feature engineering', 'model training', 'hyperparameter', 'ranking', 'retrieval', 'two-tower',
+                  'transformers', 'BERT', 'CNN', 'ONNX', 'TensorRT', 'Ray', 'SageMaker', 'MLflow', 'Weights & Biases',
+                  'drift', 'online metrics', 'offline metrics'],
+        'examples': ['Shipped a two-tower retrieval model with a gradient-boosted ranker; an A/B test showed a 6% lift '
+                     'in add-to-cart'],
+    },
+    'mlops_platform': {
+        'label': 'MLOps, AI platform and infrastructure',
+        'titles': ['MLOps Engineer', 'ML Platform Engineer', 'AI Platform Engineer', 'AI Infrastructure Engineer',
+                   'LLMOps Engineer', 'Inference Engineer', 'ML Infrastructure Engineer'],
+        'detect': r'mlops|llmops|platform|infrastructure|inference|serving',
+        'focus': 'Platforms other teams build on: model serving and inference cost, GPU utilisation, deployment '
+                 'pipelines, evaluation and observability infrastructure, reliability and scale.',
+        'terms': ['GPU', 'CUDA', 'vLLM', 'TensorRT', 'Triton', 'KServe', 'Ray', 'Kubeflow', 'MLflow', 'Kubernetes',
+                  'Terraform', 'autoscaling', 'batching', 'quantization', 'model registry', 'feature store',
+                  'OpenTelemetry', 'Prometheus', 'Grafana'],
+        'examples': ['Cut inference cost 45% by moving a 7B model to vLLM with continuous batching on 4 GPUs at '
+                     'the same p95 latency'],
+    },
+    'forward_deployed': {
+        'label': 'forward deployed, solutions and customer AI engineering',
+        'titles': ['Forward Deployed Engineer', 'AI Solutions Engineer', 'Solutions Architect, AI', 'AI Deployment Engineer',
+                   'Customer AI Engineer', 'AI Consultant'],
+        'detect': r'forward\s+deployed|solutions?\s+(?:engineer|architect)|deployment|customer|consult',
+        'focus': 'AI shipped for customers: scoping a messy business problem, building to production fast, the '
+                 'customer outcome (hours saved, revenue, accuracy), stakeholder trust, and working in their stack.',
+        'terms': ['customer-facing', 'stakeholders', 'discovery', 'scoping', 'proof of concept', 'POC', 'integration',
+                  'enterprise', 'workflow automation', 'requirements', 'onboarding', 'training'],
+        'examples': ['Scoped and shipped a claims-summary assistant for an insurer in 6 weeks; adjusters cut note '
+                     'reading from 20 to 14 minutes per claim'],
+    },
+    'fullstack_ai': {
+        'label': 'full-stack and product engineering for AI products',
+        'titles': ['Full-Stack AI Engineer', 'AI Product Engineer', 'Software Engineer, AI', 'Backend Engineer, AI',
+                   'Founding AI Engineer', 'Founding Engineer', 'Product Engineer'],
+        'detect': r'full[\s-]*stack|product\s+engineer|founding|back[\s-]*end',
+        'focus': 'AI features users touch: end-to-end ownership from UI to API to model, speed of shipping, product '
+                 'judgment, streaming UX, auth and multi-tenancy, and usage or revenue outcomes.',
+        'terms': ['React', 'Next.js', 'TypeScript', 'Node.js', 'FastAPI', 'PostgreSQL', 'Supabase', 'Prisma', 'Vercel',
+                  'streaming', 'WebSockets', 'multi-tenant', 'Stripe', 'product', 'end-to-end'],
+        'examples': ['Built and launched the product\'s AI assistant end to end (Next.js, FastAPI, Postgres); 40% of '
+                     'weekly active users adopted it in the first month'],
+    },
+    'research': {
+        'label': 'research engineering and applied science',
+        'titles': ['Research Engineer', 'Applied Scientist', 'AI Research Scientist', 'Member of Technical Staff',
+                   'Research Scientist'],
+        'detect': r'research|scientist|technical\s+staff',
+        'focus': 'Experiments that changed decisions: rigorous evaluation, baselines and ablations, training or '
+                 'fine-tuning at scale, reproducibility, papers or open-source work, and speed from idea to result.',
+        'terms': ['fine-tuning', 'RLHF', 'DPO', 'LoRA', 'pretraining', 'distillation', 'ablation', 'baseline',
+                  'benchmark', 'reproducibility', 'JAX', 'PyTorch', 'distributed training', 'publications', 'arXiv'],
+        'examples': ['Fine-tuned a 7B model with LoRA on 40k domain examples; it beat the prompted baseline by 12 points '
+                     'on a held-out eval'],
+    },
+    'evals_safety': {
+        'label': 'AI evaluation, quality and safety',
+        'titles': ['AI Evaluation Engineer', 'Model Evaluation Engineer', 'AI Quality Engineer', 'AI Safety Engineer',
+                   'AI Red Team Engineer', 'Trust and Safety ML Engineer'],
+        'detect': r'eval|quality|safety|red\s*team|trust',
+        'focus': 'Measurement: eval design, held-out and adversarial sets, LLM-as-judge calibration, regression gates in '
+                 'CI, red teaming and jailbreak defenses, and the decisions the measurements drove.',
+        'terms': ['evals', 'evaluation', 'LLM-as-judge', 'red teaming', 'jailbreak', 'prompt injection', 'hallucination',
+                  'benchmarks', 'golden set', 'regression', 'guardrails', 'safety', 'calibration'],
+        'examples': ['Built a 500-case adversarial eval suite and LLM-judge calibrated to human labels (0.86 agreement); '
+                     'it blocks releases that regress'],
+    },
+    'data_ai': {
+        'label': 'data science and data engineering for AI',
+        'titles': ['Data Scientist, Generative AI', 'AI Data Engineer', 'Data Engineer', 'Analytics Engineer',
+                   'Data Scientist'],
+        'detect': r'data\s+(?:scien|engineer|analy)|analytics',
+        'focus': 'Data that makes AI work: pipelines and data quality, labeling and synthetic data, experiments and '
+                 'causal reads, and metrics that decision makers used.',
+        'terms': ['data pipelines', 'ETL', 'dbt', 'Airflow', 'Spark', 'Snowflake', 'Databricks', 'BigQuery',
+                  'data quality', 'labeling', 'synthetic data', 'A/B testing', 'statistics', 'SQL', 'pandas'],
+        'examples': ['Built the labeling and data-quality pipeline behind a support classifier; label noise fell from '
+                     '14% to 4% and accuracy rose 9 points'],
+    },
+    'automation': {
+        'label': 'AI automation and integration',
+        'titles': ['AI Automation Engineer', 'AI Workflow Engineer', 'AI Integration Engineer', 'Automation Engineer'],
+        'detect': r'automation|workflow|integration',
+        'focus': 'Business workflows automated with AI: which process, how much time or money it saved, how errors '
+                 'are caught (human review, validation), and the systems it connects.',
+        'terms': ['workflow automation', 'n8n', 'Zapier', 'Make', 'RPA', 'integrations', 'APIs', 'webhooks',
+                  'QuickBooks', 'Salesforce', 'HubSpot', 'human-in-the-loop', 'document processing', 'OCR'],
+        'examples': ['Automated six-entity financial consolidation with Claude and human review gates; month-end close '
+                     'dropped from 5 days to 2'],
     },
 }
+_FAMILY_RX = [(fid, re.compile(f['detect'], re.I)) for fid, f in FAMILIES.items()]
+# Most specific first: a "Voice AI Engineer" is voice, an "ML Platform Engineer" is platform.
+_FAMILY_ORDER = ['voice_multimodal', 'evals_safety', 'forward_deployed', 'mlops_platform', 'data_ai', 'automation',
+                 'research', 'ml_engineer', 'fullstack_ai', 'llm_app']
 
 
-# Skills and tools a posting in the field may ask for: the job agent's fit score is the share
-# of these that a posting asks for and the resume shows (whole words). Broader than the
-# prompt vocabulary on purpose: it has to recognise what a posting wants.
-MATCH_TERMS = {
-    AI_SWE: [
-        # AI / ML
-        'LLM', 'large language models', 'generative AI', 'AI agents', 'agentic', 'RAG', 'embeddings', 'vector database', 'pgvector', 'Pinecone', 'evals', 'prompt engineering',
-        'fine-tuning', 'guardrails', 'tool use', 'function calling', 'MCP', 'OpenAI', 'Anthropic', 'Claude', 'GPT',
-        'LangChain', 'LlamaIndex', 'Hugging Face', 'PyTorch', 'TensorFlow', 'scikit-learn', 'XGBoost',
-        'machine learning', 'deep learning', 'NLP', 'computer vision', 'speech recognition', 'recommendation',
-        'MLOps', 'model serving', 'inference', 'feature store', 'A/B testing', 'experimentation',
-        # languages and frameworks
-        'Python', 'TypeScript', 'JavaScript', 'Go', 'Golang', 'Java', 'Kotlin', 'C++', 'Rust', 'Scala', 'Ruby',
-        'SQL', 'FastAPI', 'Django', 'Flask', 'Node.js', 'Express', 'React', 'Next.js', 'Vue', 'GraphQL', 'REST',
-        'gRPC', 'asyncio', 'microservices',
-        # data and infrastructure
-        'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'Elasticsearch', 'Kafka', 'Spark', 'Airflow', 'dbt',
-        'Snowflake', 'Databricks', 'BigQuery', 'data pipelines', 'ETL', 'Supabase', 'Prisma',
-        'AWS', 'GCP', 'Azure', 'Docker', 'Kubernetes', 'Terraform', 'Linux', 'nginx', 'serverless', 'Vercel',
-        'CI/CD', 'GitHub Actions', 'observability', 'distributed systems', 'system design',
-        'authentication', 'webhooks', 'unit tests', 'pytest',
-        'integration tests', 'code review', 'Git', 'Twilio', 'telephony', 'mentoring',
-    ],
-    PHYSICAL_THERAPY: [
-        'DPT', 'physical therapist license', 'BLS', 'CPR', 'ACLS', 'outpatient', 'inpatient',
-        'acute care', 'ICU', 'skilled nursing', 'SNF', 'home health', 'pediatrics', 'pediatric', 'geriatrics', 'neuro',
-        'neurologic', 'stroke', 'orthopedic', 'orthopedics', 'sports', 'spine', 'vestibular', 'pelvic health',
-        'cardiopulmonary', 'post-operative', 'post-op', 'ACL', 'total joint', 'manual therapy', 'therapeutic exercise',
-        'dry needling', 'gait training', 'balance', 'falls prevention', 'modalities', 'aquatic therapy',
-        'home exercise program', 'patient education', 'plan of care', 'discharge planning', 'DME',
-        'EMR', 'WebPT', 'Epic', 'Net Health', 'Raintree', 'Medicare', 'productivity', 'caseload',
-        'FOTO', 'OCS', 'SCS', 'NCS', 'GCS', 'PCS', 'CSCS', 'McKenzie', 'Graston', 'ASTYM', 'LSVT',
-        'clinical instructor', 'mentorship', 'new grad', 'residency', 'fellowship', 'interdisciplinary', 'PRN',
-        'school-based', 'early mobility',
-    ],
-}
+def family(title):
+    """The role family of a title in the niche, or None."""
+    if not detect(title):
+        return None
+    t = title or ''
+    rx = dict(_FAMILY_RX)
+    return next((fid for fid in _FAMILY_ORDER if rx[fid].search(t)), 'fullstack_ai')
 
 
-# Page budget: two pages for AI and software engineering, one for physical therapy (two for
-# senior clinicians and leaders). About 500 words fill a page in APEX's exports.
+def titles():
+    """Every title APEX knows, grouped: [{family, label, titles}] (for pickers)."""
+    return [{'family': fid, 'label': f['label'], 'titles': f['titles']} for fid, f in FAMILIES.items()]
+
+
+# Skills and tools a posting may ask for: the job agent's fit score is the share of these a
+# posting asks for that the resume shows (whole words). Broader than the prompt vocabulary
+# on purpose: it has to recognise what a posting wants.
+BASE_TERMS = [
+    'LLM', 'large language models', 'generative AI', 'AI agents', 'agentic', 'RAG', 'embeddings', 'vector database',
+    'pgvector', 'Pinecone', 'evals', 'prompt engineering', 'fine-tuning', 'guardrails', 'tool use', 'function calling',
+    'MCP', 'OpenAI', 'Anthropic', 'Claude', 'GPT', 'LangChain', 'LlamaIndex', 'Hugging Face', 'PyTorch', 'TensorFlow',
+    'scikit-learn', 'XGBoost', 'machine learning', 'deep learning', 'NLP', 'computer vision', 'speech recognition',
+    'recommendation', 'MLOps', 'model serving', 'inference', 'feature store', 'A/B testing', 'experimentation',
+    'Python', 'TypeScript', 'JavaScript', 'Go', 'Golang', 'Java', 'Kotlin', 'C++', 'Rust', 'Scala', 'SQL', 'FastAPI',
+    'Django', 'Flask', 'Node.js', 'React', 'Next.js', 'GraphQL', 'REST', 'gRPC', 'asyncio', 'microservices',
+    'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'Elasticsearch', 'Kafka', 'Spark', 'Airflow', 'dbt', 'Snowflake',
+    'Databricks', 'BigQuery', 'data pipelines', 'ETL', 'Supabase', 'Prisma', 'AWS', 'GCP', 'Azure', 'Docker',
+    'Kubernetes', 'Terraform', 'Linux', 'nginx', 'serverless', 'Vercel', 'CI/CD', 'GitHub Actions', 'observability',
+    'distributed systems', 'system design', 'authentication', 'webhooks', 'unit tests', 'pytest', 'integration tests',
+    'code review', 'Git', 'Twilio', 'telephony', 'mentoring',
+]
+MATCH_TERMS = {AI_SWE: BASE_TERMS}
+
+
+def match_terms(domain, title=''):
+    """The fit-score terms for a title: the field's, plus its family's."""
+    if domain != AI_SWE:
+        return []
+    fam = FAMILIES.get(family(title)) or {}
+    return list(dict.fromkeys(BASE_TERMS + fam.get('terms', [])))
+
+
+# Page budget: about 500 words fill a page in APEX's exports; two pages at most.
 WORDS_PER_PAGE = 500
-PAGES = {AI_SWE: 2, PHYSICAL_THERAPY: 1}
+PAGES = {AI_SWE: 2}
 
 
 def page_budget(domain, seniority=''):
-    """(pages, words) a resume in the field should fit, or (None, None) outside both fields."""
+    """(pages, words) a resume should fit, or (None, None) outside the niche."""
     pages = PAGES.get(domain)
-    if not pages:
-        return None, None
-    if domain == PHYSICAL_THERAPY and str(seniority or '').lower() in ('senior', 'lead', 'director', 'manager', 'executive'):
-        pages = 2
-    return pages, pages * WORDS_PER_PAGE
+    return (pages, pages * WORDS_PER_PAGE) if pages else (None, None)
 
 
-def brief(domain):
-    """The text the engine reads for a pack: the screening guide, the vocabulary and example lines."""
-    p = PACKS.get(domain)
-    if not p:
+def brief(domain, title=''):
+    """The text the engine reads: the field guide, the role family's focus, vocabulary and example lines."""
+    if domain != AI_SWE:
         return ''
-    ex = '\n'.join(f'- {e}' for e in p['examples'])
-    return (f"{p['brief']}\nFIELD VOCABULARY (use a term only for what the resume shows): {p['vocabulary']}\n"
-            f"EXCELLENT LINES IN THIS FIELD (the shape to aim for; their facts are invented, never copy them):\n{ex}")
+    fam = FAMILIES.get(family(title or 'AI Engineer')) or {}
+    focus = (f"\nTHIS ROLE FAMILY ({fam['label']}) IS JUDGED MOST ON: {fam['focus']}" if fam else '')
+    ex = '\n'.join(f'- {e}' for e in fam.get('examples', []) + EXAMPLES)
+    return (f"{BRIEF}{focus}\nFIELD VOCABULARY (use a term only for what the resume shows): {VOCABULARY}"
+            + (f", {', '.join(fam.get('terms', []))}" if fam else '')
+            + f"\nEXCELLENT LINES IN THIS FIELD (the shape to aim for; their facts are invented, never copy them):\n{ex}")
 
 
 def sector(domain, default='general'):
-    return (PACKS.get(domain) or {}).get('sector', default)
+    return 'tech' if domain == AI_SWE else default
