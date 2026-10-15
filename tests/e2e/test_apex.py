@@ -10,7 +10,7 @@ import pdfplumber
 import pytest
 from playwright.sync_api import expect
 
-MARGIN_PT = 0.75 * 72        # ATS.MARGIN in index.html
+MARGIN_PT = 0.6 * 72         # ATS.MARGIN in index.html
 EXPECTED_TABS = ['Home', 'Market Intel', 'Resume X-Ray', 'Gap Report', 'PDF Templates', 'Apply Queue', 'Live Jobs',
                  'Job Alerts', 'Cover Letter', 'Interview', 'LinkedIn', 'Outreach', 'Velocity', 'Bullets',
                  'Tailor', 'Match', 'Weakness X-Ray', 'Negotiate', 'Career Bridge', 'Tracker']
@@ -56,10 +56,13 @@ def pdf_report(data):
     return pages
 
 
+FOOTER_PT = 0.45 * 72        # the "Name | Page n of m" footer lives in the bottom margin by design
+
+
 def assert_inside_margins(pages):
     for n, pg in enumerate(pages, 1):
         for c in pg['chars']:
-            if not c['text'].strip():
+            if not c['text'].strip() or (len(pages) > 1 and c['top'] >= pg['h'] - FOOTER_PT):
                 continue
             assert c['x0'] >= MARGIN_PT - 1, f'page {n}: {c["text"]!r} starts in the left margin at x={c["x0"]:.1f}'
             assert c['x1'] <= pg['w'] - MARGIN_PT + 1, (

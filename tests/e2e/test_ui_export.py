@@ -256,12 +256,30 @@ def test_exports_keep_skill_groups_project_bullets_and_section_order(ui, fonts_s
     _, data = download(page, '#tpl-download')
     text, _ = pdf_text(data)
     assert 'Agentic development: Claude API, tool use, eval harnesses' in text, text[:600]
-    assert '- Built an eval harness of 32 scripted calls' in text and '- Raised intake from 79% to 85%' in text
-    assert text.index('Phone agent') < text.index('Engineer — Acme'), 'Projects before Experience, as in the resume'
+    assert '• Built an eval harness of 32 scripted calls' in text and '• Raised intake from 79% to 85%' in text
+    # Jake's-style entry: the title with its dates, then the company on its own line
+    assert 'Engineer 2024 – Present\nAcme\n' in text, text
+    assert text.index('Phone agent') < text.index('Engineer 2024'), 'Projects before Experience, as in the resume'
+    assert 'Page 1 of' not in text, 'a one-page resume has no page numbers'
     _, data = download(page, '#tpl-download-docx')
     xml = zipfile.ZipFile(io.BytesIO(data)).read('word/document.xml').decode('utf-8')
     assert 'Agentic development: ' in xml and 'Built an eval harness of 32 scripted calls' in xml
     # The preview frame, drawn by the same code, shows the same thing.
     page.click('#tpl-reparse')
     expect(page.frame_locator('#prev-modern').locator('body')).to_contain_text('Agentic development: Claude API')
+    ui.assert_clean()
+
+
+def test_long_resume_gets_page_numbers_and_clickable_links(ui, fonts_served):
+    page = ui.page
+    long = dict(GROUPED_STRUCT, linkedin='https://www.linkedin.com/in/samrivera/',
+                experience=[dict(GROUPED_STRUCT['experience'][0], bullets=[f'Shipped improvement number {n} for the billing team' for n in range(70)])])
+    unicode_page(page, long)
+    _, data = download(page, '#tpl-download')
+    text, _ = pdf_text(data)
+    assert 'Sam Rivera | Page 1 of 2' in text and 'Sam Rivera | Page 2 of 2' in text
+    assert 'linkedin.com/in/samrivera' in text and 'https://' not in text.split('PROFESSIONAL')[0], 'short links'
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        uris = [a.get('uri') for a in pdf.pages[0].annots or []]
+    assert 'mailto:sam@example.com' in uris and 'https://www.linkedin.com/in/samrivera/' in uris, uris
     ui.assert_clean()

@@ -1219,6 +1219,7 @@ label {
   color: var(--fg-1); font-size: 13px; line-height: 1.6;
 }
 .notice.info { border-color: rgba(62,158,255,0.35); background: var(--acc-bg); }
+.tpl-rec { font-size: 11px; font-weight: 600; color: var(--green-soft); border: 1px solid currentColor; border-radius: 999px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; }
 mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dashed var(--acc-soft); border-radius: 4px; padding: 0 3px; }
 .notice strong { color: var(--fg-0); }
 .est-tag { display: inline-block; padding: 2px 8px; border-radius: var(--r-pill); font-size: 10.5px; font-weight: 700;
@@ -4120,8 +4121,8 @@ const TPL_STYLE = {
                desc: 'Sans-serif, blue headings over a thin rule, left-aligned header. The safe default.' },
   classic:   { serif: true,  align: 'center', caps: true,  rule: 'thin',  accent: [0, 0, 0],      name: 17, head: 11.5, body: 10.5, lead: 0.165, gap: 0.10, docx: 'Times New Roman',
                desc: 'Serif (Times), centred header, black ruled headings. Conservative fields.' },
-  tech:      { serif: false, align: 'left',   caps: true,  rule: 'none',  accent: [13, 118, 110], name: 16, head: 10.5, body: 10,   lead: 0.15,  gap: 0.07, docx: 'Arial',
-               desc: 'Compact sans-serif with teal headings and tighter spacing: more fits on a page.' },
+  tech:      { serif: false, align: 'center', caps: true,  rule: 'thin',  accent: [17, 17, 17],   name: 20, head: 11,   body: 10.5, lead: 0.158, gap: 0.07, docx: 'Arial',
+               desc: "The engineers' favourite (Jake's-resume layout): centred header, black headings over thin rules, dense and easy to scan." },
   executive: { serif: true,  align: 'center', caps: true,  rule: 'thick', accent: [20, 33, 61],   name: 21, head: 12,   body: 10.5, lead: 0.17,  gap: 0.12, docx: 'Georgia',
                desc: 'Large serif name, centred header, heavy navy rules. Senior and leadership roles.' },
   creative:  { serif: false, align: 'left',   caps: false, rule: 'none',  accent: [190, 24, 93],  name: 20, head: 13,   body: 10.5, lead: 0.165, gap: 0.11, docx: 'Calibri',
@@ -4139,12 +4140,23 @@ async function initTemplatesTab() {
   } catch(e) { $('tpl-grid').innerHTML = '<div class="empty">Server unreachable.</div>'; }
 }
 
+// The field of the target title (as in apex_domains.py): which template suits it, how many pages.
+function targetField() {
+  const t = ($('job-title').value || '').toLowerCase();
+  if (/physical\s+therap|physiotherap|\bdpt\b|\bpt\b/.test(t)) return 'pt';
+  if (/engineer|developer|software|\bml\b|machine learning|\bai\b|data|devops|\bsre\b|architect|scientist/.test(t)) return 'tech';
+  return '';
+}
+const recommendedPages = () => ({ pt: 1, tech: 2 })[targetField()] || 0;
+const recommendedTemplate = () => ({ pt: 'classic', tech: 'tech' })[targetField()] || '';
+
 function renderTemplateGrid() {
+  const rec = recommendedTemplate();
   $('tpl-grid').innerHTML = state.templates.map(t => {
     const on = t.id === state.selectedTemplate;
     return `<div class="tpl-card ${on ? 'selected' : ''}" data-tpl="${escHtml(t.id)}" role="radio" aria-checked="${on}" tabindex="${on ? 0 : -1}" aria-label="${escHtml(t.name)}">
       <div class="tpl-preview"><iframe id="prev-${escHtml(t.id)}" sandbox title="${escHtml(t.name)} preview" tabindex="-1" aria-hidden="true"></iframe></div>
-      <h4>${escHtml(t.name)}</h4>
+      <h4>${escHtml(t.name)}${t.id === rec ? ' <span class="tpl-rec">Recommended for this role</span>' : ''}</h4>
       <p>${escHtml((TPL_STYLE[t.id] || {}).desc || t.desc)}</p>
     </div>`;
   }).join('');
@@ -4269,7 +4281,7 @@ const GLYPH_SUBS = { '→': '->', '←': '<-', '↔': '<->', '⇒': '=>', '⇐':
   '►': '>', '▶': '>', '➤': '>', '➢': '>', '❖': '•', '✦': '•', '⁃': '-', '−': '-', '\u00A0': ' ' };
 
 const ATS = {
-  MARGIN: 0.75, PAGE_W: 8.5, PAGE_H: 11,
+  MARGIN: 0.6, PAGE_W: 8.5, PAGE_H: 11,
 
   TRANSLIT: { 'Ł': 'L', 'ł': 'l', 'Ø': 'O', 'ø': 'o', 'ß': 'ss', 'Æ': 'AE', 'æ': 'ae', 'Œ': 'OE', 'œ': 'oe',
     'Đ': 'D', 'đ': 'd', 'Ð': 'D', 'ð': 'd', 'Þ': 'Th', 'þ': 'th', 'ı': 'i', 'Ħ': 'H', 'ħ': 'h', 'Ŧ': 'T', 'ŧ': 't' },
@@ -4345,11 +4357,21 @@ const ATS = {
   // A title line the parser lowercased ("AI engineer") reads as a typo: capitalise its words.
   MINOR: new Set(['a', 'an', 'and', 'at', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'with']),
   titleCase(t) {             // only all-lowercase words: "iOS" and "DPT" stay as written
-    return (t || '').replace(/([a-z])([a-z]*)/g, (m, ch, rest, i) =>
+    return (t || '').replace(/\b([a-z])([a-z]*)\b/g, (m, ch, rest, i) =>
       i > 0 && this.MINOR.has(m) ? m : ch.toUpperCase() + rest);
   },
-  contactLine(d) {
-    return [d.email, d.phone, d.location, d.linkedin, d.website, d.authorization].filter(Boolean).join('  |  ');
+  // Contact items as printed: links without "https://www." or a trailing slash.
+  shortUrl(u) { return String(u || '').replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/+$/, ''); },
+  contactItems(d) {
+    const link = (v, kind) => v ? { text: this.shortUrl(v), url: /^https?:/i.test(v) ? v : 'https://' + this.shortUrl(v), kind } : null;
+    return [d.email && { text: d.email, url: 'mailto:' + d.email }, d.phone && { text: d.phone }, d.location && { text: d.location },
+            link(d.linkedin), link(d.website), d.authorization && { text: d.authorization }].filter(Boolean);
+  },
+  contactLine(d) { return this.contactItems(d).map(c => c.text).join('  |  '); },
+  // Entry lines, Jake's-resume style: "Title ........ dates" then "Company, location" in italics.
+  entryHead(e) {
+    const same = e.title && e.company && e.title.toLowerCase() === e.company.toLowerCase();
+    return { main: e.title || e.company, sub: [same || !e.title ? '' : e.company, e.location].filter(Boolean).join(', ') };
   },
   eduLine(e) {
     return [e.school, e.location].filter(Boolean).join(' — ');
@@ -4419,21 +4441,23 @@ const ATS = {
       const lines = doc.splitTextToSize(str, W - (indent || 0));
       for (const ln of lines) { room(LEAD); doc.text(ln, x, y, align === 'center' ? { align: 'center' } : undefined); y += LEAD; }
     };
+    // A rule sits just under the heading's baseline; the next line's baseline is a full line
+    // below it, so letters never touch the rule.
     const rule = (heavy) => {
-      if (heavy) { doc.setDrawColor(T.accent[0], T.accent[1], T.accent[2]); doc.setLineWidth(0.022); }
-      else { doc.setDrawColor(150); doc.setLineWidth(0.008); }
-      doc.line(X0, y, XR, y); y += GAP;
+      if (heavy) { doc.setDrawColor(T.accent[0], T.accent[1], T.accent[2]); doc.setLineWidth(0.02); }
+      else { doc.setDrawColor(160); doc.setLineWidth(0.007); }
+      doc.line(X0, y, XR, y);
     };
     const section = label => {
-      room(0.55 + LEAD * 3); y += GAP;                 // heading + its first lines stay together
+      room(0.6 + LEAD * 3); y += GAP * 1.2;            // heading + its first lines stay together
       font('bold'); doc.setFontSize(T.head); ink(T.accent);
       doc.splitTextToSize(fit(this.heading(T, label)), W).forEach((ln, k) => {
         if (k) { y += 0.19; room(0.19); }
         doc.text(ln, X0, y);
       });
       ink(BLACK);
-      if (T.rule === 'none') { y += LEAD + 0.02; }
-      else { y += 0.09; rule(T.rule === 'thick'); }
+      if (T.rule !== 'none') { y += 0.06; rule(T.rule === 'thick'); }
+      y += LEAD * 1.05;
     };
     // Bold text on the left, optional normal text flush right on the first
     // line (dates). The left side wraps in whatever width the right leaves,
@@ -4455,29 +4479,61 @@ const ATS = {
         y += LEAD;
       });
     };
+    // Hanging indent: the bullet at the margin, every wrapped line aligned under the text.
+    const BUL = fit('\u2022') ? '\u2022' : '-', IND = 0.17;
     const bullet = b => {
       font('normal'); doc.setFontSize(T.body);
-      const lines = doc.splitTextToSize(fit(b), W - 0.18);
+      const lines = doc.splitTextToSize(fit(b), W - IND);
       lines.forEach((ln, k) => {
         room(LEAD);
-        // Hyphen bullets: ATS parsers handle "-" more reliably than "•"
-        doc.text(k === 0 ? '- ' + ln : '  ' + ln, X0 + 0.05, y);
+        if (k === 0) doc.text(BUL, X0 + 0.04, y);
+        doc.text(ln, X0 + IND, y);
         y += LEAD;
       });
+      y += LEAD * 0.08;
+    };
+    // An entry: bold title with the dates flush right, then company and location in italics.
+    const entry = (main, dates, sub) => {
+      room(LEAD * 3);
+      headed(main, dates);
+      if (sub) { ink([85, 85, 85]); text(sub, T.body - 0.5, 'italic'); ink(BLACK); }   // grey: Noto has no italic
     };
 
     // Header (atsExport guarantees a name; never print a stand-in)
     font('bold'); doc.setFontSize(T.name); ink(T.align === 'center' ? BLACK : T.accent);
     doc.splitTextToSize(fit(d.name), W).forEach(ln => {
       doc.text(ln, T.align === 'center' ? XC : X0, y, T.align === 'center' ? { align: 'center' } : undefined);
-      y += T.name / 72 * 1.25;
+      y += T.name / 72 * 1.05;
     });
     ink(BLACK);
-    if (d.title) text(d.title, T.body + 0.5, 'normal', 0, T.align);
-    const contact = this.contactLine(d);
-    if (contact) text(contact, T.body - 0.5, 'normal', 0, T.align);
-    y += 0.04;
-    if (T.rule !== 'none') rule(T.rule === 'thick'); else y += GAP;
+    if (d.title) text(d.title, T.body + 1, 'normal', 0, T.align);
+    // Contact: wrap between items (never inside one or after a separator); links are clickable.
+    const items = this.contactItems(d).map(c => Object.assign({}, c, { text: fit(c.text) })).filter(c => c.text);
+    if (items.length) {
+      const SEP = '  |  ';
+      doc.setFontSize(T.body - 0.5); font('normal');
+      const rows = [[]];
+      for (const c of items) {
+        const row = rows[rows.length - 1];
+        const trial = row.concat(c).map(x => x.text).join(SEP);
+        if (row.length && doc.getTextWidth(trial) > W) rows.push([c]); else row.push(c);
+      }
+      ink([70, 70, 70]);
+      for (const row of rows) {
+        room(LEAD);
+        const width = doc.getTextWidth(row.map(x => x.text).join(SEP));
+        let x = T.align === 'center' ? XC - width / 2 : X0;
+        row.forEach((c, k) => {
+          if (k) { doc.text(SEP, x, y); x += doc.getTextWidth(SEP); }
+          if (c.url) doc.textWithLink(c.text, x, y, { url: c.url }); else doc.text(c.text, x, y);
+          x += doc.getTextWidth(c.text);
+        });
+        y += LEAD;
+      }
+      ink(BLACK);
+    }
+    y += 0.02;
+    if (T.rule !== 'none') { rule(T.rule === 'thick'); y += 0.04; } else y += GAP * 0.5;
 
     // "Label: items" with the label in bold (skills groups, project technologies).
     const labelled = (label, rest, size, style) => {
@@ -4501,16 +4557,15 @@ const ATS = {
       certifications: () => {
         if (!d.certifications.length) return;
         section('Licenses & Certifications');
-        d.certifications.forEach(c => text('- ' + c, T.body, 'normal', 0.05));
+        d.certifications.forEach(bullet);
       },
       experience: () => {
         if (!d.experience.length) return;
         section('Professional Experience');
         d.experience.forEach((e, i) => {
-          if (i) y += GAP * 0.7;
-          room(0.5);
-          headed(this.roleLine(e), this.dateRange(e));
-          if (e.location) text(e.location, T.body - 1, 'italic');
+          if (i) y += GAP * 0.8;
+          const h = this.entryHead(e);
+          entry(h.main, this.dateRange(e), h.sub);
           e.bullets.forEach(bullet);
         });
       },
@@ -4518,10 +4573,8 @@ const ATS = {
         if (!d.projects.length) return;
         section('Projects');
         d.projects.forEach((p, i) => {
-          if (i) y += GAP * 0.7;
-          room(0.5);
-          headed(p.name, p.date);
-          if (p.description) text(p.description, T.body, 'normal');
+          if (i) y += GAP * 0.8;
+          entry(p.name, p.date, p.description);
           p.bullets.forEach(bullet);
           if (p.tech.length) labelled('Technologies', p.tech.join(', '), T.body - 1, 'italic');
         });
@@ -4529,11 +4582,9 @@ const ATS = {
       education: () => {
         if (!d.education.length) return;
         section('Education');
-        d.education.forEach(e => {
-          room(0.3);
-          headed(e.degree, e.year);
-          const el = this.eduLine(e); if (el) text(el, T.body, 'normal');
-          if (e.gpa) text('GPA: ' + e.gpa, T.body - 1, 'normal');
+        d.education.forEach((e, i) => {
+          if (i) y += GAP * 0.5;
+          entry(e.degree, e.year, [this.eduLine(e), e.gpa && 'GPA ' + e.gpa].filter(Boolean).join(' · '));
         });
       },
       skills: () => {
@@ -4542,15 +4593,25 @@ const ATS = {
         d.skills.forEach(g => labelled(g.label, g.items.join(', '), T.body));
       },
       languages: () => { if (d.languages.length) { section('Languages'); text(d.languages.join(', '), T.body, 'normal'); } },
-      awards: () => { if (d.awards.length) { section('Awards'); d.awards.forEach(a => text('- ' + a, T.body, 'normal', 0.05)); } },
+      awards: () => { if (d.awards.length) { section('Awards'); d.awards.forEach(bullet); } },
       additional: () => d.additional.forEach(a => { section(a.header); a.lines.forEach(l => text(l, T.body, 'normal')); }),
     };
     d.order.forEach(k => R[k]());
 
+    // Page numbers on multi-page resumes, small and grey in the bottom margin.
+    const pages = doc.getNumberOfPages();
+    if (pages > 1) {
+      for (let n = 1; n <= pages; n++) {
+        doc.setPage(n); font('normal'); doc.setFontSize(8); ink([130, 130, 130]);
+        doc.text(fit(`${d.name}  |  Page ${n} of ${pages}`), XR, this.PAGE_H - 0.35, { align: 'right' });
+      }
+      ink(BLACK);
+    }
+
     doc.setProperties({ title: (d.name ? d.name + ' — ' : '') + 'Resume', creator: 'APEX' });
-    if (opts && opts.blob) return { blob: doc.output('blob'), font: FAM, missing: [...warn.missing] };
+    if (opts && opts.blob) return { blob: doc.output('blob'), font: FAM, missing: [...warn.missing], pages };
     doc.save(this.filename(d, 'pdf', tag));
-    return { font: FAM, missing: [...warn.missing] };
+    return { font: FAM, missing: [...warn.missing], pages };
   },
 
   // ─── DOCX: Word renders it with the template's font ───
@@ -4596,8 +4657,9 @@ const ATS = {
         if (!d.experience.length) return;
         section('Professional Experience');
         d.experience.forEach(e => {
-          headed(this.roleLine(e), this.dateRange(e), 120);
-          if (e.location) kids.push(para([run(e.location, { italics: true, size: HALF(T.body - 1) })]));
+          const h = this.entryHead(e);
+          headed(h.main, this.dateRange(e), 120);
+          if (h.sub) kids.push(para([run(h.sub, { italics: true, size: HALF(T.body - 0.5) })]));
           e.bullets.forEach(b => kids.push(body(b, { bullet: { level: 0 } })));
         });
       },
@@ -4606,7 +4668,7 @@ const ATS = {
         section('Projects');
         d.projects.forEach(p => {
           headed(p.name, p.date, 120);
-          if (p.description) kids.push(body(p.description));
+          if (p.description) kids.push(para([run(p.description, { italics: true, size: HALF(T.body - 0.5) })]));
           p.bullets.forEach(b => kids.push(body(b, { bullet: { level: 0 } })));
           if (p.tech.length) kids.push(para([run('Technologies: ', { bold: true, italics: true, size: HALF(T.body - 1) }),
                                               run(p.tech.join(', '), { italics: true, size: HALF(T.body - 1) })], { spacing: { after } }));
@@ -4700,12 +4762,14 @@ const ATS = {
     const R = {
       summary: () => d.summary ? sec('Professional Summary') + `<p>${e(d.summary)}</p>` : '',
       certifications: () => d.certifications.length ? sec('Licenses & Certifications') + ul(d.certifications) : '',
-      experience: () => d.experience.length ? sec('Professional Experience') + d.experience.map(x =>
-        `<div class="item">${row(this.roleLine(x), this.dateRange(x))}${x.location ? `<div class="sub">${e(x.location)}</div>` : ''}${ul(x.bullets)}</div>`).join('') : '',
+      experience: () => d.experience.length ? sec('Professional Experience') + d.experience.map(x => {
+        const h = this.entryHead(x);
+        return `<div class="item">${row(h.main, this.dateRange(x))}${h.sub ? `<div class="sub">${e(h.sub)}</div>` : ''}${ul(x.bullets)}</div>`;
+      }).join('') : '',
       projects: () => d.projects.length ? sec('Projects') + d.projects.map(p =>
-        `<div class="item">${row(p.name, p.date)}${p.description ? `<p>${e(p.description)}</p>` : ''}${ul(p.bullets)}${p.tech.length ? `<div class="sub"><b>Technologies:</b> ${e(p.tech.join(', '))}</div>` : ''}</div>`).join('') : '',
+        `<div class="item">${row(p.name, p.date)}${p.description ? `<div class="sub">${e(p.description)}</div>` : ''}${ul(p.bullets)}${p.tech.length ? `<div class="tech"><b>Technologies:</b> ${e(p.tech.join(', '))}</div>` : ''}</div>`).join('') : '',
       education: () => d.education.length ? sec('Education') + d.education.map(x =>
-        `<div class="item">${row(x.degree, x.year)}${this.eduLine(x) ? `<div>${e(this.eduLine(x))}</div>` : ''}${x.gpa ? `<div class="sub">GPA: ${e(x.gpa)}</div>` : ''}</div>`).join('') : '',
+        `<div class="item">${row(x.degree, x.year)}${this.eduLine(x) || x.gpa ? `<div class="sub">${e([this.eduLine(x), x.gpa && 'GPA ' + x.gpa].filter(Boolean).join(' · '))}</div>` : ''}</div>`).join('') : '',
       skills: () => d.skills.length ? sec('Skills') + d.skills.map(g => `<p><b>${e(g.label)}:</b> ${e(g.items.join(', '))}</p>`).join('') : '',
       languages: () => d.languages.length ? sec('Languages') + `<p>${e(d.languages.join(', '))}</p>` : '',
       awards: () => d.awards.length ? sec('Awards') + ul(d.awards) : '',
@@ -4713,14 +4777,15 @@ const ATS = {
     };
     return `<!doctype html><html><head><meta charset="utf-8"><title>${e(d.name || 'Resume')}</title><style>
       body{margin:0;background:#fff;color:#111;font-family:${font};font-size:${T.body}pt;line-height:1.4}
-      .page{max-width:7in;margin:0 auto;padding:.6in .5in}
+      .page{max-width:7.3in;margin:0 auto;padding:.6in .6in}
       h1{font-size:${T.name}pt;margin:0;color:${T.align === 'center' ? '#111' : acc};text-align:${T.align}}
       .title,.contact{text-align:${T.align}}.title{font-size:${T.body + 0.5}pt}.contact{font-size:${T.body - 0.5}pt;padding-bottom:6px;border-bottom:${rule}}
       h2{font-size:${T.head}pt;color:${acc};margin:${T.gap * 1.6}in 0 4px;padding-bottom:2px;border-bottom:${rule}}
       p{margin:0 0 3px}.item{margin-top:${T.gap * 0.7}in}.row{display:flex;justify-content:space-between;gap:12px}
-      .row span{white-space:nowrap}.sub{font-size:${T.body - 1}pt;font-style:italic}ul{margin:2px 0 0;padding-left:16px}li{margin:1px 0}
+      .row span{white-space:nowrap}.sub{font-size:${T.body - 0.5}pt;font-style:italic;color:#333}.tech{font-size:${T.body - 1}pt;font-style:italic}
+      ul{margin:3px 0 0;padding-left:17px}li{margin:1.5px 0;padding-left:2px}.contact a{color:inherit;text-decoration:none}
     </style></head><body><div class="page">
-      <h1>${e(d.name)}</h1>${d.title ? `<div class="title">${e(d.title)}</div>` : ''}${this.contactLine(d) ? `<div class="contact">${e(this.contactLine(d))}</div>` : ''}
+      <h1>${e(d.name)}</h1>${d.title ? `<div class="title">${e(d.title)}</div>` : ''}${this.contactItems(d).length ? `<div class="contact">${this.contactItems(d).map(c => c.url ? `<a href="${e(c.url)}">${e(c.text)}</a>` : e(c.text)).join('&nbsp; | &nbsp;')}</div>` : ''}
       ${d.order.map(k => R[k]()).join('')}
     </div></body></html>`;
   },
@@ -4751,7 +4816,10 @@ async function atsExport(format, struct, tag, btn, tpl) {
     if (format === 'txt')  res = ATS.txt(struct, tag);
     const what = format === 'txt' ? 'plain text' : 'real text layer: the words can be selected and searched';
     const fontNote = format === 'pdf' && res.font === 'helvetica' ? ' · the Unicode font did not load, so some accented letters may be wrong' : '';
-    toast(format.toUpperCase() + ' downloaded · ' + what + fontNote + missingNote(res.missing), res.missing && res.missing.length || fontNote ? 'err' : 'ok');
+    const budget = recommendedPages();
+    const pageNote = res.pages ? ` · ${res.pages} page${res.pages > 1 ? 's' : ''}`
+      + (budget && res.pages > budget ? ` (aim for ${budget} for this field: run the agent to get cuts to fit)` : '') : '';
+    toast(format.toUpperCase() + ' downloaded' + pageNote + ' · ' + what + fontNote + missingNote(res.missing), res.missing && res.missing.length || fontNote ? 'err' : 'ok');
     return true;
   } catch (err) {
     console.error('[APEX export]', err);
