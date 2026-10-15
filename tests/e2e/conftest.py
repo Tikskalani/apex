@@ -44,7 +44,7 @@ class ServerProcess:
 
     def __init__(self, tmp_path_factory, fake_openai, extra_env=None, config=True, config_json=None):
         d = tmp_path_factory.mktemp('apex')
-        for name in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'index.html'):
+        for name in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'apex_domains.py', 'index.html'):
             shutil.copy(ROOT / name, d / name)
         (d / 'assets').mkdir()
         for font in (ROOT / 'assets').glob('*.ttf'):           # PDF export embeds these

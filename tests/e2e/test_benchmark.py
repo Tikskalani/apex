@@ -13,7 +13,7 @@ pytest.importorskip('anthropic', reason='pip install -r requirements.txt')
 
 
 def test_benchmark_cross_judges_and_writes_a_blind_page(tmp_path, fake_openai):
-    for n in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'index.html'):
+    for n in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'apex_domains.py', 'index.html'):
         shutil.copy(ROOT / n, tmp_path / n)
     (tmp_path / 'tools').mkdir()
     shutil.copy(ROOT / 'tools' / 'benchmark.py', tmp_path / 'tools' / 'benchmark.py')
@@ -54,7 +54,7 @@ def test_benchmark_cross_judges_and_writes_a_blind_page(tmp_path, fake_openai):
 
 def test_benchmark_stops_at_the_budget(tmp_path, fake_openai):
     """With a budget below one run's cost it runs once, then refuses to continue."""
-    for n in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'index.html'):
+    for n in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'apex_domains.py', 'index.html'):
         shutil.copy(ROOT / n, tmp_path / n)
     (tmp_path / 'tools').mkdir()
     shutil.copy(ROOT / 'tools' / 'benchmark.py', tmp_path / 'tools' / 'benchmark.py')

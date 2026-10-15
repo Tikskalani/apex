@@ -236,6 +236,9 @@ a:hover { color: var(--acc-soft); }
 }
 
 /* ─── DOCK — left icon rail, Tesla nav ─── */
+/* Focus mode: only the core tools in the dock; "More tools" shows the rest. */
+body.focus .dock-item:not(.core), body.focus .dock-divider { display: none; }
+.dock-more[aria-pressed="true"] { color: var(--acc-soft); }
 .dock {
   background: var(--bg-1);
   border-right: 1px solid var(--line);
@@ -1349,15 +1352,15 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
 
     <!-- ─── DOCK (left icon rail) ─── -->
     <nav class="dock" id="dock" aria-label="Views">
-      <button class="dock-item active" data-view="home" data-tip="Home" aria-label="Home"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 L12 3 L21 12 M5 10 V21 H19 V10"/></svg></button>
+      <button class="dock-item core active" data-view="home" data-tip="Home" aria-label="Home"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 L12 3 L21 12 M5 10 V21 H19 V10"/></svg></button>
       <button class="dock-item" data-view="market" data-tip="Market Intel" aria-label="Market Intel"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 M3 12 H21 M12 3 a14 14 0 0 1 0 18 a14 14 0 0 1 0 -18"/></svg></button>
-      <button class="dock-item" data-view="resume" data-tip="Resume X-Ray" aria-label="Resume X-Ray"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2 H6 A2 2 0 0 0 4 4 V20 A2 2 0 0 0 6 22 H18 A2 2 0 0 0 20 20 V8 Z M14 2 V8 H20 M9 13 H15 M9 17 H13"/></svg></button>
+      <button class="dock-item core" data-view="resume" data-tip="Resume X-Ray" aria-label="Resume X-Ray"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2 H6 A2 2 0 0 0 4 4 V20 A2 2 0 0 0 6 22 H18 A2 2 0 0 0 20 20 V8 Z M14 2 V8 H20 M9 13 H15 M9 17 H13"/></svg></button>
       <button class="dock-item" data-view="gap" data-tip="Gap Report" aria-label="Gap Report"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3 V21 H21 M7 14 L10 11 L14 15 L20 9"/></svg></button>
-      <button class="dock-item" data-view="templates" data-tip="PDF Templates" aria-label="PDF Templates"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></button>
-      <button class="dock-item" data-view="jobs" data-tip="Live Jobs" aria-label="Live Jobs"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21 V5 a2 2 0 0 0 -2 -2 H10 a2 2 0 0 0 -2 2 V21"/></svg></button>
+      <button class="dock-item core" data-view="templates" data-tip="PDF Templates" aria-label="PDF Templates"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></button>
+      <button class="dock-item core" data-view="jobs" data-tip="Live Jobs" aria-label="Live Jobs"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21 V5 a2 2 0 0 0 -2 -2 H10 a2 2 0 0 0 -2 2 V21"/></svg></button>
       <button class="dock-item local-only" data-view="alerts" data-tip="Job Alerts" aria-label="Job Alerts"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8 a6 6 0 0 1 12 0 c0 7 3 9 3 9 H3 s3 -2 3 -9 M10 21 a2 2 0 0 0 4 0"/></svg></button>
       <div class="dock-divider"></div>
-      <button class="dock-item" data-view="cl" data-tip="Cover Letter" aria-label="Cover Letter"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4 H20 A2 2 0 0 1 22 6 V18 A2 2 0 0 1 20 20 H4 A2 2 0 0 1 2 18 V6 A2 2 0 0 1 4 4 M2 7 L12 13 L22 7"/></svg></button>
+      <button class="dock-item core" data-view="cl" data-tip="Cover Letter" aria-label="Cover Letter"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4 H20 A2 2 0 0 1 22 6 V18 A2 2 0 0 1 20 20 H4 A2 2 0 0 1 2 18 V6 A2 2 0 0 1 4 4 M2 7 L12 13 L22 7"/></svg></button>
       <button class="dock-item" data-view="iv" data-tip="Interview" aria-label="Interview"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9 11 A3 3 0 0 1 15 11 c0 2 -3 2 -3 4 M12 17 v.01"/></svg></button>
       <button class="dock-item" data-view="linkedin" data-tip="LinkedIn" aria-label="LinkedIn"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8 a6 6 0 0 1 6 6 V21 H18 V14 a2 2 0 0 0 -4 0 V21 H10 V8 H14 V10 M6 4 a2 2 0 1 1 -.001 4 a2 2 0 0 1 .001 -4 M2 9 H6 V21 H2 Z"/></svg></button>
       <button class="dock-item" data-view="outreach" data-tip="Outreach" aria-label="Outreach"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 L22 2 L13 21 L11 13 Z"/></svg></button>
@@ -1369,7 +1372,8 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
       <button class="dock-item" data-view="weakness" data-tip="Weakness X-Ray" aria-label="Weakness X-Ray"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg></button>
       <button class="dock-item" data-view="negotiate" data-tip="Negotiate" aria-label="Negotiate"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5 H9.5 a3.5 3.5 0 0 0 0 7 h5 a3.5 3.5 0 0 1 0 7 H6"/></svg></button>
       <button class="dock-item" data-view="bridge" data-tip="Career Bridge" aria-label="Career Bridge"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12 H22 M5 12 V8 M9 12 V6 M15 12 V6 M19 12 V8 M3 16 H21"/></svg></button>
-      <button class="dock-item" data-view="tracker" data-tip="Tracker" aria-label="Tracker"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
+      <button class="dock-item core" data-view="tracker" data-tip="Tracker" aria-label="Tracker"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
+      <button class="dock-item core dock-more" data-action="toggleTools" data-tip="More tools" aria-label="More tools" aria-pressed="false"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
     </nav>
 
     <!-- ─── CANVAS ─── -->
@@ -2171,7 +2175,16 @@ function loadLib(name) {
 window.loadLib = loadLib;
 
 // ─── Dock navigation + "new results" badges ───
-$$('.dock-item').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.view)));
+$$('.dock-item[data-view]').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.view)));
+// Focus mode (default): the dock shows the tools a job search needs; the rest are one click away.
+function setFocus(on) {
+  document.body.classList.toggle('focus', on);
+  const b = document.querySelector('.dock-more');
+  if (b) { b.setAttribute('aria-pressed', String(!on)); b.dataset.tip = on ? 'More tools' : 'Fewer tools';
+           b.setAttribute('aria-label', b.dataset.tip); }
+  try { localStorage.setItem('apex.focus', on ? '1' : '0'); } catch (e) {}
+}
+setFocus((() => { try { return localStorage.getItem('apex.focus') !== '0'; } catch (e) { return true; } })());
 const activeView = () => { const v = document.querySelector('.view.active'); return v ? v.id.replace(/^view-/, '') : 'home'; };
 function markNew(view) {
   if (!view || activeView() === view) return;
@@ -2231,6 +2244,7 @@ const ACTIONS = {
   verCompare:  el => versionCompare(el.dataset.arg),
   verDelete:   el => versionDelete(el.dataset.arg),
   setupOpen:   () => switchTab('home'),
+  toggleTools: () => setFocus(!document.body.classList.contains('focus')),
 };
 document.addEventListener('click', ev => {
   const el = ev.target.closest('[data-action]');
@@ -2628,7 +2642,8 @@ $('run-btn').addEventListener('click', async () => {
   try {
     await streamSSE('/analyze', {
       jobTitle, industry: $('industry').value, seniority: $('seniority').value,
-      jobDesc: $('job-desc').value, resume, mode: 'optimize'
+      jobDesc: $('job-desc').value, resume, mode: 'optimize',
+      extras: !document.body.classList.contains('focus')
     }, ev => { if (ev.type === 'error') failed = ev.msg; handleEvent(ev); }, { signal });
     runFinish(failed ? 'failed' : 'done', failed ? 'Stopped: ' + failed : 'Done. New results are marked with a dot in the left rail.');
   } catch(e) {
@@ -3908,14 +3923,9 @@ async function loadTemplatePreviews() {
     const iframe = $('prev-' + t.id);
     if (!iframe) continue;
     if (!ok) { iframe.srcdoc = previewEmptyState(exportSource().text ? 'Click “Show my resume in these” to preview your resume in this style.' : 'Paste your resume in Launch to preview it in this template.'); continue; }
-    try {
-      const r = await fetch(SERVER + '/render-resume', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ template: t.id, struct: state.resumeStruct.struct })
-      });
-      const j = await r.json();
-      iframe.srcdoc = j.html || previewEmptyState('Preview unavailable.');
-    } catch (e) { iframe.srcdoc = previewEmptyState('Preview unavailable: ' + e.message); }
+    // Drawn by the same code as the PDF, so the preview shows exactly what downloads.
+    try { iframe.srcdoc = ATS.html(state.resumeStruct.struct, t.id); }
+    catch (e) { iframe.srcdoc = previewEmptyState('Preview unavailable: ' + e.message); }
   }
   state.previewFor = ok ? state.resumeStruct.text : '';
 }
@@ -4034,23 +4044,43 @@ const ATS = {
         degree: this.safe(e.degree), school: this.safe(e.school),
         location: this.safe(e.location), year: this.safe(e.year), gpa: this.safe(e.gpa)
       })),
-      skills: {
-        technical: a(s.skills && s.skills.technical).map(x => this.safe(x)).filter(Boolean),
-        tools:     a(s.skills && s.skills.tools).map(x => this.safe(x)).filter(Boolean),
-        soft:      a(s.skills && s.skills.soft).map(x => this.safe(x)).filter(Boolean)
-      },
+      skills: this.skillGroups(s.skills, a),
       // Licenses on a clinician's resume are a hard requirement, not decoration.
       authorization: this.safe(s.authorization),
       website: this.safe(s.website),
       certifications: a(s.certifications).map(c => typeof c === 'string' ? this.safe(c)
         : [this.safe(c.name), this.safe(c.issuer), this.safe(c.year)].filter(Boolean).join(' — ')).filter(Boolean),
       languages: a(s.languages).map(x => this.safe(x)).filter(Boolean),
-      projects: a(s.projects).map(p => typeof p === 'string' ? { name: this.safe(p), description: '', tech: [] }
-        : { name: this.safe(p.name), description: this.safe(p.description), tech: a(p.tech).map(t => this.safe(t)) }).filter(p => p.name),
+      projects: a(s.projects).map(p => typeof p === 'string' ? { name: this.safe(p), date: '', description: '', bullets: [], tech: [] }
+        : { name: this.safe(p.name), date: this.safe(p.date), description: this.safe(p.description),
+            bullets: a(p.bullets).map(b => this.safe(b)).filter(Boolean), tech: a(p.tech).map(t => this.safe(t)).filter(Boolean) })
+        .filter(p => p.name),
       awards: a(s.awards).map(x => this.safe(x)).filter(Boolean),
       additional: a(s.additional).map(x => ({ header: this.safe(x.header), lines: a(x.lines).map(l => this.safe(l)).filter(Boolean) }))
-        .filter(x => x.header && x.lines.length)
+        .filter(x => x.header && x.lines.length),
+      order: this.sectionOrder(s.section_order)
     };
+  },
+
+  // Skills as labelled groups, in the resume's own wording ("Agentic development: ...").
+  // Older parses have only technical / tools / soft lists: those become three groups.
+  skillGroups(sk, a) {
+    sk = sk || {};
+    const groups = a(sk.groups).map(g => ({ label: this.safe(g && g.label), items: a(g && g.items).map(x => this.safe(x)).filter(Boolean) }))
+      .filter(g => g.items.length);
+    if (groups.length) return groups;
+    return [['Technical', sk.technical], ['Tools', sk.tools], ['Professional', sk.soft]]
+      .map(([label, items]) => ({ label, items: a(items).map(x => this.safe(x)).filter(Boolean) })).filter(g => g.items.length);
+  },
+
+  // Sections print in the resume's own order (a career changer's Projects above Experience
+  // stays there); anything the parse did not place follows in the usual order.
+  SECTIONS: ['summary', 'certifications', 'experience', 'projects', 'education', 'skills', 'languages', 'awards', 'additional'],
+  DEFAULT_ORDER: ['summary', 'certifications', 'experience', 'education', 'skills', 'languages', 'projects', 'awards', 'additional'],
+  sectionOrder(given) {
+    const seen = (Array.isArray(given) ? given : []).map(x => String(x || '').toLowerCase().trim()).filter(x => this.SECTIONS.includes(x));
+    const first = [...new Set(seen)];
+    return first.concat(this.DEFAULT_ORDER.filter(x => !first.includes(x)));
   },
 
   contactLine(d) {
@@ -4184,57 +4214,73 @@ const ATS = {
     y += 0.04;
     if (T.rule !== 'none') rule(T.rule === 'thick'); else y += GAP;
 
-    if (d.summary) { section('Professional Summary'); text(d.summary, T.body, 'normal'); }
-
-    if (d.certifications.length) {
-      section('Licenses & Certifications');
-      d.certifications.forEach(c => text('- ' + c, T.body, 'normal', 0.05));
-    }
-
-    if (d.experience.length) {
-      section('Professional Experience');
-      d.experience.forEach((e, i) => {
-        if (i) y += GAP * 0.7;
-        room(0.5);
-        headed([e.title, e.company].filter(Boolean).join(' — '), this.dateRange(e));
-        if (e.location) text(e.location, T.body - 1, 'italic');
-        e.bullets.forEach(bullet);
+    // "Label: items" with the label in bold (skills groups, project technologies).
+    const labelled = (label, rest, size, style) => {
+      const all = fit((label ? label + ': ' : '') + rest); if (!all) return;
+      doc.setFontSize(size);
+      font('normal');
+      const lines = doc.splitTextToSize(all, W);
+      lines.forEach((ln, k) => {
+        room(LEAD);
+        if (k === 0 && label) {
+          const head = fit(label + ':');
+          font('bold'); doc.text(head + ' ', X0, y);      // a real space in the text layer for ATS parsers
+          const hw = doc.getTextWidth(head + ' ');
+          font(style || 'normal'); doc.text(ln.slice(head.length).trimStart(), X0 + hw, y);
+        } else { font(style || 'normal'); doc.text(ln, X0, y); }
+        y += LEAD;
       });
-    }
-
-    if (d.education.length) {
-      section('Education');
-      d.education.forEach(e => {
-        room(0.3);
-        headed(e.degree, e.year);
-        const el = this.eduLine(e); if (el) text(el, T.body, 'normal');
-        if (e.gpa) text('GPA: ' + e.gpa, T.body - 1, 'normal');
-      });
-    }
-
-    const sk = d.skills;
-    if (sk.technical.length || sk.tools.length || sk.soft.length) {
-      section('Skills');
-      if (sk.technical.length) text('Technical: ' + sk.technical.join(', '), T.body, 'normal');
-      if (sk.tools.length)     text('Tools: ' + sk.tools.join(', '), T.body, 'normal');
-      if (sk.soft.length)      text('Professional: ' + sk.soft.join(', '), T.body, 'normal');
-    }
-
-    if (d.languages.length) { section('Languages'); text(d.languages.join(', '), T.body, 'normal'); }
-
-    if (d.projects.length) {
-      section('Projects');
-      d.projects.forEach(p => {
-        room(0.3);
-        headed(p.name, '');
-        if (p.description) text(p.description, T.body, 'normal');
-        if (p.tech.length) text('Technologies: ' + p.tech.join(', '), T.body - 1, 'italic');
-      });
-    }
-
-    if (d.awards.length) { section('Awards'); d.awards.forEach(a => text('- ' + a, T.body, 'normal', 0.05)); }
-
-    d.additional.forEach(a => { section(a.header); a.lines.forEach(l => text(l, T.body, 'normal')); });
+    };
+    const R = {
+      summary: () => { if (d.summary) { section('Professional Summary'); text(d.summary, T.body, 'normal'); } },
+      certifications: () => {
+        if (!d.certifications.length) return;
+        section('Licenses & Certifications');
+        d.certifications.forEach(c => text('- ' + c, T.body, 'normal', 0.05));
+      },
+      experience: () => {
+        if (!d.experience.length) return;
+        section('Professional Experience');
+        d.experience.forEach((e, i) => {
+          if (i) y += GAP * 0.7;
+          room(0.5);
+          headed([e.title, e.company].filter(Boolean).join(' — '), this.dateRange(e));
+          if (e.location) text(e.location, T.body - 1, 'italic');
+          e.bullets.forEach(bullet);
+        });
+      },
+      projects: () => {
+        if (!d.projects.length) return;
+        section('Projects');
+        d.projects.forEach((p, i) => {
+          if (i) y += GAP * 0.7;
+          room(0.5);
+          headed(p.name, p.date);
+          if (p.description) text(p.description, T.body, 'normal');
+          p.bullets.forEach(bullet);
+          if (p.tech.length) labelled('Technologies', p.tech.join(', '), T.body - 1, 'italic');
+        });
+      },
+      education: () => {
+        if (!d.education.length) return;
+        section('Education');
+        d.education.forEach(e => {
+          room(0.3);
+          headed(e.degree, e.year);
+          const el = this.eduLine(e); if (el) text(el, T.body, 'normal');
+          if (e.gpa) text('GPA: ' + e.gpa, T.body - 1, 'normal');
+        });
+      },
+      skills: () => {
+        if (!d.skills.length) return;
+        section('Skills');
+        d.skills.forEach(g => labelled(g.label, g.items.join(', '), T.body));
+      },
+      languages: () => { if (d.languages.length) { section('Languages'); text(d.languages.join(', '), T.body, 'normal'); } },
+      awards: () => { if (d.awards.length) { section('Awards'); d.awards.forEach(a => text('- ' + a, T.body, 'normal', 0.05)); } },
+      additional: () => d.additional.forEach(a => { section(a.header); a.lines.forEach(l => text(l, T.body, 'normal')); }),
+    };
+    d.order.forEach(k => R[k]());
 
     doc.setProperties({ title: (d.name ? d.name + ' — ' : '') + 'Resume', creator: 'APEX' });
     doc.save(this.filename(d, 'pdf', tag));
@@ -4270,62 +4316,56 @@ const ATS = {
     ));
     const body = (t, o) => para([run(t, { size: HALF(T.body) })], Object.assign({ spacing: { after } }, o || {}));
 
-    if (d.summary) { section('Professional Summary'); kids.push(body(d.summary)); }
-
-    if (d.certifications.length) {
-      section('Licenses & Certifications');
-      d.certifications.forEach(c => kids.push(body(c, { bullet: { level: 0 } })));
-    }
-
-    if (d.experience.length) {
-      section('Professional Experience');
-      d.experience.forEach(e => {
-        const left = [e.title, e.company].filter(Boolean).join(' — ');
-        const right = this.dateRange(e);
-        kids.push(para(
-          [run(left, { bold: true, size: HALF(T.body) })].concat(right ? [run('\t' + right, { size: HALF(T.body) })] : []),
-          { tabStops: RIGHT_TAB, spacing: { before: 120 } }
-        ));
-        if (e.location) kids.push(para([run(e.location, { italics: true, size: HALF(T.body - 1) })]));
-        e.bullets.forEach(b => kids.push(body(b, { bullet: { level: 0 } })));
-      });
-    }
-
-    if (d.education.length) {
-      section('Education');
-      d.education.forEach(e => {
-        kids.push(para(
-          [run(e.degree || '', { bold: true, size: HALF(T.body) })].concat(e.year ? [run('\t' + e.year, { size: HALF(T.body) })] : []),
-          { tabStops: RIGHT_TAB }
-        ));
-        const el = this.eduLine(e); if (el) kids.push(body(el));
-        if (e.gpa) kids.push(para([run('GPA: ' + e.gpa, { size: HALF(T.body - 1) })]));
-      });
-    }
-
-    const sk = d.skills;
-    if (sk.technical.length || sk.tools.length || sk.soft.length) {
-      section('Skills');
-      const line = (label, items) => kids.push(para([run(label, { bold: true, size: HALF(T.body) }), run(items.join(', '), { size: HALF(T.body) })], { spacing: { after } }));
-      if (sk.technical.length) line('Technical: ', sk.technical);
-      if (sk.tools.length)     line('Tools: ', sk.tools);
-      if (sk.soft.length)      line('Professional: ', sk.soft);
-    }
-
-    if (d.languages.length) { section('Languages'); kids.push(body(d.languages.join(', '))); }
-
-    if (d.projects.length) {
-      section('Projects');
-      d.projects.forEach(p => {
-        kids.push(para([run(p.name, { bold: true, size: HALF(T.body) })], { spacing: { before: 100 } }));
-        if (p.description) kids.push(body(p.description));
-        if (p.tech.length) kids.push(para([run('Technologies: ' + p.tech.join(', '), { italics: true, size: HALF(T.body - 1) })]));
-      });
-    }
-
-    if (d.awards.length) { section('Awards'); d.awards.forEach(a => kids.push(body(a, { bullet: { level: 0 } }))); }
-
-    d.additional.forEach(a => { section(a.header); a.lines.forEach(l => kids.push(body(l))); });
+    const headed = (left, right, before) => kids.push(para(
+      [run(left || '', { bold: true, size: HALF(T.body) })].concat(right ? [run('\t' + right, { size: HALF(T.body) })] : []),
+      Object.assign({ tabStops: RIGHT_TAB }, before ? { spacing: { before } } : {})));
+    const R = {
+      summary: () => { if (d.summary) { section('Professional Summary'); kids.push(body(d.summary)); } },
+      certifications: () => {
+        if (!d.certifications.length) return;
+        section('Licenses & Certifications');
+        d.certifications.forEach(c => kids.push(body(c, { bullet: { level: 0 } })));
+      },
+      experience: () => {
+        if (!d.experience.length) return;
+        section('Professional Experience');
+        d.experience.forEach(e => {
+          headed([e.title, e.company].filter(Boolean).join(' — '), this.dateRange(e), 120);
+          if (e.location) kids.push(para([run(e.location, { italics: true, size: HALF(T.body - 1) })]));
+          e.bullets.forEach(b => kids.push(body(b, { bullet: { level: 0 } })));
+        });
+      },
+      projects: () => {
+        if (!d.projects.length) return;
+        section('Projects');
+        d.projects.forEach(p => {
+          headed(p.name, p.date, 120);
+          if (p.description) kids.push(body(p.description));
+          p.bullets.forEach(b => kids.push(body(b, { bullet: { level: 0 } })));
+          if (p.tech.length) kids.push(para([run('Technologies: ', { bold: true, italics: true, size: HALF(T.body - 1) }),
+                                              run(p.tech.join(', '), { italics: true, size: HALF(T.body - 1) })], { spacing: { after } }));
+        });
+      },
+      education: () => {
+        if (!d.education.length) return;
+        section('Education');
+        d.education.forEach(e => {
+          headed(e.degree, e.year);
+          const el = this.eduLine(e); if (el) kids.push(body(el));
+          if (e.gpa) kids.push(para([run('GPA: ' + e.gpa, { size: HALF(T.body - 1) })]));
+        });
+      },
+      skills: () => {
+        if (!d.skills.length) return;
+        section('Skills');
+        d.skills.forEach(g => kids.push(para([run(g.label + ': ', { bold: true, size: HALF(T.body) }),
+                                               run(g.items.join(', '), { size: HALF(T.body) })], { spacing: { after } })));
+      },
+      languages: () => { if (d.languages.length) { section('Languages'); kids.push(body(d.languages.join(', '))); } },
+      awards: () => { if (d.awards.length) { section('Awards'); d.awards.forEach(a => kids.push(body(a, { bullet: { level: 0 } }))); } },
+      additional: () => d.additional.forEach(a => { section(a.header); a.lines.forEach(l => kids.push(body(l))); }),
+    };
+    d.order.forEach(k => R[k]());
 
     const doc = new D.Document({
       creator: 'APEX', title: (d.name ? d.name + ' — ' : '') + 'Resume',
@@ -4345,34 +4385,78 @@ const ATS = {
     if (d.title) L.push(d.title);
     const c = this.contactLine(d); if (c) L.push(c);
     const head = t => { L.push('', t.toUpperCase(), '='.repeat(t.length)); };
-    if (d.summary) { head('Professional Summary'); L.push(d.summary); }
-    if (d.certifications.length) { head('Licenses & Certifications'); d.certifications.forEach(x => L.push('- ' + x)); }
-    if (d.experience.length) {
-      head('Professional Experience');
-      d.experience.forEach(e => {
-        L.push('');
-        L.push([e.title, e.company].filter(Boolean).join(' — ') + (this.dateRange(e) ? '  (' + this.dateRange(e) + ')' : ''));
-        if (e.location) L.push(e.location);
-        e.bullets.forEach(b => L.push('- ' + b));
-      });
-    }
-    if (d.education.length) {
-      head('Education');
-      d.education.forEach(e => L.push([e.degree, this.eduLine(e), e.year].filter(Boolean).join(' — ')));
-    }
-    const sk = d.skills;
-    if (sk.technical.length || sk.tools.length || sk.soft.length) {
-      head('Skills');
-      if (sk.technical.length) L.push('Technical: ' + sk.technical.join(', '));
-      if (sk.tools.length)     L.push('Tools: ' + sk.tools.join(', '));
-      if (sk.soft.length)      L.push('Professional: ' + sk.soft.join(', '));
-    }
-    if (d.languages.length) { head('Languages'); L.push(d.languages.join(', ')); }
-    if (d.projects.length) { head('Projects'); d.projects.forEach(p => { L.push(p.name); if (p.description) L.push('  ' + p.description); if (p.tech.length) L.push('  Technologies: ' + p.tech.join(', ')); }); }
-    if (d.awards.length) { head('Awards'); d.awards.forEach(a => L.push('- ' + a)); }
-    d.additional.forEach(a => { head(a.header); a.lines.forEach(l => L.push(l)); });
+    const R = {
+      summary: () => { if (d.summary) { head('Professional Summary'); L.push(d.summary); } },
+      certifications: () => { if (d.certifications.length) { head('Licenses & Certifications'); d.certifications.forEach(x => L.push('- ' + x)); } },
+      experience: () => {
+        if (!d.experience.length) return;
+        head('Professional Experience');
+        d.experience.forEach(e => {
+          L.push('');
+          L.push([e.title, e.company].filter(Boolean).join(' — ') + (this.dateRange(e) ? '  (' + this.dateRange(e) + ')' : ''));
+          if (e.location) L.push(e.location);
+          e.bullets.forEach(b => L.push('- ' + b));
+        });
+      },
+      projects: () => {
+        if (!d.projects.length) return;
+        head('Projects');
+        d.projects.forEach(p => {
+          L.push('');
+          L.push(p.name + (p.date ? '  (' + p.date + ')' : ''));
+          if (p.description) L.push(p.description);
+          p.bullets.forEach(b => L.push('- ' + b));
+          if (p.tech.length) L.push('Technologies: ' + p.tech.join(', '));
+        });
+      },
+      education: () => { if (d.education.length) { head('Education'); d.education.forEach(e => L.push([e.degree, this.eduLine(e), e.year].filter(Boolean).join(' — '))); } },
+      skills: () => { if (d.skills.length) { head('Skills'); d.skills.forEach(g => L.push(g.label + ': ' + g.items.join(', '))); } },
+      languages: () => { if (d.languages.length) { head('Languages'); L.push(d.languages.join(', ')); } },
+      awards: () => { if (d.awards.length) { head('Awards'); d.awards.forEach(a => L.push('- ' + a)); } },
+      additional: () => d.additional.forEach(a => { head(a.header); a.lines.forEach(l => L.push(l)); }),
+    };
+    d.order.forEach(k => R[k]());
     this.saveBlob(new Blob([L.join('\n')], { type: 'text/plain;charset=utf-8' }), this.filename(d, 'txt', tag));
     return { missing: [] };
+  },
+
+  // ─── HTML preview: the same sections, order and wording as the PDF, in the template's look ───
+  html(struct, tpl) {
+    const d = this.norm(struct);
+    const T = this.style(tpl);
+    const e = escHtml;
+    const acc = 'rgb(' + T.accent.join(',') + ')';
+    const font = T.serif ? "Georgia,'Times New Roman',serif" : "'Noto Sans',Calibri,'Segoe UI',Arial,sans-serif";
+    const rule = T.rule === 'none' ? 'none' : T.rule === 'thick' ? '2px solid ' + acc : '1px solid #999';
+    const sec = label => `<h2>${e(this.heading(T, label))}</h2>`;
+    const row = (left, right) => `<div class="row"><b>${e(left || '')}</b>${right ? `<span>${e(right)}</span>` : ''}</div>`;
+    const ul = items => items.length ? `<ul>${items.map(b => `<li>${e(b)}</li>`).join('')}</ul>` : '';
+    const R = {
+      summary: () => d.summary ? sec('Professional Summary') + `<p>${e(d.summary)}</p>` : '',
+      certifications: () => d.certifications.length ? sec('Licenses & Certifications') + ul(d.certifications) : '',
+      experience: () => d.experience.length ? sec('Professional Experience') + d.experience.map(x =>
+        `<div class="item">${row([x.title, x.company].filter(Boolean).join(' — '), this.dateRange(x))}${x.location ? `<div class="sub">${e(x.location)}</div>` : ''}${ul(x.bullets)}</div>`).join('') : '',
+      projects: () => d.projects.length ? sec('Projects') + d.projects.map(p =>
+        `<div class="item">${row(p.name, p.date)}${p.description ? `<p>${e(p.description)}</p>` : ''}${ul(p.bullets)}${p.tech.length ? `<div class="sub"><b>Technologies:</b> ${e(p.tech.join(', '))}</div>` : ''}</div>`).join('') : '',
+      education: () => d.education.length ? sec('Education') + d.education.map(x =>
+        `<div class="item">${row(x.degree, x.year)}${this.eduLine(x) ? `<div>${e(this.eduLine(x))}</div>` : ''}${x.gpa ? `<div class="sub">GPA: ${e(x.gpa)}</div>` : ''}</div>`).join('') : '',
+      skills: () => d.skills.length ? sec('Skills') + d.skills.map(g => `<p><b>${e(g.label)}:</b> ${e(g.items.join(', '))}</p>`).join('') : '',
+      languages: () => d.languages.length ? sec('Languages') + `<p>${e(d.languages.join(', '))}</p>` : '',
+      awards: () => d.awards.length ? sec('Awards') + ul(d.awards) : '',
+      additional: () => d.additional.map(a => sec(a.header) + a.lines.map(l => `<p>${e(l)}</p>`).join('')).join(''),
+    };
+    return `<!doctype html><html><head><meta charset="utf-8"><title>${e(d.name || 'Resume')}</title><style>
+      body{margin:0;background:#fff;color:#111;font-family:${font};font-size:${T.body}pt;line-height:1.4}
+      .page{max-width:7in;margin:0 auto;padding:.6in .5in}
+      h1{font-size:${T.name}pt;margin:0;color:${T.align === 'center' ? '#111' : acc};text-align:${T.align}}
+      .title,.contact{text-align:${T.align}}.title{font-size:${T.body + 0.5}pt}.contact{font-size:${T.body - 0.5}pt;padding-bottom:6px;border-bottom:${rule}}
+      h2{font-size:${T.head}pt;color:${acc};margin:${T.gap * 1.6}in 0 4px;padding-bottom:2px;border-bottom:${rule}}
+      p{margin:0 0 3px}.item{margin-top:${T.gap * 0.7}in}.row{display:flex;justify-content:space-between;gap:12px}
+      .row span{white-space:nowrap}.sub{font-size:${T.body - 1}pt;font-style:italic}ul{margin:2px 0 0;padding-left:16px}li{margin:1px 0}
+    </style></head><body><div class="page">
+      <h1>${e(d.name)}</h1>${d.title ? `<div class="title">${e(d.title)}</div>` : ''}${this.contactLine(d) ? `<div class="contact">${e(this.contactLine(d))}</div>` : ''}
+      ${d.order.map(k => R[k]()).join('')}
+    </div></body></html>`;
   },
 
   saveBlob(blob, filename) {
@@ -4429,12 +4513,7 @@ $('tpl-preview').addEventListener('click', async () => {
   if (!w) return toast('Allow pop-ups for this page to open the full preview', 'err');
   try {
     if (!(await ensureResumeStruct())) { w.close(); return; }
-    const r = await fetch(SERVER + '/render-resume', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ template: state.selectedTemplate, struct: state.resumeStruct.struct })
-    });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'render failed');
+    const j = { html: ATS.html(state.resumeStruct.struct, state.selectedTemplate) };
     // The opened window shares this page's origin. Render the template inside
     // a sandboxed iframe (no scripts, opaque origin) so template HTML can never
     // reach the local API, however it was produced.

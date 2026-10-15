@@ -50,7 +50,8 @@ def test_dock_buttons_have_accessible_names(ui):
     tips = page.eval_on_selector_all('.dock-item', 'els => els.map(e => e.dataset.tip)')
     # The Tracker label may carry a live count ("Tracker (2 follow-ups due)").
     assert all(n and (n == t or n.startswith(t + ' (')) for n, t in zip(names, tips)) and len(names) == len(tips), names
-    expect(page.get_by_role('button', name='Market Intel', exact=True)).to_be_visible()
+    expect(page.get_by_role('button', name='Resume X-Ray', exact=True)).to_be_visible()
+    expect(page.get_by_role('button', name='More tools', exact=True)).to_be_visible()
     # Every form field has a label (for=) or an aria-label.
     unlabeled = page.evaluate("""() => [...document.querySelectorAll('input:not([type=hidden]):not([type=file]), textarea, select')]
         .filter(el => !el.getAttribute('aria-label') && !(el.id && document.querySelector('label[for="' + el.id + '"]')) && !el.closest('label'))
@@ -498,3 +499,26 @@ def test_bullets_and_grading_show_the_whole_review(ui):
     expect(grade).to_contain_text('What this question is probing')
     expect(grade).to_contain_text('What would you do differently?')
     expect(grade.locator('mark.blank')).to_have_text('[describe the decision]')
+
+
+def test_focus_mode_shows_the_core_tools_and_skips_the_extra_tabs(ui):
+    """The dock shows the tools a job search needs; "More tools" reveals the rest and is remembered.
+    In focus mode a run asks the server for the cover letter only (extras: false)."""
+    page = ui.page
+    assert page.evaluate("document.body.classList.contains('focus')")
+    expect(page.locator('.dock-item[data-view="resume"]')).to_be_visible()
+    expect(page.locator('.dock-item[data-view="velocity"]')).to_be_hidden()
+    page.click('.dock-more')
+    expect(page.locator('.dock-item[data-view="velocity"]')).to_be_visible()
+    page.reload()
+    expect(page.locator('.dock-item[data-view="velocity"]')).to_be_visible()     # remembered
+    page.click('.dock-more')
+    expect(page.locator('.dock-item[data-view="velocity"]')).to_be_hidden()
+    sent = []
+    page.route('**/analyze', lambda r: (sent.append(json.loads(r.request.post_data)),
+                                        r.fulfill(status=200, content_type='text/event-stream',
+                                                  body='data: {"type": "done", "msg": "ok"}\n\n')))
+    launch_fill(page, 'AI Engineer', 'Jo Doe\nAI engineer.\n' + '- Built an agent with evals\n' * 20)
+    page.click('#run-btn')
+    page.wait_for_timeout(800)
+    assert sent and sent[0]['extras'] is False

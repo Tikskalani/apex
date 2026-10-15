@@ -90,6 +90,12 @@ Return ONLY JSON: {{"unsupported": [{{"claim": "quote", "why": "..."}}]}} (an em
     return [str(x.get('claim') if isinstance(x, dict) else x)[:200] for x in d['unsupported']]
 
 
+def _domain(title):
+    """The field's pack for this case (apex_domains); APEX_NO_DOMAIN=1 measures the engine without packs."""
+    import apex_domains
+    return apex_domains.detect(title)
+
+
 def make_target(A, case):
     """Fixed, model-independent target: supported/unsupported decided by the
     deterministic matcher, so every model gets the identical brief."""
@@ -97,6 +103,7 @@ def make_target(A, case):
     kw = case['keywords']
     sup = [k for k in kw if A._present(k, hay)]
     return {'title': case['title'], 'seniority': case.get('seniority', ''), 'sector': case.get('sector', 'general'),
+            'domain': None if case.get('no_domain') or os.environ.get('APEX_NO_DOMAIN') else _domain(case['title']),
             'job_desc': case.get('job_desc', ''), 'keywords': [{'name': k, 'pct': None} for k in kw],
             'supported': sup, 'unsupported': [k for k in kw if k not in sup]}
 
@@ -180,7 +187,8 @@ def run(args):
                     say('  ! budget reached; skipping remaining judges'); break
                 jm = A.Meter(); tok = A._RUN_METER.set(jm)
                 try:
-                    s = E.judge(bound_llm(A, j), case['resume_text'], r['final'], target)
+                    s = E.judge(bound_llm(A, j), case['resume_text'], r['final'],
+                                dict(target, domain=_domain(case['title'])))   # same field-aware judge for every run
                     rec['judges'][j] = {'before': s['before'], 'after': s['after'], 'verdict': s['verdict']}
                     say(f'  judge {j}: {s["before"]} → {s["after"]}')
                 except Exception as e:

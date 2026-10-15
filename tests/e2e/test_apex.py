@@ -30,7 +30,10 @@ def close_drawer(page):
 
 
 def go(page, view):
-    page.click(f'.dock-item[data-view="{view}"]')
+    item = page.locator(f'.dock-item[data-view="{view}"]')
+    if not item.is_visible():
+        page.click('.dock-more')          # focus mode hides the extra tools until "More tools"
+    item.click()
     expect(page.locator(f'#view-{view}')).to_have_class(re.compile(r'\bactive\b'))
 
 
@@ -92,8 +95,11 @@ def test_1_smoke(probe):
     missing = [k for k, ok in libs.items() if not ok]
     assert not missing, f'CDN libraries MISSING: {missing} (needs network access to cdnjs.cloudflare.com)'
 
-    tabs = page.eval_on_selector_all('.dock-item', 'els => els.map(e => e.dataset.tip)')
+    tabs = page.eval_on_selector_all('.dock-item[data-view]', 'els => els.map(e => e.dataset.tip)')
     assert tabs == EXPECTED_TABS
+    # Focus mode: only the core tools show until "More tools".
+    shown = page.eval_on_selector_all('.dock-item[data-view]', 'els => els.filter(e => e.offsetParent).map(e => e.dataset.tip)')
+    assert shown == ['Home', 'Resume X-Ray', 'PDF Templates', 'Live Jobs', 'Cover Letter', 'Tracker'], shown
 
     page.wait_for_timeout(500)   # let late script/font loads report
     probe.assert_clean()

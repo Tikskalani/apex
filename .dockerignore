@@ -4,6 +4,7 @@
 !agent_server.py
 !apex_store.py
 !apex_engine.py
+!apex_domains.py
 !index.html
 !requirements.txt
 !assets/NotoSans-Regular.ttf

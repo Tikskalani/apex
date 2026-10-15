@@ -225,3 +225,43 @@ def test_saved_versions_compare_and_restore(ui):
     page.select_option('#role-pick', label='Data Analyst · mid · with posting')
     assert page.input_value('#job-title') == 'Data Analyst' and page.input_value('#job-desc') == 'POSTING A'
     ui.assert_clean()
+
+
+GROUPED_STRUCT = {
+    'name': 'Sam Rivera', 'title': 'AI Engineer', 'email': 'sam@example.com',
+    'summary': 'AI engineer who ships tested agents.',
+    'section_order': ['summary', 'skills', 'projects', 'experience', 'education'],
+    'skills': {'groups': [{'label': 'Agentic development', 'items': ['Claude API', 'tool use', 'eval harnesses']},
+                          {'label': 'Languages and platforms', 'items': ['Python 3.12', 'FastAPI', 'PostgreSQL']}]},
+    'projects': [{'name': 'Phone agent', 'date': '2026', 'description': '',
+                  'bullets': ['Built an eval harness of 32 scripted calls', 'Raised intake from 79% to 85%'],
+                  'tech': ['Python', 'FastAPI']}],
+    'experience': [{'title': 'Engineer', 'company': 'Acme', 'start': '2024', 'end': 'Present',
+                    'bullets': ['Shipped the billing service']}],
+    'education': [{'degree': 'AAS, Artificial Intelligence', 'school': 'HCC', 'year': '2026'}],
+}
+
+
+def test_exports_keep_skill_groups_project_bullets_and_section_order(ui, fonts_served):
+    """A real resume's labelled skills and project bullets came out as one run-on paragraph,
+    and Projects always printed last. Every format now follows the resume."""
+    page = ui.page
+    unicode_page(page, GROUPED_STRUCT)
+    html = page.evaluate('s => ATS.html(s, "modern")', GROUPED_STRUCT)
+    for needle in ('<b>Agentic development:</b> Claude API, tool use, eval harnesses',
+                   '<b>Languages and platforms:</b> Python 3.12', '<li>Built an eval harness of 32 scripted calls</li>'):
+        assert needle in html, needle
+    pos = [html.index('>' + h + '<') for h in ('PROFESSIONAL SUMMARY', 'SKILLS', 'PROJECTS', 'PROFESSIONAL EXPERIENCE', 'EDUCATION')]
+    assert pos == sorted(pos), 'sections follow the resume order'
+    _, data = download(page, '#tpl-download')
+    text, _ = pdf_text(data)
+    assert 'Agentic development: Claude API, tool use, eval harnesses' in text, text[:600]
+    assert '- Built an eval harness of 32 scripted calls' in text and '- Raised intake from 79% to 85%' in text
+    assert text.index('Phone agent') < text.index('Engineer — Acme'), 'Projects before Experience, as in the resume'
+    _, data = download(page, '#tpl-download-docx')
+    xml = zipfile.ZipFile(io.BytesIO(data)).read('word/document.xml').decode('utf-8')
+    assert 'Agentic development: ' in xml and 'Built an eval harness of 32 scripted calls' in xml
+    # The preview frame, drawn by the same code, shows the same thing.
+    page.click('#tpl-reparse')
+    expect(page.frame_locator('#prev-modern').locator('body')).to_contain_text('Agentic development: Claude API')
+    ui.assert_clean()

@@ -10,6 +10,8 @@ Everything APEX writes about you is now fact-checked, runs can be cancelled, a b
 
 ### Fixed
 
+- **Exports flattened real resumes** (found on the owner's own resume). Labelled skill groups ("Agentic development: ...") were merged into one run-on "Technical:" paragraph, a project's separate points were glued into one paragraph with " | ", and Projects always printed last. `/parse-resume` now returns `skills.groups`, project `bullets` and `date`, and the resume's `section_order`; PDF, DOCX and TXT print groups as labelled lines, projects as bullets, and sections in the resume's own order. The template previews are drawn by the same code as the PDF (`ATS.html`), so the preview shows exactly what downloads (the older server templates, which left out Projects, are no longer used by the page). PDF skill labels keep a real space in the text layer for application systems.
+- **New-graduate clinicians had almost nothing editable**: Clinical Rotations, Internships, Externships, Fieldwork, Practicum, Clinical Affiliations and Research are now experience sections the engine works on.
 - **Closing the tab did not stop a run.** The server kept calling the model (and spending) after the browser left. Streams now send a heartbeat every 15 s; once the client is gone, the run stops making model calls and fetching postings (`Cancelled`).
 - **A slow tab could hold up the end of a run, or never arrive.** Cover letter, interview, LinkedIn, outreach and velocity now share one 90-second deadline after the report; a tab still running is stopped and a tab that failed is reported, both with a `tab_skipped` event the page shows. Job sources share one 30-second deadline instead of 25 s each.
 - **Fact gate false matches.** Matching is on whole words ("AWS" is not in "laws", "Java" is not in "JavaScript"), numbers are compared with their unit and scale ("$2M" is not the 2 in "2 interns"), and a lexicon of tools, platforms, certifications and employers is caught in any case and position.
@@ -42,6 +44,8 @@ Everything APEX writes about you is now fact-checked, runs can be cancelled, a b
 
 ### Added
 
+- **Built for two fields** (`apex_domains.py`): AI and software engineering, and physical therapy. Each has a pack (what hiring managers in the field screen for, how to order the page, the field's vocabulary and the shape of excellent lines) that the engine's review, rewrite and judge read for any target title in that field. Measured on 6 bench resumes (3 tech, 3 physical therapy) with the same field-aware judge: average gain +8.0 with packs against +5.0 without; an acute care PT resume went from made-worse (63 → 60) to 60 → 68. Three fictional physical therapy cases join `bench/cases`.
+- **Focus mode** (default): the dock shows Home, Resume X-Ray, PDF Templates, Live Jobs, Cover Letter and Tracker; "More tools" shows the rest and is remembered. A run in focus mode asks only for the cover letter of the extra tabs (`/analyze` `extras: false`), so it costs less.
 - **Company job boards as a source** (`company_board_jobs`): full postings from the public Greenhouse, Ashby and Lever boards of 53 tech and AI employers (OpenAI, Anthropic, Databricks, Stripe, Snowflake, Cloudflare and others), checked live. Used by the market scan for tech, AI/data, cloud and security roles and for `general`, by Live Jobs, and by the salary brief. Most US postings there state pay, so `/negotiate` has real ranges far more often. One fetch per title is shared for 15 minutes.
 - **Salary from postings at your level.** An entry-level search counts only entry-level postings and a senior search senior ones (`posted_pay`); `posted_pay.companies` and `basis_note` name the employers the figures mostly come from.
 - **Blanks you fill in.** Suggested rewrites (Bullets, Weakness X-Ray), Career Bridge reframes and answers, interview sample answers and the improved version of a graded answer may leave a short blank, e.g. "cut p99 latency [by X%]", where only you know the fact; the page highlights it. The fact check treats a blank as no claim, and everything stated outright is still checked. Rewrites must be clearly stronger than the original (no synonym swaps).
@@ -67,6 +71,7 @@ Everything APEX writes about you is now fact-checked, runs can be cancelled, a b
 
 ### Changed
 
+- **Faster runs:** the engine's independent model calls now run at the same time (review batches, rewrite batches, fact-check batches, both judge orders), and the rewrite returns only the lines it changes instead of every line.
 - **Validate before spending.** Every POST is checked (body size, required fields, field sizes, route checks, AI key) before any budget is charged or model called. Limits: request body 2 MB (`/transcribe` 36 MB), resume 40,000 characters, posting 20,000, other fields 60,000. Answers: `400`, `411` (no `Content-Length`), `413`, `503`, `429`.
 - **Cost units** (`AI_COSTS`, hosted demo): `/analyze` 12, `/tailor` 8, most single tools 2, `/drift` and `/velocity` 1, `/render-resume` 2 (0 with a `struct`), `/live-jobs` 1; `/apply-all-recommendations` 0.
 - `/parse-resume` returns `{struct, dropped}`. `/render-resume` is POST only.

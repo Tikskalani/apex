@@ -31,16 +31,22 @@ How this works.
 Every model call goes through `llm(system, user, max_tokens=..., json_mode=..., effort=...)`
 so tests can drive the whole pipeline with a stub.
 """
+import contextvars
 import json
 import re
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
+
+import apex_domains
 
 # ── Section model ────────────────────────────────────────────────────────────
 _MD = re.compile(r'^[\s#>*_`]+|[\s*_`:]+$')
 EDITABLE_SECTIONS = re.compile(
     r'experience|employment|work history|career history|professional history|projects?|'
     r'selected work|leadership|consulting|erfahrung|projekte|exp[eé]rien[cs]ias?|exp[eé]riences?|'
+    # clinical training: a new graduate's rotations are their experience
+    r'rotations?|internships?|externships?|fieldwork|practicum|clinical\s+affiliations?|research|'
     r'experi[eê]ncias?|proyectos|projets|projetos', re.I)
 SUMMARY_SECTIONS = re.compile(
     r'^(?:(?:professional|career|executive)\s+)?(?:summary|profile|about(?:\s+me)?|objective)$|'
@@ -58,6 +64,7 @@ KNOWN_HEADERS = re.compile(
     r'credentials?|languages?|awards?|honou?rs|publications?|patents?|volunteer(?:\s+experience)?|'
     r'military(?:\s+service)?|affiliations?|memberships?|training|clearances?|authori[sz]ation|interests|'
     r'references|portfolio|selected\s+work|leadership|(?:summary|highlights)\s+of\s+qualifications|'
+    r'rotations?|internships?|externships?|fieldwork|practicum|research(?:\s+experience)?|'
     r'qualifications(?:\s+summary)?|'
     # German, Spanish, French, Portuguese
     r'berufserfahrung|zusammenfassung|(?:kurz)?profil|ausbildung|kenntnisse|f[äa]higkeiten|sprachen|projekte|'
@@ -763,7 +770,7 @@ Bullets
   tense only for ongoing duties ("Lead", "Maintain"). Digits for numbers. No trailing periods.
 - Condense, never delete: every distinct accomplishment, project, role or title claim, and technology a
   recruiter for the target role would care about must survive (shorter is fine, gone is not).
-- If a bullet is already excellent, return it unchanged. Change for a reason, never for variety.
+- If a bullet is already excellent, leave it out of your edits. Change for a reason, never for variety.
 Order
 - Within each role, the bullets most relevant to the TARGET ROLE come first.
 - Sections may be reordered when the strongest evidence for the target role sits low on the page
@@ -816,6 +823,8 @@ def _target_block(t):
              _safe(f'MARKET KEYWORDS (share of real postings that ask for it): {kw}'),
              _safe(f'SUPPORTED (the resume already demonstrates these; prefer these exact terms): {", ".join(t.get("supported") or []) or "(none)"}'),
              _safe(f'NOT DEMONSTRATED (never add these; they are gaps for the report): {", ".join(t.get("unsupported") or []) or "(none)"}')]
+    if apex_domains.brief(t.get('domain')):     # how this field screens; only a known pack's name selects it
+        lines.append(apex_domains.brief(t.get('domain')))
     if t.get('job_desc'):
         lines.append('TARGET JOB POSTING (highest priority signal):\n' + _data('JOB_POSTING', t['job_desc'][:12000]))
     return _safe(lines[0]) + '\n' + '\n'.join(lines[1:])
@@ -861,10 +870,24 @@ def _batches(doc, ids):
     return out + ([cur] if cur else [])
 
 
+def _pmap(fn, items):
+    """fn over items at the same time (each call is a model request, so they overlap);
+    results in item order. Each runs in a copy of the caller's context, so the server's
+    cost meter and cancel flag still apply. An exception in any call is raised here."""
+    items = list(items)
+    if len(items) < 2:
+        return [fn(x) for x in items]
+    with ThreadPoolExecutor(max_workers=min(6, len(items))) as ex:
+        futures = [ex.submit(contextvars.copy_context().run, fn, x) for x in items]
+        return [f.result() for f in futures]
+
+
 def diagnose(llm, doc, target, only=None):
     ids = [b['id'] for b in doc.editable() if b['kind'] != 'skills' and (only is None or b['id'] in only)]
     blocks, document = {}, {}
-    for n, part in enumerate(_batches(doc, ids)):
+
+    def one(job):
+        n, part = job
         doc_part = ('''Then the document: the 3-6 most important problems a recruiter for this role would have, each specific to
 THIS resume (quote it), and what to do. Which bullets are most relevant to the target role. Whether the
 summary works for this role (or, if there is none, whether one is needed). Strengths to keep.''' if n == 0 else
@@ -890,7 +913,9 @@ Return ONLY JSON:
   "document": {{"problems": [{{"issue": "...", "fix": "..."}}], "summary_verdict": "...",
                 "most_relevant": ["B3", "..."], "strengths": ["..."]}}}}
 Ids present: {", ".join(part)}''', max_tokens=5000, json_mode=True, effort='medium')
-        d = _jload(raw)
+        return n, part, _jload(raw)
+
+    for n, part, d in _pmap(one, enumerate(_batches(doc, ids))):
         blocks.update({b.get('id'): b for b in d.get('blocks', []) or []
                        if isinstance(b, dict) and b.get('id') in part})
         if n == 0 and isinstance(d.get('document'), dict):
@@ -904,7 +929,9 @@ def rewrite(llm, doc, target, diag, answers=None, only=None, feedback=None):
     ids = [b['id'] for b in doc.editable() if only is None or b['id'] in only]
     docx = diag.get('document') or {}
     out, order = {}, []
-    for n, part in enumerate(_batches(doc, ids)):
+
+    def one(job):
+        n, part = job
         notes = []
         for i in part:
             dx = diag['blocks'].get(i) or {}
@@ -948,12 +975,14 @@ For each id return the new text as a list of lines (one line for the summary; a 
 no marker characters). A bullet keeps its own achievement: never move another bullet's achievement into it (that
 bullet stays on the page, so the fact would appear twice). Within each role, return the order you want its bullets in ("order"), most relevant to the
 target first, using the ORIGINAL ids (all of that role's ids). {sec}
-Return the unchanged text when no edit improves it.
+Return only the ids you change: leave out any id whose text you would keep as it is.
 
 Return ONLY JSON:
 {{"edits": [{{"id": "B1", "lines": ["..."], "why": "short reason a recruiter would agree with", "keywords": ["terms used"]}}],
   "order": [["B3", "B1", "B2"]], "section_order": []}}''', max_tokens=7000, json_mode=True, effort='medium')
-        d = _jload(raw)
+        return n, part, _jload(raw)
+
+    for n, part, d in _pmap(one, enumerate(_batches(doc, ids))):
         for e in d.get('edits', []) or []:
             if not isinstance(e, dict) or e.get('id') not in part:
                 continue
@@ -980,8 +1009,9 @@ def audit(llm, doc, items, answers):
     is sent once; items go in batches so nothing is ever truncated."""
     res = {}
     ids = list(items)
-    for k in range(0, len(ids), AUDIT_BATCH):
-        res.update(_audit_batch(llm, doc, {i: items[i] for i in ids[k:k + AUDIT_BATCH]}, answers))
+    for r in _pmap(lambda k: _audit_batch(llm, doc, {i: items[i] for i in ids[k:k + AUDIT_BATCH]}, answers),
+                   range(0, len(ids), AUDIT_BATCH)):
+        res.update(r)
     return res
 
 
@@ -1088,8 +1118,9 @@ def check_texts(llm, items, unsupported=(), allowed_words=(), note=''):
         else:
             passed[k] = dict(it, text=text)
     keys = list(passed)
-    for n in range(0, len(keys), AUDIT_BATCH):
-        res.update(_check_batch(llm, {k: passed[k] for k in keys[n:n + AUDIT_BATCH]}, note))
+    for r in _pmap(lambda n: _check_batch(llm, {k: passed[k] for k in keys[n:n + AUDIT_BATCH]}, note),
+                   range(0, len(keys), AUDIT_BATCH)):
+        res.update(r)
     return res
 
 
@@ -1248,8 +1279,8 @@ def judge(llm, before, after, target):
     """Hiring-manager review, run in both orders and averaged so position bias and
     run-to-run noise cancel. Returns {'before', 'after', 'verdict', 'after_weakest', 'better'},
     plus 'truncated': True when a version was longer than the JUDGE_CHARS it reads."""
-    d1, a1, b1 = _judge_once(llm, before, after, target)     # A = before
-    d2, a2, b2 = _judge_once(llm, after, before, target)     # A = after
+    (d1, a1, b1), (d2, a2, b2) = _pmap(lambda ab: _judge_once(llm, ab[0], ab[1], target),
+                                       [(before, after), (after, before)])     # A = before, then A = after
     pairs_before = [x for x in (a1, b2) if x is not None]
     pairs_after = [x for x in (b1, a2) if x is not None]
     if not pairs_before or not pairs_after:

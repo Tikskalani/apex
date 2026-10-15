@@ -13,7 +13,7 @@ pytest.importorskip('anthropic', reason='pip install -r requirements.txt')
 
 
 def test_answer_bench_runs_the_loop_and_writes_a_report(tmp_path, fake_openai):
-    for n in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'index.html'):
+    for n in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'apex_domains.py', 'index.html'):
         shutil.copy(ROOT / n, tmp_path / n)
     (tmp_path / 'tools').mkdir()
     for n in ('benchmark.py', 'answer_bench.py'):
