@@ -143,6 +143,22 @@ MATCH_TERMS = {
 }
 
 
+# Page budget: two pages for AI and software engineering, one for physical therapy (two for
+# senior clinicians and leaders). About 500 words fill a page in APEX's exports.
+WORDS_PER_PAGE = 500
+PAGES = {AI_SWE: 2, PHYSICAL_THERAPY: 1}
+
+
+def page_budget(domain, seniority=''):
+    """(pages, words) a resume in the field should fit, or (None, None) outside both fields."""
+    pages = PAGES.get(domain)
+    if not pages:
+        return None, None
+    if domain == PHYSICAL_THERAPY and str(seniority or '').lower() in ('senior', 'lead', 'director', 'manager', 'executive'):
+        pages = 2
+    return pages, pages * WORDS_PER_PAGE
+
+
 def brief(domain):
     """The text the engine reads for a pack: the screening guide, the vocabulary and example lines."""
     p = PACKS.get(domain)

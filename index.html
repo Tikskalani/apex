@@ -3212,7 +3212,7 @@ function drawEngine() {
     <div class="card" style="margin-bottom:var(--s5)">
       <div class="card-h"><h3>Edits</h3><span class="h-sub">untick any you don't want</span></div>
       ${ch.length ? ch.map(c => `<div class="eng-change ${E.keep[c.id] ? '' : 'off'}">
-        <div class="ctx"><span>${escHtml(c.kind === 'summary' ? 'Summary' : c.kind === 'skills' ? 'Skills · order only, nothing added' : (c.group || c.section || '')).slice(0, 90)}</span>
+        <div class="ctx"><span>${escHtml(c.kind === 'summary' ? 'Summary' : c.kind === 'skills' ? 'Skills · order only, nothing added' : c.kind === 'cut' ? 'Removed to fit the page budget · untick to keep it' : (c.group || c.section || '')).slice(0, 90)}</span>
           <label class="eng-keep"><input type="checkbox" data-engine="keep" data-id="${escHtml(c.id)}" ${E.keep[c.id] ? 'checked' : ''}> Keep</label></div>
         <div class="before">${escHtml(c.before)}</div>
         <div class="after">${(c.after || []).map(l => `<div>${escHtml(l)}</div>`).join('')}</div>
@@ -4247,7 +4247,7 @@ const ATS = {
     const s = st || {};
     const a = v => Array.isArray(v) ? v.filter(Boolean) : [];
     return {
-      name: this.safe(s.name), title: this.safe(s.title),
+      name: this.safe(s.name), title: this.titleCase(this.safe(s.title)),
       email: this.safe(s.email), phone: this.safe(s.phone),
       location: this.safe(s.location), linkedin: this.safe(s.linkedin),
       summary: this.safe(s.summary),
@@ -4299,6 +4299,17 @@ const ATS = {
     return first.concat(this.DEFAULT_ORDER.filter(x => !first.includes(x)));
   },
 
+  // "Title — Company"; a parse that put the company in both fields prints it once.
+  roleLine(e) {
+    const t = e.title, c = e.company;
+    return (t && c && t.toLowerCase() === c.toLowerCase()) ? t : [t, c].filter(Boolean).join(' — ');
+  },
+  // A title line the parser lowercased ("AI engineer") reads as a typo: capitalise its words.
+  MINOR: new Set(['a', 'an', 'and', 'at', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'with']),
+  titleCase(t) {             // only all-lowercase words: "iOS" and "DPT" stay as written
+    return (t || '').replace(/([a-z])([a-z]*)/g, (m, ch, rest, i) =>
+      i > 0 && this.MINOR.has(m) ? m : ch.toUpperCase() + rest);
+  },
   contactLine(d) {
     return [d.email, d.phone, d.location, d.linkedin, d.website, d.authorization].filter(Boolean).join('  |  ');
   },
@@ -4376,7 +4387,7 @@ const ATS = {
       doc.line(X0, y, XR, y); y += GAP;
     };
     const section = label => {
-      room(0.55); y += GAP;
+      room(0.55 + LEAD * 3); y += GAP;                 // heading + its first lines stay together
       font('bold'); doc.setFontSize(T.head); ink(T.accent);
       doc.splitTextToSize(fit(this.heading(T, label)), W).forEach((ln, k) => {
         if (k) { y += 0.19; room(0.19); }
@@ -4460,7 +4471,7 @@ const ATS = {
         d.experience.forEach((e, i) => {
           if (i) y += GAP * 0.7;
           room(0.5);
-          headed([e.title, e.company].filter(Boolean).join(' — '), this.dateRange(e));
+          headed(this.roleLine(e), this.dateRange(e));
           if (e.location) text(e.location, T.body - 1, 'italic');
           e.bullets.forEach(bullet);
         });
@@ -4546,7 +4557,7 @@ const ATS = {
         if (!d.experience.length) return;
         section('Professional Experience');
         d.experience.forEach(e => {
-          headed([e.title, e.company].filter(Boolean).join(' — '), this.dateRange(e), 120);
+          headed(this.roleLine(e), this.dateRange(e), 120);
           if (e.location) kids.push(para([run(e.location, { italics: true, size: HALF(T.body - 1) })]));
           e.bullets.forEach(b => kids.push(body(b, { bullet: { level: 0 } })));
         });
@@ -4609,7 +4620,7 @@ const ATS = {
         head('Professional Experience');
         d.experience.forEach(e => {
           L.push('');
-          L.push([e.title, e.company].filter(Boolean).join(' — ') + (this.dateRange(e) ? '  (' + this.dateRange(e) + ')' : ''));
+          L.push(this.roleLine(e) + (this.dateRange(e) ? '  (' + this.dateRange(e) + ')' : ''));
           if (e.location) L.push(e.location);
           e.bullets.forEach(b => L.push('- ' + b));
         });
@@ -4651,7 +4662,7 @@ const ATS = {
       summary: () => d.summary ? sec('Professional Summary') + `<p>${e(d.summary)}</p>` : '',
       certifications: () => d.certifications.length ? sec('Licenses & Certifications') + ul(d.certifications) : '',
       experience: () => d.experience.length ? sec('Professional Experience') + d.experience.map(x =>
-        `<div class="item">${row([x.title, x.company].filter(Boolean).join(' — '), this.dateRange(x))}${x.location ? `<div class="sub">${e(x.location)}</div>` : ''}${ul(x.bullets)}</div>`).join('') : '',
+        `<div class="item">${row(this.roleLine(x), this.dateRange(x))}${x.location ? `<div class="sub">${e(x.location)}</div>` : ''}${ul(x.bullets)}</div>`).join('') : '',
       projects: () => d.projects.length ? sec('Projects') + d.projects.map(p =>
         `<div class="item">${row(p.name, p.date)}${p.description ? `<p>${e(p.description)}</p>` : ''}${ul(p.bullets)}${p.tech.length ? `<div class="sub"><b>Technologies:</b> ${e(p.tech.join(', '))}</div>` : ''}</div>`).join('') : '',
       education: () => d.education.length ? sec('Education') + d.education.map(x =>

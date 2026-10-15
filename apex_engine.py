@@ -1384,7 +1384,8 @@ def _result(doc, diag, edits, notes, rejected, order, answers):
     for b in doc.editable():
         if b['id'] in edits and ' '.join(edits[b['id']]).strip() != b['text'].strip():
             p = notes.get(b['id']) or {}
-            changes.append({'id': b['id'], 'kind': b['kind'], 'section': b['section'], 'group': b['group'],
+            changes.append({'id': b['id'], 'kind': 'cut' if not edits[b['id']] else b['kind'],
+                            'section': b['section'], 'group': b['group'],
                             'before': b['text'], 'after': edits[b['id']], 'why': p.get('why') or '',
                             'keywords': p.get('keywords') or []})
     questions, scores = [], {}
@@ -1434,6 +1435,62 @@ def _judge_and_veto(llm, result, doc, target, judge_it, log):
     return result
 
 
+CUT_SYSTEM = ('You are a senior recruiter trimming a resume to its page budget. You remove the least valuable bullets '
+              'and never a fact the target role needs. Return ONLY valid JSON.')
+
+
+def _fit_budget(llm, doc, target, accepted, order, log):
+    """Bullets to remove so the resume fits its field's page budget (apex_domains.page_budget):
+    {id: {'lines': [], 'why', 'keywords': []}}. The model proposes; code keeps only cuts that
+    leave every role a bullet and lose no SUPPORTED keyword from the page."""
+    pages, budget = apex_domains.page_budget(target.get('domain'), target.get('seniority'))
+    if not budget:
+        return {}
+    edits = {i: p['lines'] for i, p in accepted.items()}
+    orders = [o for o in (doc.valid_order(x) for x in order if isinstance(x, list)) if o]
+    sec = next((doc.valid_section_order(x['sections']) for x in order if isinstance(x, dict)), None)
+    count = lambda e: len(re.findall(r'\S+', doc.render(e, orders, sec)))
+    over = count(edits) - budget
+    if over <= 40:                       # a few lines over is fine: the export spacing absorbs it
+        return {}
+    text = lambda i: ' '.join(edits.get(i, [doc.by_id[i]['text']]))
+    bullets = [b for b in doc.editable() if b['kind'] == 'bullet' and edits.get(b['id']) != []]
+    listing = [{'id': b['id'], 'role': b['group'][:80], 'text': text(b['id'])} for b in bullets]
+    raw = llm(CUT_SYSTEM, f'''{_target_block(target)}
+{DATA_RULE}
+The resume is about {over} words over its {pages}-page budget for this field. Choose bullets to remove, the fewest
+that get it within budget: first a bullet that repeats proof another line already gives, then the least relevant to
+the target role, then minor detail. Never remove a role's only bullet or the strongest evidence for a target
+requirement. Keep the order of importance: list the best cut first.
+
+BULLETS:
+{_safe(json.dumps(listing, ensure_ascii=False))}
+
+Return ONLY JSON: {{"cuts": [{{"id": "B7", "why": "repeats the test counts in B3"}}]}}''',
+              max_tokens=1500, json_mode=True, effort='low')
+    keywords = list(target.get('supported') or [])
+    cuts = {}
+    for c in (_jload(raw).get('cuts') or []):
+        i = c.get('id') if isinstance(c, dict) else None
+        if i not in doc.by_id or doc.by_id[i]['kind'] != 'bullet' or i in cuts or edits.get(i) == []:
+            continue
+        group = doc.by_id[i]['group']
+        if not any(b['id'] != i and b['id'] not in cuts and b['group'] == group for b in bullets):
+            continue                                           # a role keeps at least one bullet
+        trial = dict(edits, **{k: [] for k in cuts}, **{i: []})
+        rest = _ev(doc.render(trial, orders, sec))
+        line = _ev(text(i))
+        if any(_backed(k, line) and not _backed(k, rest) for k in keywords):
+            continue                                           # the only place a required skill shows
+        cuts[i] = {'lines': [], 'why': f'Cut to fit {pages} page{"s" if pages > 1 else ""}: '
+                                      + str(c.get('why') or 'least valuable for this role')[:200], 'keywords': []}
+        if count(trial) <= budget:
+            break
+    if cuts:
+        log(f'  ✂ {len(cuts)} bullet(s) proposed for cutting to fit {pages} page{"s" if pages > 1 else ""}')
+    return cuts
+
+
 def optimize(llm, resume, target, answers=None, log=lambda m: None, judge_it=True):
     """The whole pipeline. Returns a result dict the server sends to the page.
     judge_it=True runs the blind judge and its veto (see _judge_and_veto); False skips
@@ -1459,6 +1516,7 @@ def optimize(llm, resume, target, answers=None, log=lambda m: None, judge_it=Tru
     proposals, order = rewrite(llm, doc, target, diag, answers)
     accepted, rejected = _verify(llm, doc, target, diag, answers, proposals, log)
     log(f'  ✓ {len(accepted)} edit(s) verified · {len(rejected)} kept original (could not verify)')
+    accepted.update(_fit_budget(llm, doc, target, accepted, order, log))
     result = _result(doc, diag, {i: p['lines'] for i, p in accepted.items()}, accepted, rejected, order, answers)
     return _judge_and_veto(llm, result, doc, target, judge_it, log)
 
