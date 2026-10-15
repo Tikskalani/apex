@@ -136,7 +136,7 @@ FAMILIES = {
         'focus': 'AI shipped for customers: scoping a messy business problem, building to production fast, the '
                  'customer outcome (hours saved, revenue, accuracy), stakeholder trust, and working in their stack.',
         'terms': ['customer-facing', 'proof of concept', 'POC', 'solutions engineering', 'workflow automation',
-                  'technical discovery', 'pre-sales', 'deployment'],
+                  'technical discovery', 'pre-sales'],
         'examples': ['Scoped and shipped a claims-summary assistant for an insurer in 6 weeks; adjusters cut note '
                      'reading from 20 to 14 minutes per claim'],
     },

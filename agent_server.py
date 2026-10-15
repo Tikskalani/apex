@@ -4063,7 +4063,10 @@ def agent_radar(pid, owner=''):
     evidence = prof['base_resume'] + '\n' + vault_text()
     hay = _norm(evidence)
     skills = []
+    known = set(apex_domains.all_terms())                  # a term dropped from the lists leaves the radar too
     for t, c in sorted(terms.items(), key=lambda kv: -kv[1]):
+        if t not in known:
+            continue
         share = round(100 * c / n) if n else 0
         if share < 5:
             continue
