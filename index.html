@@ -1830,7 +1830,17 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
               <button class="btn btn-sm" data-action="agCloseEditor">Close</button>
             </div>
           </div>
+          <div class="card" id="ag-digest" hidden style="margin-bottom:var(--s4)"></div>
           <div id="ag-list"><div class="empty">Create a profile to start: a name, the job titles you want, and your base resume.</div></div>
+          <details class="card" id="radar" style="margin-top:var(--s4)">
+            <summary style="cursor:pointer;font-weight:600">Market radar <span id="radar-meta" style="font-weight:400;color:var(--fg-2)"></span></summary>
+            <p style="font-size:13px;color:var(--fg-2);margin:var(--s2) 0 var(--s3)">What the postings this profile found in the last 14 days ask for, and whether your resume or evidence vault shows it. Gaps are the most-asked skills you do not show yet: build something small, add it to the vault, and every resume after that can use it.</p>
+            <div id="radar-body"></div>
+            <div style="display:flex;gap:var(--s2);margin-top:var(--s3);flex-wrap:wrap">
+              <button class="btn btn-sm" data-action="radarIdeas" id="radar-ideas-btn">Suggest projects for my gaps (about 2¢)</button>
+            </div>
+            <div id="radar-ideas" style="margin-top:var(--s3)"></div>
+          </details>
           <details class="card" id="vault" style="margin-top:var(--s4)">
             <summary style="cursor:pointer;font-weight:600">Evidence vault <span id="vault-count" style="font-weight:400;color:var(--fg-2)"></span></summary>
             <p style="font-size:13px;color:var(--fg-2);margin:var(--s2) 0 var(--s3)">Facts you confirmed once, used as evidence in every resume, cover letter and application APEX writes from now on: your answers to its questions, your GitHub projects, and notes you add. APEX still never states anything that is not here or in your resume.</p>
@@ -2277,6 +2287,7 @@ async function agLoad() {
     $('ag-scan').disabled = !AG.pid;
     if (!AG.profiles.length) { agEditor(null); $('ag-list').innerHTML = '<div class="empty">Create a profile to start: a name, the job titles you want, and your base resume.</div>'; return; }
     await agQueue();
+    agDigest(); radarLoad();
   } catch (e) { $('ag-status').textContent = 'Could not load the job agent: ' + e.message; }
 }
 $('ag-add-role').addEventListener('change', ev => {
@@ -2288,7 +2299,7 @@ $('ag-add-role').addEventListener('change', ev => {
 $('ag-profile').addEventListener('change', ev => {
   AG.pid = ev.target.value;
   try { localStorage.setItem('apex.agentProfile', AG.pid); } catch (e) {}
-  agQueue();
+  agQueue(); agDigest(); radarLoad(); $('radar-ideas').innerHTML = '';
 });
 
 function agEditor(p) {
@@ -2306,6 +2317,54 @@ function agEditor(p) {
   $('ag-delete').hidden = !p;
   $('ag-editor').dataset.id = p ? p.id : '';
   $('ag-name').focus();
+}
+
+async function agDigest() {
+  const box = $('ag-digest');
+  if (!AG.pid) { box.hidden = true; return; }
+  try {
+    const d = await api('/api/agent/digest?profile=' + encodeURIComponent(AG.pid));
+    if (!d.new && !d.ready && !d.gaps.length) { box.hidden = true; return; }
+    const top = d.top.map(t => `<li>${escHtml(t.title)} · ${escHtml(t.company || '')} <span style="color:var(--fg-2)">fit ${t.fit}${t.status === 'ready' ? ' · ready' : ''}</span></li>`).join('');
+    const gaps = d.gaps.map(g => `<span class="kw">${escHtml(g.term)} · ${g.share}%</span>`).join(' ');
+    box.innerHTML = `<div style="font-weight:600;margin-bottom:6px">Today</div>
+      <div style="font-size:14px">${d.new} new match${d.new === 1 ? '' : 'es'} · ${d.ready} ready to apply</div>
+      ${top ? `<ul style="margin:8px 0 0 18px;font-size:13px">${top}</ul>` : ''}
+      ${gaps ? `<div style="margin-top:10px;font-size:13px;color:var(--fg-2)">Most-asked skills you don't show yet</div><div class="kw-row" style="margin-top:6px">${gaps}</div>` : ''}`;
+    box.hidden = false;
+  } catch (e) { box.hidden = true; }
+}
+async function radarLoad() {
+  if (!AG.pid) { $('radar-body').innerHTML = '<div class="empty">Create a profile and scan first.</div>'; return; }
+  try {
+    const r = await api('/api/agent/radar?profile=' + encodeURIComponent(AG.pid));
+    $('radar-meta').textContent = r.postings ? `(${r.postings} postings · ${r.days} day${r.days === 1 ? '' : 's'})` : '';
+    $('radar-ideas-btn').disabled = !r.gaps.length;
+    if (!r.postings) { $('radar-body').innerHTML = '<div class="empty">No full postings scanned yet. Press Scan now; the radar fills in from every scan.</div>'; return; }
+    const arrow = t => t == null ? '' : t >= 5 ? ` <span style="color:var(--ok, #2a7)">▲${t}</span>` : t <= -5 ? ` <span style="color:var(--fg-2)">▼${-t}</span>` : '';
+    const rows = r.skills.map(x => `<div style="display:grid;grid-template-columns:minmax(120px,180px) 1fr 70px;gap:8px;align-items:center;font-size:13px">
+      <span>${x.shown ? '✓' : '○'} ${escHtml(x.term)}</span>
+      <span style="background:var(--bg-3);border-radius:4px;height:8px;overflow:hidden"><span style="display:block;height:100%;width:${x.share}%;background:${x.shown ? 'var(--accent)' : 'var(--fg-2)'}"></span></span>
+      <span style="text-align:right">${x.share}%${arrow(x.trend)}</span></div>`).join('');
+    const fams = r.families.slice(0, 6).map(f => `<span class="kw">${escHtml(f.label)} · ${f.share}%</span>`).join(' ');
+    $('radar-body').innerHTML = `<div style="display:grid;gap:6px">${rows}</div>
+      <div style="margin-top:var(--s3);font-size:13px;color:var(--fg-2)">Role families in the postings</div><div class="kw-row" style="margin-top:6px">${fams}</div>
+      <div style="margin-top:8px;font-size:12px;color:var(--fg-2)">✓ shown on your resume or in your vault · ○ not shown · ▲▼ change in share against the two weeks before</div>`;
+  } catch (e) { $('radar-body').innerHTML = `<div class="empty">${escHtml(e.message)}</div>`; }
+}
+async function radarIdeas(btn) {
+  btn.disabled = true; const label = btn.textContent; btn.textContent = 'Thinking…';
+  try {
+    const j = await api('/api/agent/radar/ideas', { profile: AG.pid });
+    $('radar-ideas').innerHTML = j.ideas.map(i => `<div class="card" style="margin-top:8px">
+      <div style="font-weight:600">${escHtml(i.title)}</div>
+      <div style="font-size:13px;color:var(--fg-2);margin-top:4px">Closes: ${escHtml((i.closes || []).join(', '))}${i.builds_on ? ' · builds on ' + escHtml(i.builds_on) : ''}</div>
+      <ol style="margin:8px 0 0 18px;font-size:13px">${(i.plan || []).map(x => `<li>${escHtml(x)}</li>`).join('')}</ol>
+      ${i.measure ? `<div style="font-size:13px;margin-top:6px"><b>Measure:</b> ${escHtml(i.measure)}</div>` : ''}
+      ${i.resume_line ? `<div style="font-size:13px;margin-top:4px"><b>After you build it:</b> ${escHtml(i.resume_line)}</div>` : ''}</div>`).join('')
+      + '<p style="font-size:12px;color:var(--fg-2);margin-top:8px">Ideas only: nothing here goes on a resume until you build it and add what you measured to the evidence vault.</p>';
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = label; }
 }
 
 async function vaultLoad() {
@@ -2389,6 +2448,8 @@ async function agQueue() {
       : `${n('proposed')} to review · ${n('approved') + n('preparing')} being prepared · ${n('ready')} ready to apply · ${n('applied')} applied`
         + (prof.last_scan ? ` · last scan ${prof.last_scan}` : ' · not scanned yet');
     $('ag-scan').disabled = !!j.scanning;
+    if (AG.wasScanning && !j.scanning) { agDigest(); radarLoad(); }
+    AG.wasScanning = !!j.scanning;
     agRender();
     for (const i of AG.items.filter(i => AG.autoApply.has(i.id) && i.status !== 'approved' && i.status !== 'preparing')) {
       AG.autoApply.delete(i.id);
@@ -2560,6 +2621,7 @@ const ACTIONS = {
   agCopy:      el => agCopy(el),
   agPdf:       el => agPdf(el),
   vaultAdd:    el => vaultAdd(el),
+  radarIdeas:  el => radarIdeas(el),
   vaultGithub: el => vaultGithub(el),
   vaultDelete: el => vaultDelete(el),
 };

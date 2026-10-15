@@ -200,6 +200,18 @@ def family(title):
     return next((fid for fid in _FAMILY_ORDER if rx[fid].search(t)), 'fullstack_ai')
 
 
+def all_terms():
+    """Every skill term the niche knows (the field's and every family's), for the market radar."""
+    out = list(BASE_TERMS)
+    for f in FAMILIES.values():
+        out += f.get('terms', [])
+    return list(dict.fromkeys(out))
+
+
+def label(fid):
+    return (FAMILIES.get(fid) or {}).get('label', fid or 'Other')
+
+
 def titles():
     """Every title APEX knows, grouped: [{family, label, titles}] (for pickers)."""
     return [{'family': fid, 'label': f['label'], 'titles': f['titles']} for fid, f in FAMILIES.items()]

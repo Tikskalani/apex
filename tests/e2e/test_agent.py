@@ -123,3 +123,17 @@ def test_evidence_vault_api(app):
     assert st == 404
     st, j = call(app, 'POST', '/api/facts/github', {'username': '  '})
     assert st == 400
+
+
+def test_radar_and_digest_routes(app, fixture_resume):
+    st, j = call(app, 'POST', '/api/agent/profiles', {'name': 'Radar', 'targets': 'AI Engineer', 'base_resume': fixture_resume,
+                                                      'active': False})
+    pid = j['profile']['id']
+    st, j = call(app, 'GET', '/api/agent/radar?profile=' + pid)
+    assert st == 200 and j == {'postings': 0, 'days': 0, 'skills': [], 'gaps': [], 'families': []}
+    st, j = call(app, 'GET', '/api/agent/digest?profile=' + pid)
+    assert st == 200 and j['new'] == 0 and j['ready'] == 0 and j['top'] == []
+    st, j = call(app, 'POST', '/api/agent/radar/ideas', {'profile': pid})
+    assert st == 400 and 'scan first' in j['error']
+    st, j = call(app, 'GET', '/api/agent/radar?profile=nope')
+    assert st == 404

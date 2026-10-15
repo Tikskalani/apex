@@ -3927,6 +3927,8 @@ def agent_scan(pid, owner=''):
         _AGENT_SCANNING.add(pid)
     try:
         found, seen, cands = 0, set(), []
+        evidence = prof['base_resume'] + '\n' + vault_text()
+        snap = {'postings': 0, 'terms': {}, 'families': {}}
         for target in prof['targets']:
             domain = apex_domains.detect(target)
             for j in _agent_jobs(target, prof):
@@ -3936,7 +3938,8 @@ def agent_scan(pid, owner=''):
                     continue
                 seen.add(key)
                 posting = j.get('text') or j.get('snippet') or ''
-                fit, matched, missing = agent_fit(prof['base_resume'], posting, j.get('title'), domain)
+                radar_count(snap, j.get('title') or target, posting)
+                fit, matched, missing = agent_fit(evidence, posting, j.get('title'), domain)
                 if fit < prof['min_fit']:
                     continue
                 cands.append({'title': j.get('title'), 'company': j.get('company'), 'location': j.get('location'),
@@ -3947,6 +3950,8 @@ def agent_scan(pid, owner=''):
         cands.sort(key=lambda c: (c['fit'], c['reasons']['full_posting']), reverse=True)
         added = store.add_queue_items(pid, cands[:prof['daily_limit']], owner=owner, day=_local_today())
         store.mark_scanned(pid, _local_today(), owner=owner)
+        if snap['postings']:
+            store.save_radar(pid, _local_today(), snap, owner=owner)
         # The best new matches are prepared now, so they are ready when the user looks.
         if added and prof.get('auto_prepare') and not AI_PROBLEM:
             fresh = [i['id'] for i in store.list_queue(pid, owner=owner, statuses=('proposed',))
@@ -3958,6 +3963,106 @@ def agent_scan(pid, owner=''):
     finally:
         with _AGENT_LOCK:
             _AGENT_SCANNING.discard(pid)
+
+
+_RADAR_TERMS = None
+
+
+def radar_count(snap, title, posting):
+    """Add one posting to a day's radar snapshot: its role family and the skills it asks for
+    (full postings only; a two-line snippet says too little about the stack)."""
+    global _RADAR_TERMS
+    fam = apex_domains.family(title) or 'other'
+    snap['families'][fam] = snap['families'].get(fam, 0) + 1
+    if len(posting) < 600:
+        return
+    _RADAR_TERMS = _RADAR_TERMS or apex_domains.all_terms()
+    hay = _norm(posting)
+    snap['postings'] += 1
+    for t in _RADAR_TERMS:
+        if _present(t, hay):
+            snap['terms'][t] = snap['terms'].get(t, 0) + 1
+
+
+def agent_radar(pid, owner=''):
+    """The market radar for a profile: over the last 14 days of scanned postings, the share
+    asking for each skill, whether your resume or evidence vault shows it, and how the share
+    moved against the 14 days before. Gaps are the most-asked skills you do not show."""
+    prof = store.get_profile(pid, owner=owner)
+    snaps = store.list_radar(pid, owner=owner, limit=28)
+    if not snaps:
+        return {'postings': 0, 'days': 0, 'skills': [], 'gaps': [], 'families': []}
+    from datetime import date, timedelta
+    cut = (date.fromisoformat(snaps[0]['day']) - timedelta(days=13)).isoformat()
+    now = [s['data'] for s in snaps if s['day'] >= cut]
+    before = [s['data'] for s in snaps if s['day'] < cut]
+
+    def total(group):
+        n, terms, fams = 0, {}, {}
+        for d in group:
+            n += d.get('postings', 0)
+            for k, v in (d.get('terms') or {}).items():
+                terms[k] = terms.get(k, 0) + v
+            for k, v in (d.get('families') or {}).items():
+                fams[k] = fams.get(k, 0) + v
+        return n, terms, fams
+    n, terms, fams = total(now)
+    n0, terms0, _ = total(before)
+    hay = _norm(prof['base_resume'] + '\n' + vault_text())
+    skills = []
+    for t, c in sorted(terms.items(), key=lambda kv: -kv[1]):
+        share = round(100 * c / n) if n else 0
+        if share < 5:
+            continue
+        trend = round(share - 100 * terms0.get(t, 0) / n0) if n0 >= 10 else None
+        skills.append({'term': t, 'share': share, 'shown': _present(t, hay), 'trend': trend})
+    fam_n = sum(fams.values()) or 1
+    families = [{'family': k, 'label': apex_domains.label(k) if k != 'other' else 'Other', 'share': round(100 * v / fam_n)}
+                for k, v in sorted(fams.items(), key=lambda kv: -kv[1])]
+    return {'postings': n, 'days': len(now), 'skills': skills[:30],
+            'gaps': [s for s in skills if not s['shown']][:8], 'families': families}
+
+
+IDEAS_SYSTEM = (
+    'You are a staff AI engineer mentoring a candidate. Suggest small portfolio projects that close the '
+    'candidate\'s most-asked missing skills, each one buildable in a weekend or two, each one building on what '
+    'the candidate already did (name it), and each with one number the candidate should measure and report, so '
+    'it becomes a strong resume line. Never claim the candidate has done any of it. JSON only: {"ideas": '
+    '[{"title", "closes": [skills], "builds_on", "plan": [3-5 short steps], "measure", "resume_line"}]} where '
+    'resume_line is the line they could write AFTER building it, with the measured number as [blank].')
+
+
+def radar_ideas(pid, owner=''):
+    """Three project ideas that close the radar's top gaps (one model call)."""
+    r = agent_radar(pid, owner)
+    if not r['gaps']:
+        raise store.StoreError('No gaps yet: scan first, or you already show everything the postings ask for.')
+    prof = store.get_profile(pid, owner=owner)
+    gaps = ', '.join(f"{g['term']} ({g['share']}% of postings)" for g in r['gaps'][:6])
+    user = (f'Target roles: {", ".join(prof["targets"])}\nMost-asked skills the candidate does not show: {gaps}\n\n'
+            f'CANDIDATE RESUME:\n{prof["base_resume"][:6000]}\n\nMORE CONFIRMED FACTS:\n{vault_text()[:3000]}\n\n'
+            'Give 3 ideas.')
+    try:
+        data = json.loads(gpt(IDEAS_SYSTEM, user, max_tokens=2000, json_mode=True, fast=True) or '{}')
+    except ValueError:
+        data = {}
+    ideas = [i for i in (data.get('ideas') or []) if isinstance(i, dict) and i.get('title')][:3]
+    if not ideas:
+        raise RuntimeError('the model returned no ideas; try again')
+    return {'ideas': ideas, 'gaps': r['gaps'][:6]}
+
+
+def agent_digest(pid, owner=''):
+    """This morning at a glance: today's new matches, kits ready to apply, and the top gaps."""
+    items = store.list_queue(pid, owner=owner)
+    today = _local_today()
+    new = sorted([i for i in items if i['scanned_on'] == today and i['status'] in ('proposed', 'approved', 'preparing', 'ready')],
+                 key=lambda i: -i['fit'])
+    radar = agent_radar(pid, owner)
+    return {'day': today, 'new': len(new), 'ready': sum(i['status'] == 'ready' for i in items),
+            'top': [{'id': i['id'], 'title': i['title'], 'company': i['company'], 'fit': i['fit'], 'status': i['status']}
+                    for i in new[:3]],
+            'gaps': radar['gaps'][:3], 'postings': radar['postings']}
 
 
 def agent_prepare(item, owner=''):
@@ -4963,6 +5068,14 @@ class Handler(BaseHTTPRequestHandler):
                 pid = q('profile')
                 self._send_json(200, {'items': store.list_queue(pid), 'scanning': pid in _AGENT_SCANNING,
                                       'preparing': any(t.is_alive() for t in _AGENT_WORKERS)}); return
+            if method == 'GET' and path == '/api/agent/radar':
+                self._send_json(200, agent_radar(q('profile'))); return
+            if method == 'GET' and path == '/api/agent/digest':
+                self._send_json(200, agent_digest(q('profile'))); return
+            if method == 'POST' and path == '/api/agent/radar/ideas':
+                if AI_PROBLEM:
+                    self._send_json(503, {'error': AI_PROBLEM}); return
+                self._send_json(200, radar_ideas(str(b.get('profile') or ''))); return
             if method == 'GET' and path == '/api/agent/item':
                 self._send_json(200, {'item': store.get_queue_item(q('id'))}); return
             if method == 'POST' and path == '/api/agent/profiles':

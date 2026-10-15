@@ -113,6 +113,13 @@ CREATE TABLE IF NOT EXISTS queue (          -- jobs the agent proposed, and what
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS radar (           -- what a day's scanned postings asked for (the market radar)
+    owner      TEXT NOT NULL DEFAULT '',
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    day        TEXT NOT NULL,                  -- YYYY-MM-DD
+    data       TEXT NOT NULL,                  -- {postings, terms: {term: n}, families: {id: n}}
+    PRIMARY KEY (owner, profile_id, day)
+);
 CREATE TABLE IF NOT EXISTS facts (           -- the evidence vault: things the candidate confirmed are true
     id         TEXT PRIMARY KEY,
     owner      TEXT NOT NULL DEFAULT '',
@@ -803,3 +810,19 @@ def delete_fact(fid, *, owner=''):
 def engine_facts(*, owner=''):
     """The vault as the engine reads it: [{topic, text}]."""
     return [{'topic': f['topic'], 'text': f['text']} for f in list_facts(owner=owner)]
+
+
+# ── market radar: what the postings a profile scanned asked for, per day ─────
+
+def save_radar(pid, day, data, *, owner=''):
+    with _db() as conn:
+        conn.execute('INSERT OR REPLACE INTO radar (owner, profile_id, day, data) VALUES (?,?,?,?)',
+                     (owner, pid, day, json.dumps(data)))
+
+
+def list_radar(pid, *, owner='', limit=60):
+    """A profile's radar snapshots, newest first: [{day, data}]."""
+    with _db() as conn:
+        rows = conn.execute('SELECT day, data FROM radar WHERE owner = ? AND profile_id = ? ORDER BY day DESC LIMIT ?',
+                            (owner, pid, int(limit))).fetchall()
+    return [{'day': r['day'], 'data': json.loads(r['data'])} for r in rows]

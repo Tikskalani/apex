@@ -570,3 +570,22 @@ def test_evidence_vault_add_and_delete(ui):
     item.locator('[data-action="vaultDelete"]').click()
     expect(item).to_have_count(0)
     ui.assert_clean()
+
+
+def test_market_radar_card(ui, fixture_resume):
+    """The Market radar card in the Apply queue tab explains itself until a scan fills it."""
+    page = ui.page
+    page.evaluate('r => { document.getElementById("resume-text").value = r; }', fixture_resume)
+    go(page, 'queue')
+    if page.locator('#ag-profile option[value=""]').count():      # no profile yet in this server
+        page.click('[data-action="agNew"]')
+        page.fill('#ag-name', 'Radar')
+        page.fill('#ag-targets', 'AI Engineer')
+        page.uncheck('#ag-active')
+        page.click('[data-action="agUseResume"]')
+        page.click('[data-action="agSave"]')
+        expect(page.locator('#ag-editor')).to_be_hidden()
+    page.click('#radar summary')
+    expect(page.locator('#radar-body')).to_contain_text('Scan now')
+    expect(page.locator('#radar-ideas-btn')).to_be_disabled()
+    ui.assert_clean()

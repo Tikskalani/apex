@@ -409,6 +409,9 @@ The job agent (`/api/agent/*`, JSON, local only):
 | POST | `/api/agent/approve` | `ids` | `{"approved": n}` (from proposed, failed or skipped); starts preparing. `503` without an AI key |
 | POST | `/api/agent/skip` | `ids` | `{"skipped": n}` |
 | POST | `/api/agent/apply` | `id`, `pdf_b64` (the tailored resume PDF the page made) | One-tap Apply. `{"mode": "filled", "url", "filled": [fields], "error"}`: the application opened in the APEX browser window (a Chromium profile in `apex_browser/`, via `apex_apply.py`) and its contact fields, resume and cover letter were filled; nothing is submitted. `{"mode": "link", "url"}` when Playwright is not installed or `APEX_FORM_FILL=0`: the page opens the posting |
+| GET | `/api/agent/radar` | `?profile=` | `{"postings", "days", "skills": [{term, share, shown, trend}], "gaps": [...the most-asked skills not shown], "families": [{family, label, share}]}` over the last 14 days of scans. `share` is the % of full postings asking for the skill; `shown` is whether the base resume or the evidence vault shows it; `trend` is the change in share against the 14 days before (null with fewer than 10 postings then) |
+| GET | `/api/agent/digest` | `?profile=` | `{"day", "new", "ready", "top": [{id, title, company, fit, status}], "gaps", "postings"}`: today's new matches, kits ready to apply, the top gaps |
+| POST | `/api/agent/radar/ideas` | `profile` | `{"ideas": [{title, closes, builds_on, plan, measure, resume_line}], "gaps"}`: three project ideas for the top gaps (one model call). `400` with no gaps yet, `503` without an AI key |
 | POST | `/api/agent/applied` | `id` | `{"application"}`: created in the Tracker (status applied, source `agent`) with the tailored resume and cover letter as artifacts |
 
 The evidence vault (`/api/facts`, JSON, local only). Every engine run, tailoring, cover letter and agent kit reads it; `/engine/answer` adds the answers it receives (source `answer`).
