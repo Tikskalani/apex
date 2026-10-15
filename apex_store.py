@@ -27,7 +27,7 @@ SOURCES = ('manual', 'tailor', 'gmail', 'jobs', 'import', 'agent')
 QUEUE_STATUSES = ('proposed', 'approved', 'preparing', 'ready', 'applied', 'skipped', 'failed')
 MAX_PROFILES_PER_OWNER = 10
 MAX_QUEUE_PER_PROFILE = 3000        # old skipped / applied rows are kept so a job is never proposed twice
-ARTIFACT_KINDS = ('tailored_resume', 'cover_letter', 'followup', 'outreach', 'note')
+ARTIFACT_KINDS = ('tailored_resume', 'cover_letter', 'followup', 'outreach', 'note', 'interview_prep')
 FOLLOWUP_AFTER_DAYS = 7
 MAX_TEXT = 200_000           # per artifact; a resume is ~5 KB
 MAX_APPS_PER_OWNER = 2000    # a hosted visitor can't fill the disk
@@ -826,3 +826,10 @@ def list_radar(pid, *, owner='', limit=60):
         rows = conn.execute('SELECT day, data FROM radar WHERE owner = ? AND profile_id = ? ORDER BY day DESC LIMIT ?',
                             (owner, pid, int(limit))).fetchall()
     return [{'day': r['day'], 'data': json.loads(r['data'])} for r in rows]
+
+
+def queue_posting_for_application(app_id, *, owner=''):
+    """The posting text the job agent tailored this application to ('' when it did not come from the agent)."""
+    with _db() as conn:
+        r = conn.execute('SELECT posting FROM queue WHERE application_id = ? AND owner = ?', (app_id, owner)).fetchone()
+    return r['posting'] if r else ''

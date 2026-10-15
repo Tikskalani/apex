@@ -129,3 +129,16 @@ def test_full_analyze_run_streams_every_tab_and_records_the_score(app, fixture_r
     assert out['linkedin_dm']['message'].startswith('Hi, I build SQL reporting')
     st, j = call(app, 'GET', '/api/scores/latest?jobTitle=' + title.replace(' ', '%20'))
     assert st == 200 and j['score'] and j['score']['score_after'] is not None
+
+
+def test_interview_prep_pack_is_saved_with_the_application(app, fixture_resume):
+    st, j = call(app, 'POST', '/api/applications', {'company': uniq('Prep'), 'role': 'Data Analyst', 'status': 'interview'})
+    aid = j['application']['id']
+    st, j = call(app, 'POST', '/api/applications/prep', {'id': aid, 'resume': fixture_resume})
+    assert st == 200, j
+    pack = j['pack']
+    assert pack['questions'][0]['q'] == 'Tell me about your dashboards' and pack['focus'] == ['Reporting at scale']
+    st, j = call(app, 'GET', '/api/application?id=' + aid)
+    assert [x['kind'] for x in j['application']['artifacts']] == ['interview_prep']
+    st, j = call(app, 'POST', '/api/applications/prep', {'id': 'nope', 'resume': fixture_resume})
+    assert st == 404

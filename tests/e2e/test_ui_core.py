@@ -589,3 +589,30 @@ def test_market_radar_card(ui, fixture_resume):
     expect(page.locator('#radar-body')).to_contain_text('Scan now')
     expect(page.locator('#radar-ideas-btn')).to_be_disabled()
     ui.assert_clean()
+
+
+def test_inbox_reply_moves_a_tracked_application_and_prep_pack(ui, app):
+    """An interview email about a tracked job offers 'Move to Interview'; pressing it updates the
+    application, opens its card, and the prep pack can be made there."""
+    from test_api import call, uniq
+    page = ui.page
+    co = uniq('Reply')
+    st, j = call(app, 'POST', '/api/applications', {'company': co, 'role': 'Data Analyst', 'status': 'applied'})
+    aid = j['application']['id']
+    page.route('**/inbox/scan', lambda r: r.fulfill(status=200, content_type='application/json', body=json.dumps({
+        'count': 1, 'scanned': 3, 'updates': 1,
+        'rows': [{'from': 'talent@x.test', 'subject': 'Interview next week', 'date': '2026-10-14', 'status': 'interview_invite',
+                  'company': co, 'role': 'Data Analyst', 'match': {'id': aid, 'company': co, 'role': 'Data Analyst',
+                                                                    'status': 'applied'}, 'update_to': 'interview'}]})))
+    go(page, 'tracker')
+    page.fill('#ix-email', 'me@example.test'); page.fill('#ix-pwd', 'app-password-stub')
+    page.click('#ix-scan')
+    page.click('#ix-results [data-action="ixUpdate"]')
+    expect(page.locator('#pp-modal')).to_be_visible()
+    st, j = call(app, 'GET', '/api/application?id=' + aid)
+    assert j['application']['status'] == 'interview' and 'Interview next week' in j['application']['notes']
+    page.evaluate('r => { document.getElementById("resume-text").value = r; }', 'Data analyst. Built dashboards for 40 managers at Brightline. ' * 4)
+    page.click('#pp-prep-btn')
+    expect(page.locator('#pp-prep')).to_contain_text('Tell me about your dashboards', timeout=30000)
+    page.unroute('**/inbox/scan')
+    ui.assert_clean()

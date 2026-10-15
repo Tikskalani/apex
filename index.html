@@ -2077,6 +2077,8 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
       <div class="modal-col">
         <h4>Apply kit</h4>
         <div id="pp-kit"></div>
+        <h4 style="margin-top:var(--s6)">Interview prep</h4>
+        <div id="pp-prep"><div class="empty" style="padding:var(--s4)">When they invite you to interview: the questions this role asks, answer outlines and STAR stories from your own experience, and what to ask them.</div></div>
         <h4 style="margin-top:var(--s6)">Follow-up</h4>
         <div id="pp-followup"><div class="empty" style="padding:var(--s4)">Draft a follow-up sequence tailored to this application.</div></div>
       </div>
@@ -2084,6 +2086,7 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
   </div>
   <div class="modal-footer">
     <button class="btn btn-primary" id="pp-followup-btn">Draft follow-up</button>
+    <button class="btn local-only" id="pp-prep-btn">Interview prep pack</button>
     <button class="btn" id="pp-sent">Mark follow-up sent</button>
     <span style="flex:1"></span>
     <button class="btn btn-sm btn-quiet-danger" id="pp-delete">Delete application</button>
@@ -2591,6 +2594,8 @@ const ACTIONS = {
   quickTailor: el => quickTailor(Number(el.dataset.arg)),
   ixAddAll:    () => ixAddAll(),
   ixAddOne:    el => ixAddOne(Number(el.dataset.arg)),
+  ixUpdate:    el => { const r = (window._ixRows || [])[Number(el.dataset.arg)]; if (r) { el.disabled = true; ixUpdate([r]); } },
+  ixUpdateAll: el => { el.disabled = true; ixUpdate(window._ixRows || []); },
   viNext:      () => viNextQuestion(),
   pipeOpen:    el => pipeOpen(el.dataset.arg),
   pipeFilter:  el => { PIPE.filter = el.dataset.arg; renderPipeline(); $('trk-filters').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); },
@@ -5297,7 +5302,7 @@ $('br-run').addEventListener('click', ev => {
 // ═══════════════════════ PIPELINE (apex.db via /api) ═══════════════════════
 const PIPE = { apps: [], summary: null, filter: 'active', detail: null };
 const STATUS_LABELS = { saved: 'Saved', applied: 'Applied', interview: 'Interview', offer: 'Offer', rejected: 'Rejected', withdrawn: 'Withdrawn' };
-const KIT_LABELS = { tailored_resume: 'Tailored resume', cover_letter: 'Cover letter', followup: 'Follow-up sequence', outreach: 'Outreach', note: 'Note' };
+const KIT_LABELS = { tailored_resume: 'Tailored resume', cover_letter: 'Cover letter', followup: 'Follow-up sequence', outreach: 'Outreach', note: 'Note', interview_prep: 'Interview prep pack' };
 
 // JSON call to the local API. Throws Error(message) on any non-2xx.
 async function api(path, body) {
@@ -5453,7 +5458,12 @@ async function pipeOpen(id) {
 
 function renderKit(a) {
   CLIP.clear();   // keys only need to live as long as the buttons that use them
-  const docs = (a.artifacts || []).filter(x => x.kind !== 'followup');
+  const docs = (a.artifacts || []).filter(x => x.kind !== 'followup' && x.kind !== 'interview_prep');
+  const prep = (a.artifacts || []).find(x => x.kind === 'interview_prep');
+  let pk = null; if (prep) { try { pk = JSON.parse(prep.content); } catch (e) {} }
+  if (pk) renderPrep(pk, prep.created_at);
+  else $('pp-prep').innerHTML = '<div class="empty" style="padding:var(--s4)">When they invite you to interview: the questions this role asks, answer outlines and STAR stories from your own experience, and what to ask them.</div>';
+  $('pp-prep-btn').classList.toggle('btn-primary', a.status === 'interview');
   $('pp-kit').innerHTML = docs.length ? docs.map(x => `
     <div class="kit-item">
       <div class="kit-h"><span><strong>${escHtml(KIT_LABELS[x.kind] || x.kind)}</strong> <span class="sub">${escHtml(fmtWhen(x.created_at))}</span></span>
@@ -5472,6 +5482,41 @@ function renderKit(a) {
     $('pp-followup').innerHTML = '<div class="empty" style="padding:var(--s4)">Draft a follow-up sequence tailored to this application.</div>';
   }
 }
+
+// The interview prep pack: outlines and stories passed the fact check (a withheld outline is empty).
+function renderPrep(d, when) {
+  const li = xs => (xs || []).map(x => `<li>${escHtml(x)}</li>`).join('');
+  const qs = (d.questions || []).map(q => `<details class="kit-item" style="padding:8px 10px">
+      <summary style="cursor:pointer"><strong>${escHtml(q.q)}</strong> <span class="sub">${escHtml(q.kind || '')}</span></summary>
+      ${q.why ? `<div class="sub" style="margin-top:6px">Why they ask: ${escHtml(q.why)}</div>` : ''}
+      <div style="margin-top:6px;white-space:pre-wrap">${q.outline ? escHtml(q.outline) : '<em>Outline withheld: it claimed more than your resume shows. Answer from your own experience.</em>'}</div></details>`).join('');
+  const st = (d.stories || []).map(x => `<div class="kit-item" style="padding:8px 10px"><strong>${escHtml(x.title)}</strong>
+      <div style="margin-top:4px"><b>S</b> ${escHtml(x.situation || '')}</div><div><b>A</b> ${escHtml(x.action || '')}</div><div><b>R</b> ${escHtml(x.result || '')}</div></div>`).join('');
+  const text = [`Interview prep: ${d.role} at ${d.company}`, '', 'What they will probe:', ...(d.focus || []).map(x => '- ' + x), '',
+    ...(d.questions || []).flatMap(q => [`Q: ${q.q}`, q.outline ? q.outline : '(answer from your own experience)', '']),
+    'Stories:', ...(d.stories || []).flatMap(x => [x.title, `S: ${x.situation}`, `A: ${x.action}`, `R: ${x.result}`, '']),
+    'Ask them:', ...(d.ask || []).map(x => '- ' + x), '', 'Brush up:', ...(d.review || []).map(x => '- ' + x)].join('\n');
+  $('pp-prep').innerHTML = `<div class="sub" style="margin-bottom:6px">${escHtml(fmtWhen(when))}${d.from_posting ? ' · from the saved posting' : ''}${d.withheld ? ` · ${d.withheld} item(s) withheld by the fact check` : ''}
+      <button class="copy-btn" data-action="clip" data-arg="${clipKey(text)}">Copy</button></div>
+    ${d.focus && d.focus.length ? `<div><strong>What they will probe</strong><ul style="margin:4px 0 8px 18px">${li(d.focus)}</ul></div>` : ''}
+    <div style="display:grid;gap:6px">${qs}</div>
+    ${st ? `<div style="margin-top:10px"><strong>Your STAR stories</strong><div style="display:grid;gap:6px;margin-top:6px">${st}</div></div>` : ''}
+    ${d.ask && d.ask.length ? `<div style="margin-top:10px"><strong>Ask them</strong><ul style="margin:4px 0 0 18px">${li(d.ask)}</ul></div>` : ''}
+    ${d.review && d.review.length ? `<div style="margin-top:10px"><strong>Brush up on</strong><ul style="margin:4px 0 0 18px">${li(d.review)}</ul></div>` : ''}`;
+}
+
+$('pp-prep-btn').addEventListener('click', async ev => {
+  const a = PIPE.detail; if (!a) return;
+  const btn = ev.currentTarget, id = a.id;
+  btn.disabled = true;
+  $('pp-prep').innerHTML = '<div class="empty" style="padding:var(--s4)"><span class="spinner"></span>Preparing your pack (about 30 seconds)…</div>';
+  try {
+    await api('/api/applications/prep', { id, resume: latestResume() });
+    if (PIPE.detail && PIPE.detail.id === id) pipeOpen(id);
+  } catch (e) {
+    $('pp-prep').innerHTML = errorBlock('Could not prepare the pack: ' + e.message);
+  } finally { btn.disabled = false; }
+});
 
 // Follow-ups are fact-checked: a withheld part has an empty body and its
 // reasons in d.withheld (week_1, week_2, linkedin_note).
@@ -5623,7 +5668,9 @@ $('ix-scan').addEventListener('click', async ev => {
       'ghosted':'var(--fg-3)'
     }[s] || 'var(--fg-2)');
     $('ix-results').innerHTML =
-      '<div style="margin-bottom:var(--s3); display:flex; gap:8px; flex-wrap:wrap"><button class="btn btn-primary btn-sm" data-action="ixAddAll">Add All To Tracker</button><span style="font-size:11px; color:var(--fg-3); padding:6px 0">' + rows.length + ' emails detected · review and confirm</span></div>' +
+      '<div style="margin-bottom:var(--s3); display:flex; gap:8px; flex-wrap:wrap">' +
+        (j.updates ? '<button class="btn btn-primary btn-sm" data-action="ixUpdateAll">Apply ' + j.updates + ' status update' + (j.updates === 1 ? '' : 's') + '</button>' : '') +
+        '<button class="btn btn-sm' + (j.updates ? '' : ' btn-primary') + '" data-action="ixAddAll">Add new ones to Tracker</button><span style="font-size:11px; color:var(--fg-3); padding:6px 0">' + rows.length + ' emails detected · review and confirm</span></div>' +
       rows.map((r2, i) =>
         '<div class="alert-card">' +
           '<div class="alert-info">' +
@@ -5631,7 +5678,9 @@ $('ix-scan').addEventListener('click', async ev => {
             '<div class="m">' + escHtml((r2.subject||'').slice(0,90)) + ' · from ' + escHtml((r2.from||'').slice(0,40)) + ' · ' + escHtml((r2.date||'').slice(0,16)) + '</div>' +
           '</div>' +
           '<span class="alert-freq" style="color:' + statusColor(r2.status) + '; background:rgba(255,255,255,0.04)">' + escHtml(String(r2.status||'').replace(/_/g, ' ')) + '</span>' +
-          '<button class="btn btn-sm" data-action="ixAddOne" data-arg="' + i + '">Add</button>' +
+          (r2.update_to ? '<button class="btn btn-sm btn-primary" data-action="ixUpdate" data-arg="' + i + '">Move to ' + escHtml(STATUS_LABELS[r2.update_to] || r2.update_to) + '</button>'
+            : r2.match ? '<span style="font-size:11px; color:var(--fg-3)">in Tracker · ' + escHtml(STATUS_LABELS[r2.match.status] || r2.match.status) + '</span>'
+            : '<button class="btn btn-sm" data-action="ixAddOne" data-arg="' + i + '">Add</button>') +
         '</div>'
       ).join('');
   } catch(e) {
@@ -5661,7 +5710,21 @@ async function ixImport(rows) {
   } catch (e) { toast('Import failed: ' + e.message, 'err'); }
 }
 window.ixAddOne = i => { const r = (window._ixRows || [])[i]; if (r) ixImport([r]); };
-window.ixAddAll = () => ixImport(window._ixRows || []);
+window.ixAddAll = () => ixImport((window._ixRows || []).filter(r => !r.match));
+async function ixUpdate(rows) {
+  let n = 0, interview = null;
+  for (const r of rows.filter(r => r.update_to && r.match)) {
+    try {
+      await api('/api/applications/update', { id: r.match.id, status: r.update_to,
+        notes: [((PIPE.apps || []).find(a => a.id === r.match.id) || {}).notes, r.subject && ('Email ' + (r.date || '').slice(0, 16) + ': ' + r.subject)].filter(Boolean).join('\n') });
+      r.match.status = r.update_to; delete r.update_to; n++;
+      if (r.match.status === 'interview') interview = r.match;
+    } catch (e) { toast(e.message, 'err'); }
+  }
+  if (n) toast(n + ' application' + (n === 1 ? '' : 's') + ' updated' + (interview ? ' · open it in the Tracker for your interview prep pack' : ''), 'ok');
+  loadPipeline();
+  if (interview) pipeOpen(interview.id);
+}
 
 migrateLocalApplications().then(loadPipeline);
 

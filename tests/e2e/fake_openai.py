@@ -346,6 +346,12 @@ class _Handler(BaseHTTPRequestHandler):
                                   'quick_fixes': [{'add_to_resume': 'SQL', 'where': 'skills', 'impact': 'high'},
                                                   {'add_to_resume': 'Tableau', 'where': 'skills', 'impact': 'high'}],
                                   'red_flags': [], 'green_flags': ['SQL'], 'estimated_competition': 'medium'})
+        elif 'You prepare a candidate for an interview' in system:      # /api/applications/prep
+            content = json.dumps({'focus': ['Reporting at scale'], 'ask': ['What does success look like?'], 'review': ['SQL windows'],
+                                  'questions': [{'q': 'Tell me about your dashboards', 'kind': 'behavioral', 'why': 'core work',
+                                                 'outline': 'Built dashboards for 40 managers at Brightline.'}],
+                                  'stories': [{'title': 'Dashboards', 'situation': 'Managers lacked reporting.',
+                                               'action': 'Built dashboards.', 'result': 'Used by 40 managers.'}]})
         elif 'You classify recruiter and job-search emails' in system:   # /inbox/scan
             ids = [int(x) for x in re.findall(r'#(\d+): FROM=', user)]
             content = json.dumps({'classifications': [{'id': i, 'status': 'applied', 'company': 'Acme', 'role': 'Analyst',
