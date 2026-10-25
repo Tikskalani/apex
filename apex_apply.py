@@ -124,7 +124,7 @@ _LABELS = {
 _HONEYPOT = re.compile(r'beecatcher|honeypot|hp_|^hpot', re.I)      # bot traps: a real applicant never sees them
 
 
-def _fill(scope, key, value, log):
+def _fill(scope, key, value, log, record=None):
     if not value:
         return False
     for sel in _SELECTORS.get(key, []):
@@ -135,6 +135,8 @@ def _fill(scope, key, value, log):
                 if el.is_visible() and not el.input_value() and not _HONEYPOT.search(el.get_attribute('data-automation-id') or ''):
                     el.fill(value)
                     log.append(key)
+                    if record is not None:
+                        record[key] = value
                     return True
             except Exception:
                 continue
@@ -143,6 +145,8 @@ def _fill(scope, key, value, log):
         if el.count() and el.is_visible() and not el.input_value() and el.get_attribute('role') != 'combobox':
             el.fill(value)
             log.append(key)
+            if record is not None:
+                record[key] = value
             return True
     except Exception:
         pass
@@ -581,9 +585,10 @@ def _set(scope, q, value):
     return True
 
 
-def answer_questions(scope, answers, contact, ask=None, log=None, passes=3):
+def answer_questions(scope, answers, contact, ask=None, log=None, passes=3, record=None):
     """Answer every question it can, in passes (an answer can reveal further questions).
-    Returns the labels of required questions left unanswered."""
+    Returns the labels of required questions left unanswered; `record` (when given) gets
+    {question: answer} for everything that was put into the form."""
     log = log if log is not None else []
     tried = set()
     for _ in range(passes):
@@ -604,6 +609,8 @@ def answer_questions(scope, answers, contact, ask=None, log=None, passes=3):
                 if _set(scope, q, v):
                     log.append(q['label'][:60])
                     progress = True
+                    if record is not None:
+                        record[q['label'][:100]] = v if isinstance(v, str) else ', '.join(map(str, v))
             except Exception:
                 continue
         if not progress:
@@ -741,27 +748,39 @@ def submit(scope, shot_path='', wait=25, button=None):
 
 # ── walking a form: one page, or many ────────────────────────────────────────
 
-def fill_page(scope, pdf_path, letter, contact, answers, ask, log):
+def fill_page(scope, pdf_path, letter, contact, answers, ask, log, record=None):
     """Fill what this page of the form asks: contact fields, files, every question. Returns the
     required questions left unanswered."""
     first, last = split_name(contact.get('name'))
-    if not _fill(scope, 'first_name', first, log) | _fill(scope, 'last_name', last, log):
-        _fill(scope, 'name', ' '.join(filter(None, [first, last])), log)
+    if not _fill(scope, 'first_name', first, log, record) | _fill(scope, 'last_name', last, log, record):
+        _fill(scope, 'name', ' '.join(filter(None, [first, last])), log, record)
     for key in ('email', 'phone', 'linkedin', 'github', 'website'):
-        _fill(scope, key, contact.get(key), log)
+        _fill(scope, key, contact.get(key), log, record)
     if pdf_path and os.path.exists(pdf_path) and 'resume' not in log:
         _attach(scope, pdf_path, letter, log)
+        if record is not None and 'resume' in log:
+            record['resume'] = os.path.basename(pdf_path)
     _page_of(scope).wait_for_timeout(500)
-    return answer_questions(scope, answers or {}, contact, ask, log)
+    return answer_questions(scope, answers or {}, contact, ask, log, record=record)
 
 
-def walk_form(page, pdf_path, letter, contact, answers, ask, do_submit, shot_path, log, pages=10, next_button=None):
+def _form_shot(page, shot_path):
+    """A picture of the filled form, taken before Submit (kept beside the confirmation)."""
+    if not shot_path:
+        return
+    try:
+        page.screenshot(path=re.sub(r'_confirmation\.png$', '', shot_path) + '_form.png', full_page=True)
+    except Exception:
+        pass
+
+
+def walk_form(page, pdf_path, letter, contact, answers, ask, do_submit, shot_path, log, pages=10, next_button=None, record=None):
     """Fill a form page by page: fill, press Next/Continue while there is one, and on the last page
     Submit (when asked and nothing required is left). Returns (status, detail, missing)."""
     missing = []
     for _ in range(pages):
         scope = _form_scope(page)
-        missing = fill_page(scope, pdf_path, letter, contact, answers, ask, log)
+        missing = fill_page(scope, pdf_path, letter, contact, answers, ask, log, record)
         nxt = next_button(scope) if next_button else _button(scope, _NEXT_TEXT)
         nxt_text = ''
         if nxt is not None:
@@ -773,6 +792,7 @@ def walk_form(page, pdf_path, letter, contact, answers, ask, do_submit, shot_pat
             nxt = None
         is_last = nxt is None or _SUBMIT_TEXT.search(nxt_text or '')
         if is_last:
+            _form_shot(page, shot_path)
             if not do_submit:
                 return 'filled', '', missing
             if missing:
@@ -812,9 +832,9 @@ def fill_form(page, url, pdf_path, letter, contact, answers=None, ask=None, do_s
     Returns {filled: [fields], missing: [required questions left], status, detail}. status is
     'filled' (not submitted), 'submitted', 'captcha', 'invalid', 'unconfirmed' or 'needs_you'
     (required questions APEX could not answer; nothing was submitted)."""
-    log = []
+    log, record = [], {}
     if board(url) == 'workday':
-        return workday_flow(page, url, pdf_path, letter, contact, answers, ask, do_submit, shot_path, logins or {}, on_login, log)
+        return workday_flow(page, url, pdf_path, letter, contact, answers, ask, do_submit, shot_path, logins or {}, on_login, log, record)
     page = reach_form(page, url)
     wall = sign_in_wall(page)
     if wall and is_aggregator(page.url) and website:
@@ -822,12 +842,12 @@ def fill_form(page, url, pdf_path, letter, contact, answers=None, ask=None, do_s
         if found is not None:
             page = reach_form(found, found.url)
             if board(page.url) == 'workday':
-                return workday_flow(page, page.url, pdf_path, letter, contact, answers, ask, do_submit, shot_path, logins or {}, on_login, log)
+                return workday_flow(page, page.url, pdf_path, letter, contact, answers, ask, do_submit, shot_path, logins or {}, on_login, log, record)
             wall = sign_in_wall(page)
     if wall:
-        return _left_for_person(page, {'filled': [], 'missing': [wall], 'status': 'needs_you', 'detail': wall}, shot_path)
-    status, detail, missing = walk_form(page, pdf_path, letter, contact, answers, ask, do_submit, shot_path, log)
-    return _left_for_person(page, {'filled': log, 'missing': missing, 'status': status, 'detail': detail}, shot_path)
+        return _left_for_person(page, {'filled': [], 'missing': [wall], 'status': 'needs_you', 'detail': wall, 'record': {}}, shot_path)
+    status, detail, missing = walk_form(page, pdf_path, letter, contact, answers, ask, do_submit, shot_path, log, record=record)
+    return _left_for_person(page, {'filled': log, 'missing': missing, 'status': status, 'detail': detail, 'record': record}, shot_path)
 
 
 def _left_for_person(page, r, shot_path=''):
@@ -1178,7 +1198,8 @@ def workday_account(page, contact, logins, on_login):
     return ''
 
 
-def workday_flow(page, url, pdf_path, letter, contact, answers, ask, do_submit, shot_path, logins, on_login, log):
+def workday_flow(page, url, pdf_path, letter, contact, answers, ask, do_submit, shot_path, logins, on_login, log, record=None):
+    record = {} if record is None else record
     """Apply on a Workday career site end to end."""
     page.goto(url, wait_until='domcontentloaded', timeout=60000)
     _settle(page)
@@ -1195,11 +1216,11 @@ def workday_flow(page, url, pdf_path, letter, contact, answers, ask, do_submit, 
             _settle(page)
     wall = workday_account(page, contact, logins, on_login)
     if wall:
-        return _left_for_person(page, {'filled': log, 'missing': [wall], 'status': 'needs_you', 'detail': wall})
+        return _left_for_person(page, {'filled': log, 'missing': [wall], 'status': 'needs_you', 'detail': wall, 'record': record}, shot_path)
     page.wait_for_timeout(1500)
     status, detail, missing = walk_form(page, pdf_path, letter, contact, answers, ask, do_submit, shot_path, log,
-                                        pages=12, next_button=_wd_next_button)
-    return _left_for_person(page, {'filled': log, 'missing': missing, 'status': status, 'detail': detail})
+                                        pages=12, next_button=_wd_next_button, record=record)
+    return _left_for_person(page, {'filled': log, 'missing': missing, 'status': status, 'detail': detail, 'record': record}, shot_path)
 
 
 # ── the APEX browser window (one thread owns Playwright) ─────────────────────
@@ -1332,6 +1353,28 @@ def apply_job(url, pdf_path, letter, contact, answers=None, ask=None, do_submit=
                     pg.close()
         return r
     return run(fn)
+
+
+def submit_open(url, shot_path=''):
+    """Press Submit on an application APEX filled and left open in its window (review mode).
+    Returns (result, error): result has status 'submitted', 'needs_you' (required answers still
+    blank), 'captcha', 'invalid', 'unconfirmed' or 'gone' (the tab is no longer open)."""
+    def fn(ctx):
+        key = (url or '').split('#')[0].split('?')[0].rstrip('/')
+        page = next((p for p in reversed(ctx.pages) if p.url.split('#')[0].split('?')[0].rstrip('/') == key), None)
+        if page is None:
+            return {'status': 'gone', 'detail': 'the filled form is no longer open', 'url': url, 'missing': []}
+        page.bring_to_front()
+        scope = _form_scope(page)
+        missing = [q['label'][:120] for q in scope.evaluate(_EXTRACT) if q['required'] and not q['value']]
+        if missing:
+            return {'status': 'needs_you', 'detail': 'required answers are still blank', 'missing': missing, 'url': page.url}
+        status, detail = submit(scope, shot_path)
+        r = {'status': status, 'detail': detail, 'url': page.url, 'missing': []}
+        if status == 'submitted':
+            page.close()
+        return r
+    return run(fn, timeout=120)
 
 
 def open_and_fill(url, pdf_path, letter, contact, timeout=90):

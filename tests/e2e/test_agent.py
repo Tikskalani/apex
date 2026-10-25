@@ -199,3 +199,25 @@ def test_client_workspaces_are_isolated_per_request(app, fixture_resume):
     assert st == 200 and j['removed']['profiles'] == 1 and j['removed']['facts'] == 1
     st, j = call(app, 'GET', '/api/agent/profiles', headers=H)
     assert st == 400
+
+
+def test_report_activity_and_submit_now_routes(app, fixture_resume):
+    import http.client
+    st, j = call(app, 'POST', '/api/agent/profiles', {'name': 'Report', 'targets': 'AI Engineer', 'base_resume': fixture_resume, 'active': False,
+                                                      'review_first': True, 'min_fit_submit': 70})
+    assert st == 200 and j['profile']['review_first'] is True and j['profile']['min_fit_submit'] == 70
+    pid = j['profile']['id']
+    st, j = call(app, 'GET', '/api/agent/activity?profile=' + pid)
+    assert st == 200 and j['activity'] == []
+    st, j = call(app, 'GET', '/api/agent/report?profile=' + pid)
+    assert st == 200 and j['profile'] == 'Report' and j['client'] == 'Me' and 'funnel' in j
+    c = http.client.HTTPConnection('127.0.0.1', app.port, timeout=10)
+    c.request('GET', '/report?profile=' + pid, headers={'Host': f'localhost:{app.port}'})
+    r = c.getresponse()
+    body = r.read().decode('utf-8')
+    assert r.status == 200 and 'text/html' in r.getheader('Content-Type', '') and 'job search report' in body and 'Report' in body
+    st, j = call(app, 'POST', '/api/agent/submit_now', {'id': 'nope'})
+    assert st == 404
+    st, j = call(app, 'POST', '/api/agent/report/send', {'profile': pid, 'to': 'not-an-address'})
+    assert st == 400
+    call(app, 'POST', '/api/agent/profiles/delete', {'id': pid})

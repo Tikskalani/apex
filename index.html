@@ -138,7 +138,7 @@ a:hover { color: var(--acc-soft); }
 /* ─── Top bar — minimal, Tesla-style ─── */
 .topbar {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto auto 1fr auto;   /* brand · client picker · telemetry · actions */
   align-items: center;
   gap: var(--s5);
   padding: 0 var(--s6);
@@ -1141,8 +1141,10 @@ label {
   .welcome { padding: var(--s8) 0 var(--s7); }
   .welcome h1 { font-size: clamp(40px, 9vw, 64px); }
   .telemetry { display: none; }
-  .topbar { padding: 0 var(--s4); }
+  .topbar { padding: 0 var(--s4); gap: var(--s3); }
   .brand-sub { display: none; }
+  .client-pick label { display: none; }
+  .client-pick select { max-width: 96px; min-width: 0; font-size: 12px; }
   .hero-meta { gap: var(--s4); }
   .foot-pipeline { padding: 0 var(--s2); }
   .pipe-step { padding: 3px 8px; font-size: 9px; }
@@ -1329,7 +1331,7 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
 
     <div class="client-pick local-only" id="client-pick-wrap" style="display:flex;align-items:center;gap:6px;margin-left:12px">
       <label for="client-pick" style="font-size:12px;color:var(--fg-2)">Client</label>
-      <select id="client-pick" aria-label="Client workspace" style="min-width:150px"><option value="">Me</option></select>
+      <select id="client-pick" aria-label="Client workspace" style="max-width:160px"><option value="">Me</option></select>
     </div>
 
     <div class="telemetry">
@@ -1812,7 +1814,10 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
               <button class="btn btn-primary btn-sm" data-action="agScan" id="ag-scan">Scan now</button>
               <button class="btn btn-sm" data-action="agFollowups" title="Draft (or send) the follow-ups that are due today">Run follow-ups</button>
               <button class="btn btn-sm" data-action="agDigestSend" title="Email me today's digest now">Send digest</button>
+              <button class="btn btn-sm" data-action="agReport" title="This week's report for the client: applications, replies, follow-ups, what is next">Client report</button>
+              <button class="btn btn-sm" data-action="agReportSend" title="Email the report">Email report</button>
             </div>
+            <div id="ag-checklist" style="margin-top:var(--s3)"></div>
             <div id="ag-status" role="status" style="margin-top:var(--s3);font-size:13px;color:var(--fg-2)"></div>
             <details style="margin-top:var(--s3)">
               <summary style="cursor:pointer;font-weight:600">Add jobs by link</summary>
@@ -1837,6 +1842,8 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
               <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-remote" checked> Include remote jobs</label>
               <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-active" checked> Scan every morning</label>
               <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-submit" checked> Apply for me: APEX submits the applications itself</label>
+              <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-review"> Review before submit: APEX fills the form and waits for a person to press Submit</label>
+              <label>Quality bar: never send unasked below this fit <input id="ag-bar" type="number" min="0" max="100" value="55"></label>
               <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-ghosts" checked> Skip likely ghost postings (old, reposted, evergreen)</label>
               <label>Follow-ups when an employer is silent <select id="ag-followups"><option value="auto">Send them for me (5 and 12 days; needs the recruiter's address and email set up)</option><option value="draft">Draft them, I send</option><option value="off">Off</option></select></label>
               <label>Morning digest to <input id="ag-digest" type="email" placeholder="you@example.com (needs email set up in Alerts)"></label>
@@ -1884,6 +1891,11 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
               <button class="btn btn-sm" data-action="radarIdeas" id="radar-ideas-btn">Suggest projects for my gaps (about 2¢)</button>
             </div>
             <div id="radar-ideas" style="margin-top:var(--s3)"></div>
+          </details>
+          <details class="card" id="activity" style="margin-top:var(--s4)">
+            <summary style="cursor:pointer;font-weight:600">Activity <span id="activity-meta" style="font-weight:400;color:var(--fg-2)"></span></summary>
+            <p style="font-size:13px;color:var(--fg-2);margin:var(--s2) 0 var(--s3)">Every outbound action, newest first: applications APEX submitted, forms it left for you, follow-ups sent, replies, ghosted.</p>
+            <ul id="activity-list" style="list-style:none;padding:0;margin:0;display:grid;gap:4px;font-size:13px"></ul>
           </details>
           <details class="card" id="health" style="margin-top:var(--s4)">
             <summary style="cursor:pointer;font-weight:600">Search health <span id="health-meta" style="font-weight:400;color:var(--fg-2)"></span></summary>
@@ -2353,7 +2365,7 @@ async function agLoad() {
     $('ag-scan').disabled = !AG.pid;
     if (!AG.profiles.length) { agEditor(null); $('ag-list').innerHTML = '<div class="empty">Create a profile to start: a name, the job titles you want, and your base resume.</div>'; return; }
     await agQueue();
-    agDigest(); radarLoad();
+    agDigest(); radarLoad(); activityLoad(); checklistRender();
   } catch (e) { $('ag-status').textContent = 'Could not load the job agent: ' + e.message; }
 }
 $('ag-add-role').addEventListener('change', ev => {
@@ -2381,6 +2393,8 @@ function agEditor(p) {
   $('ag-active').checked = p ? p.active : true;
   $('ag-submit').checked = p ? p.auto_submit : true;
   $('ag-ghosts').checked = p ? p.skip_ghosts !== false : true;
+  $('ag-review').checked = p ? !!p.review_first : false;
+  $('ag-bar').value = p ? (p.min_fit_submit ?? 55) : 55;
   $('ag-followups').value = p ? (p.followups || 'draft') : 'auto';
   $('ag-digest').value = p ? (p.digest_email || '') : '';
   const ans = (p && p.answers) || {};
@@ -2474,6 +2488,47 @@ async function loginDelete(el) {
   if (!window.confirm(`Forget the sign-in APEX kept for ${el.dataset.arg}? You will need the password to sign in there yourself.`)) return;
   try { await api('/api/agent/logins/delete', { host: el.dataset.arg }); loginsLoad(); } catch (e) { toast(e.message, 'err'); }
 }
+async function agReportSend(btn) {
+  if (!AG.pid) return;
+  const prof = AG.profiles.find(p => p.id === AG.pid) || {};
+  const to = window.prompt('Email the report to:', prof.digest_email || '');
+  if (!to) return;
+  btn.disabled = true;
+  try { const r = await api('/api/agent/report/send', { profile: AG.pid, to: to.trim() }); toast(`Report sent to ${r.to}`, 'ok'); }
+  catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+async function activityLoad() {
+  if (!AG.pid) return;
+  try {
+    const j = await api('/api/agent/activity?profile=' + encodeURIComponent(AG.pid));
+    const KIND = { submitted: ['✓ submitted', 'var(--green-soft)'], needs_you: ['left for you', 'var(--amber)'], captcha: ['bot check', 'var(--amber)'],
+                   filled: ['filled, awaiting review', 'var(--fg-1)'], below_bar: ['held: below bar', 'var(--amber)'], invalid: ['site flagged', 'var(--red-soft)'],
+                   unconfirmed: ['unconfirmed', 'var(--amber)'], error: ['error', 'var(--red-soft)'], followup_sent: ['follow-up', 'var(--fg-1)'],
+                   status: ['reply', 'var(--green-soft)'], ghosted: ['ghosted', 'var(--fg-3)'] };
+    $('activity-meta').textContent = j.activity.length ? `(${j.activity.length})` : '';
+    $('activity-list').innerHTML = j.activity.map(a => { const k = KIND[a.kind] || [a.kind, 'var(--fg-2)'];
+      return `<li style="display:grid;grid-template-columns:110px 130px 1fr;gap:8px"><span class="mono" style="color:var(--fg-2)">${escHtml(a.at || '')}</span><span style="color:${k[1]}">${escHtml(k[0])}</span><span>${escHtml(a.title)} · ${escHtml(a.company || '')}${a.detail ? ` <span style="color:var(--fg-2)">— ${escHtml(a.detail)}</span>` : ''}</span></li>`; }).join('')
+      || '<li class="empty">Nothing yet.</li>';
+  } catch (e) { $('activity-list').innerHTML = `<li class="empty">${escHtml(e.message)}</li>`; }
+}
+function checklistRender() {
+  const box = $('ag-checklist'); if (!box) return;
+  const p = AG.profiles.find(x => x.id === AG.pid);
+  const ans = (p && p.answers) || {};
+  const steps = [
+    ['Profile with a base resume', !!(p && (p.base_resume || '').length > 100), 'agEdit'],
+    ['Application answers (work authorization, sponsorship, address)', !!(ans.authorized && ans.sponsorship && ans.address), 'agEdit'],
+    ['Evidence vault has facts (GitHub import or notes)', (AG.vaultCount || 0) > 0, null],
+    ['First scan done', !!(p && p.last_scan), 'agScan'],
+    ['Apply for me is on', !!(p && p.auto_submit), 'agEdit'],
+  ];
+  const done = steps.filter(s => s[1]).length;
+  if (done === steps.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<details ${done < 3 ? 'open' : ''}><summary style="cursor:pointer;font-size:13px;font-weight:600">Setup checklist · ${done}/${steps.length}</summary>
+    <ul style="margin:6px 0 0 18px;font-size:13px">${steps.map(s => `<li style="color:${s[1] ? 'var(--green-soft)' : 'var(--fg-1)'}">${s[1] ? '✓' : '○'} ${escHtml(s[0])}${!s[1] && s[2] ? ` <button class="copy-btn" data-action="${s[2]}">Do it</button>` : ''}</li>`).join('')}</ul></details>`;
+}
+
 async function healthLoad() {
   try {
     const h = await api('/api/agent/analytics');
@@ -2497,6 +2552,7 @@ async function healthLoad() {
 async function vaultLoad() {
   try {
     const facts = (await api('/api/facts')).facts || [];
+    AG.vaultCount = facts.length; checklistRender();
     $('vault-count').textContent = facts.length ? `(${facts.length})` : '';
     const label = { answer: 'your answer', github: 'GitHub', manual: 'note' };
     $('vault-list').innerHTML = facts.map(f => `<li style="display:flex;gap:8px;align-items:flex-start;font-size:13px">
@@ -2538,7 +2594,7 @@ async function agSave(btn) {
     const j = await api('/api/agent/profiles', { id: $('ag-editor').dataset.id || undefined, name: $('ag-name').value,
       targets: $('ag-targets').value, location: $('ag-location').value, daily_limit: $('ag-limit').value,
       min_fit: $('ag-minfit').value, auto_prepare: $('ag-auto').value, remote_ok: $('ag-remote').checked, active: $('ag-active').checked,
-      auto_submit: $('ag-submit').checked, skip_ghosts: $('ag-ghosts').checked,
+      auto_submit: $('ag-submit').checked, skip_ghosts: $('ag-ghosts').checked, review_first: $('ag-review').checked, min_fit_submit: $('ag-bar').value,
       followups: $('ag-followups').value, digest_email: $('ag-digest').value.trim(),
       answers: Object.fromEntries([...document.querySelectorAll('#ag-answers [data-ans]')].map(el => [el.dataset.ans, el.value.trim()])),
       base_resume: $('ag-resume').value });
@@ -2623,18 +2679,25 @@ function agCard(i) {
   let act = '';
   if (i.status === 'proposed') act = `<button class="btn btn-primary btn-sm" data-action="agApplyNow" data-arg="${escHtml(i.id)}">Apply</button><button class="btn btn-sm" data-action="agApprove" data-arg="${escHtml(i.id)}">Prepare only</button><button class="btn btn-sm" data-action="agSkip" data-arg="${escHtml(i.id)}">Skip</button>${link}`;
   else if (i.status === 'approved' || i.status === 'preparing') act = `<span class="spinner"></span><span style="font-size:13px">Tailoring the resume and writing the cover letter…${AG.autoApply.has(i.id) ? ' The application opens when it is ready.' : ''}</span>${link}`;
-  else if (i.status === 'ready') act = `<button class="btn btn-primary btn-sm" data-action="agApply" data-arg="${escHtml(i.id)}">Apply</button>${link}<button class="copy-btn" data-action="agPdf" data-arg="${escHtml(i.id)}">Resume PDF</button><button class="copy-btn" data-action="agCopy" data-arg="${escHtml(i.id)}" data-what="resume">Copy resume</button>`
+  else if (i.status === 'ready') act = (k.attempt && k.attempt.status === 'filled' ? `<button class="btn btn-primary btn-sm" data-action="agSubmitNow" data-arg="${escHtml(i.id)}">Submit now</button><button class="btn btn-sm" data-action="agApply" data-arg="${escHtml(i.id)}">Fill again</button>` : `<button class="btn btn-primary btn-sm" data-action="agApply" data-arg="${escHtml(i.id)}">Apply</button>`) + `${link}<button class="copy-btn" data-action="agPdf" data-arg="${escHtml(i.id)}">Resume PDF</button><button class="copy-btn" data-action="agCopy" data-arg="${escHtml(i.id)}" data-what="resume">Copy resume</button>`
     + (k.cover_letter ? `<button class="copy-btn" data-action="agCopy" data-arg="${escHtml(i.id)}" data-what="cover_letter">Copy cover letter</button>` : '')
     + `<button class="btn btn-sm" data-action="agApplied" data-arg="${escHtml(i.id)}">I submitted it</button><button class="btn btn-sm" data-action="agSkip" data-arg="${escHtml(i.id)}">Skip</button>`;
   else if (i.status === 'failed') act = `<span style="font-size:13px;color:var(--red-soft)">Could not prepare: ${escHtml(k.error || 'unknown error')}</span><button class="btn btn-sm" data-action="agApprove" data-arg="${escHtml(i.id)}">Try again</button>`;
   else if (i.status === 'applied') act = k.submission
-      ? `<span style="font-size:13px;color:var(--green-soft)">✓ Submitted by APEX ${escHtml(k.submission.at || '')} · in the Tracker</span>${link}`
+      ? `<span style="font-size:13px;color:var(--green-soft)">✓ Submitted by APEX ${escHtml(k.submission.at || '')} · in the Tracker</span>${link}` + recordHtml(k.submission.record)
       : `<span style="font-size:13px;color:var(--green-soft)">Applied · in the Tracker</span>${link}`;
   const ATTEMPT = { needs_you: 'needs your answer to: ', captcha: 'the site wants a bot check', invalid: 'the site flagged: ',
-                    unconfirmed: 'no confirmation seen after Submit', error: '' };
-  const tried = i.status === 'ready' && k.attempt && k.attempt.status !== 'filled' ? `<div style="font-size:12.5px;color:var(--amber);margin-top:6px">APEX tried to apply ${escHtml(k.attempt.at || '')}: `
-    + escHtml((ATTEMPT[k.attempt.status] ?? k.attempt.status) + (k.attempt.status === 'needs_you' ? arr(k.attempt.missing).slice(0, 3).join('; ') : k.attempt.detail || ''))
-    + '. Press Apply to finish it in the APEX window.</div>' : '';
+                    unconfirmed: 'no confirmation seen after Submit', error: '', below_bar: '', filled: '' };
+  const recordHtml = rec => { const en = Object.entries(rec || {}); return en.length ? `<details style="margin-top:6px;font-size:12.5px"><summary style="cursor:pointer;color:var(--fg-2)">What APEX entered (${en.length} fields)</summary><div style="display:grid;grid-template-columns:minmax(120px,1fr) 2fr;gap:2px 10px;margin-top:4px">${en.map(([q, a]) => `<span style="color:var(--fg-2)">${escHtml(q)}</span><span>${escHtml(String(a))}</span>`).join('')}</div></details>` : ''; };
+  let tried = '';
+  if (i.status === 'ready' && k.attempt) {
+    const a = k.attempt;
+    if (a.status === 'filled') tried = `<div style="font-size:12.5px;color:var(--green-soft);margin-top:6px">Filled and waiting for your review (${escHtml(a.at || '')}). Check it in the APEX window, then <b>Submit now</b>.</div>` + recordHtml(a.record);
+    else if (a.status === 'below_bar') tried = `<div style="font-size:12.5px;color:var(--amber);margin-top:6px">Held back: ${escHtml(a.detail || 'below your quality bar')}. Apply sends it anyway.</div>`;
+    else tried = `<div style="font-size:12.5px;color:var(--amber);margin-top:6px">APEX tried to apply ${escHtml(a.at || '')}: `
+      + escHtml((ATTEMPT[a.status] ?? a.status) + (a.status === 'needs_you' ? arr(a.missing).slice(0, 3).join('; ') : a.detail || ''))
+      + '. Press Apply to finish it in the APEX window.</div>' + recordHtml(a.record);
+  }
   const ready = i.status === 'ready' ? tried + `<div style="font-size:12.5px;color:var(--fg-2);margin-top:6px">${k.changes || 0} verified edit${k.changes === 1 ? '' : 's'} for this posting`
     + (k.score_before != null && k.score_after != null ? ` · fit ${k.score_before} → ${k.score_after}` : '')
     + (arr(k.gaps).length ? ` · not shown (never added): ${escHtml(arr(k.gaps).slice(0, 5).join(', '))}` : '')
@@ -2727,6 +2790,20 @@ async function agApplyNow(btn) {
   await agAct('/api/agent/approve', [btn.dataset.arg], btn);
 }
 
+async function agSubmitNow(btn) {
+  const id = btn.dataset.arg;
+  const it = AG.items.find(x => x.id === id) || {};
+  if (!window.confirm(`Submit the application for ${it.title || 'this job'} at ${it.company || ''} now?`)) return;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Submitting…';
+  try {
+    const j = await api('/api/agent/submit_now', { id });
+    if (j.status === 'submitted') toast(`Submitted ✓ ${it.title} at ${it.company}. It is in the Tracker.`, 'ok');
+    else toast(`Not submitted: ${j.detail || j.status}${(j.missing || []).length ? ' · ' + j.missing.slice(0, 3).join('; ') : ''}`, 'err');
+    agQueue(); loadPipeline();
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = 'Submit now'; }
+}
+
 async function agApplied(btn) {
   btn.disabled = true;
   try { await api('/api/agent/applied', { id: btn.dataset.arg }); toast('Marked applied and added to the Tracker', 'ok'); await agQueue(); }
@@ -2787,6 +2864,9 @@ const ACTIONS = {
   agApproveAll: el => agApproveAll(el),
   agSkip:      el => agAct('/api/agent/skip', [el.dataset.arg], el),
   agApplied:   el => agApplied(el),
+  agSubmitNow: el => agSubmitNow(el),
+  agReport:    () => { if (!AG.pid) return; window.open(SERVER + '/report?profile=' + encodeURIComponent(AG.pid) + (CLIENT.id ? '&client=' + encodeURIComponent(CLIENT.id) : ''), '_blank', 'noopener'); },
+  agReportSend: el => agReportSend(el),
   agApply:     el => agApply(el),
   agApplyNow:  el => agApplyNow(el),
   agCopy:      el => agCopy(el),
@@ -5491,7 +5571,7 @@ $('br-run').addEventListener('click', ev => {
 // ═══════════════════════ PIPELINE (apex.db via /api) ═══════════════════════
 const PIPE = { apps: [], summary: null, filter: 'active', detail: null };
 const STATUS_LABELS = { saved: 'Saved', applied: 'Applied', interview: 'Interview', offer: 'Offer', rejected: 'Rejected', withdrawn: 'Withdrawn' };
-const KIT_LABELS = { tailored_resume: 'Tailored resume', cover_letter: 'Cover letter', followup: 'Follow-up sequence', outreach: 'Outreach', note: 'Note', interview_prep: 'Interview prep pack', company_brief: 'Company brief', warm_path: 'Warm path' };
+const KIT_LABELS = { tailored_resume: 'Tailored resume', cover_letter: 'Cover letter', followup: 'Follow-up sequence', outreach: 'Outreach', note: 'Note', interview_prep: 'Interview prep pack', company_brief: 'Company brief', warm_path: 'Warm path', submission_record: 'What APEX sent' };
 
 // JSON call to the local API. Throws Error(message) on any non-2xx.
 // The client workspace every request is for ('' = the default one, "Me").
@@ -5690,7 +5770,9 @@ async function pipeOpen(id) {
 
 function renderKit(a) {
   CLIP.clear();   // keys only need to live as long as the buttons that use them
-  const docs = (a.artifacts || []).filter(x => !['followup', 'interview_prep', 'company_brief', 'warm_path'].includes(x.kind));
+  const docs = (a.artifacts || []).filter(x => !['followup', 'interview_prep', 'company_brief', 'warm_path', 'submission_record'].includes(x.kind));
+  const sr = (a.artifacts || []).find(x => x.kind === 'submission_record');
+  let srd = null; if (sr) { try { srd = JSON.parse(sr.content); } catch (e) {} }
   const brief = (a.artifacts || []).find(x => x.kind === 'company_brief');
   let bd = null; if (brief) { try { bd = JSON.parse(brief.content); } catch (e) {} }
   if (bd) renderBrief(bd, brief.created_at);
@@ -5714,6 +5796,13 @@ function renderKit(a) {
       <pre>${escHtml(x.content)}</pre>
     </div>`).join('')
     : '<div class="empty" style="padding:var(--s4)">No documents yet. Use <strong>Tailor For This</strong> on a job in Live Jobs, then <strong>Save kit to Pipeline</strong>.</div>';
+  if (srd) {
+    const en = Object.entries(srd.answers || {});
+    $('pp-kit').insertAdjacentHTML('afterbegin', `<div class="kit-item"><div class="kit-h"><span><strong>What APEX sent</strong> <span class="sub">${escHtml(srd.at || '')}${srd.url ? ' · <a href="' + escHtml(safeUrl(srd.url)) + '" target="_blank" rel="noopener noreferrer">form</a>' : ''}</span></span></div>
+      ${en.length ? `<div style="display:grid;grid-template-columns:minmax(120px,1fr) 2fr;gap:2px 10px;font-size:12.5px">${en.map(([q, v]) => `<span class="sub">${escHtml(q)}</span><span>${escHtml(String(v))}</span>`).join('')}</div>` : '<div class="sub">No field-level record (submitted before records were kept).</div>'}
+      ${srd.confirmation ? `<div class="sub" style="margin-top:6px">Confirmation: ${escHtml(srd.confirmation.slice(0, 160))}</div>` : ''}
+      ${srd.form_png ? `<div class="sub">Screenshots kept at ${escHtml(srd.form_png)}</div>` : ''}</div>`);
+  }
   const fu = (a.artifacts || []).find(x => x.kind === 'followup');
   if (fu) {
     let d = null; try { d = JSON.parse(fu.content); } catch (e) {}

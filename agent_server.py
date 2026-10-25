@@ -4724,17 +4724,65 @@ def agent_submit(qid, owner='', pdf_b64='', do_submit=None, template=''):
                                   website=(item.get('reasons') or {}).get('website') or '', title=item['title'])
     r = r or {'filled': [], 'missing': [], 'status': 'error', 'detail': ''}
     out = {'mode': 'filled', 'status': r['status'] if not err else 'error', 'url': url, 'url_final': r.get('url') or '', 'filled': r['filled'],
-           'missing': r['missing'], 'detail': r['detail'], 'error': err}
-    attempt = {'status': out['status'], 'missing': r['missing'][:8], 'detail': (r['detail'] or err or '')[:300],
-               'day': _local_today(), 'at': time.strftime('%Y-%m-%d %H:%M')}
+           'missing': r['missing'], 'detail': r['detail'], 'error': err, 'record': r.get('record') or {}}
+    attempt = _attempt(out, stem)
     if out['status'] == 'submitted':
-        app = agent_mark_applied(qid, owner)
-        note = f'Submitted by APEX on {attempt["at"]}. ' + (f'Confirmation: {r["detail"][:200]}' if r['detail'] else '')
-        store.update_application(app['id'], {'notes': note}, owner=owner)
-        kit = dict(store.get_queue_item(qid, owner=owner)['kit'] or {}, submission=attempt)
-        store.update_queue_item(qid, owner=owner, kit=kit)
-        out['application_id'] = app['id']
-        print(f'  [agent] submitted: {item["title"]} at {item["company"]}', flush=True)
+        out['application_id'] = _finish_submission(qid, owner, item, attempt)
+    else:
+        store.update_queue_item(qid, owner=owner, kit=dict(kit, attempt=attempt))
+    return out
+
+
+def _attempt(out, stem):
+    """What one apply attempt did, for the card, the audit trail and the report."""
+    record = {str(k)[:100]: str(v)[:200] for k, v in list((out.get('record') or {}).items())[:80]}
+    form_png = os.path.join(APPLY_DIR, f'{stem}_form.png')
+    return {'status': out['status'], 'missing': (out.get('missing') or [])[:8], 'detail': (out.get('detail') or out.get('error') or '')[:300],
+            'day': _local_today(), 'at': time.strftime('%Y-%m-%d %H:%M'), 'url_final': out.get('url_final') or '',
+            'record': record, 'form_png': form_png if os.path.exists(form_png) else '',
+            'confirmation_png': os.path.join(APPLY_DIR, f'{stem}_confirmation.png') if os.path.exists(os.path.join(APPLY_DIR, f'{stem}_confirmation.png')) else ''}
+
+
+def _finish_submission(qid, owner, item, attempt):
+    """A confirmed submission: the job goes to the Tracker with the kit and a record of exactly
+    what was sent; the queue item keeps the submission."""
+    app = agent_mark_applied(qid, owner)
+    note = f'Submitted by APEX on {attempt["at"]}. ' + (f'Confirmation: {attempt["detail"][:200]}' if attempt.get('detail') else '')
+    store.update_application(app['id'], {'notes': note}, owner=owner)
+    try:
+        store.add_artifact(app['id'], 'submission_record', json.dumps({
+            'at': attempt['at'], 'url': attempt.get('url_final') or item.get('url'), 'answers': attempt.get('record') or {},
+            'confirmation': attempt.get('detail', '')[:300], 'form_png': attempt.get('form_png', ''),
+            'confirmation_png': attempt.get('confirmation_png', '')}), owner=owner)
+    except store.StoreError:
+        pass
+    kit = dict(store.get_queue_item(qid, owner=owner)['kit'] or {}, submission=attempt)
+    store.update_queue_item(qid, owner=owner, kit=kit)
+    print(f'  [agent] submitted: {item["title"]} at {item["company"]}', flush=True)
+    return app['id']
+
+
+def agent_submit_now(qid, owner=''):
+    """Review mode: press Submit on the form APEX filled and left open; if that tab is gone, apply
+    again from the start. Returns the same shape as agent_submit."""
+    item = store.get_queue_item(qid, owner=owner)
+    if item['status'] != 'ready':
+        raise store.StoreError('This job is not waiting for review.')
+    kit = item['kit'] or {}
+    att = kit.get('attempt') or {}
+    if att.get('status') not in ('filled', 'needs_you', 'captcha') or not att.get('url_final'):
+        return agent_submit(qid, owner, do_submit=True)
+    stem = re.sub(r'[^A-Za-z0-9]+', '_', ((kit.get('struct') or {}).get('name') or 'Resume')).strip('_') + '_' + \
+        re.sub(r'[^A-Za-z0-9]+', '_', item['company'] or 'job')[:40]
+    r, err = apex_apply.submit_open(att['url_final'], os.path.join(APPLY_DIR, f'{stem}_confirmation.png'))
+    r = r or {'status': 'error', 'detail': err, 'missing': [], 'url': att['url_final']}
+    if r['status'] == 'gone':
+        return agent_submit(qid, owner, do_submit=True)
+    out = {'mode': 'filled', 'status': r['status'], 'url': item['url'], 'url_final': r.get('url') or att['url_final'],
+           'filled': [], 'missing': r.get('missing') or [], 'detail': r.get('detail') or '', 'error': err or '', 'record': att.get('record') or {}}
+    attempt = _attempt(out, stem)
+    if out['status'] == 'submitted':
+        out['application_id'] = _finish_submission(qid, owner, item, attempt)
     else:
         store.update_queue_item(qid, owner=owner, kit=dict(kit, attempt=attempt))
     return out
@@ -4746,6 +4794,18 @@ def agent_apply(qid, pdf_b64, owner='', template=''):
 
 
 _SUBMIT_LOCK = threading.Lock()
+
+
+def below_bar(item, bar):
+    """Why this prepared job should not go out unasked: fit under the profile's bar, or a tailored
+    resume that scored below the original. '' when it clears the bar."""
+    k = item.get('kit') or {}
+    if (item.get('fit') or 0) < bar:
+        return f'fit {item.get("fit")} is under your bar of {bar}'
+    before, after = k.get('score_before'), k.get('score_after')
+    if before is not None and after is not None and after < before:
+        return f'the tailored resume scored {after}, below the original {before}'
+    return ''
 
 
 def agent_autosubmit(owner=''):
@@ -4760,17 +4820,123 @@ def agent_autosubmit(owner=''):
             if not prof.get('auto_submit'):
                 continue
             cap = max(1, prof.get('auto_prepare') or 0)
+            bar = int(prof.get('min_fit_submit') if prof.get('min_fit_submit') is not None else 55)
             for item in store.list_queue(prof['id'], owner=owner, statuses=('ready',)):
                 if store.submitted_today(prof['id'], _local_today(), owner=owner) >= cap:
                     break
-                if (item.get('kit') or {}).get('attempt'):          # tried before: it needs the person
+                kit = item.get('kit') or {}
+                if kit.get('attempt'):                             # tried before: it needs the person
+                    continue
+                why = below_bar(item, bar)
+                if why:
+                    store.update_queue_item(item['id'], owner=owner, kit=dict(kit, attempt={
+                        'status': 'below_bar', 'detail': why, 'missing': [], 'day': _local_today(),
+                        'at': time.strftime('%Y-%m-%d %H:%M'), 'record': {}}))
                     continue
                 try:
-                    agent_submit(item['id'], owner)
+                    agent_submit(item['id'], owner, do_submit=not prof.get('review_first'))
                 except Exception as e:
                     print(f'  [agent] could not apply to {item["title"]}: {e}', flush=True)
     finally:
         _SUBMIT_LOCK.release()
+
+
+# ── the activity log: every outbound action, newest first ────────────────────
+def agent_activity(owner='', pid=None, limit=120):
+    out = []
+    for prof in store.list_profiles(owner=owner):
+        if pid and prof['id'] != pid:
+            continue
+        for i in store.list_queue(prof['id'], owner=owner):
+            k = i.get('kit') or {}
+            sub_ = k.get('submission')
+            if sub_:
+                out.append({'at': sub_.get('at', ''), 'kind': 'submitted', 'title': i['title'], 'company': i['company'],
+                            'detail': (sub_.get('detail') or '')[:120], 'id': i['id']})
+            att = k.get('attempt')
+            if att and att.get('status') not in ('submitted',):
+                out.append({'at': att.get('at', ''), 'kind': att.get('status', 'attempt'), 'title': i['title'], 'company': i['company'],
+                            'detail': (att.get('detail') or '; '.join(att.get('missing') or []))[:120], 'id': i['id']})
+    for e in store.events_since('2000-01-01', owner=owner):
+        d = e.get('detail') or {}
+        if e['kind'] == 'followup_sent':
+            out.append({'at': e['at'][:16].replace('T', ' '), 'kind': 'followup_sent', 'title': e['role'], 'company': e['company'],
+                        'detail': ('by APEX' if d.get('by') == 'apex' else 'by you') + (f' to {d.get("to")}' if d.get('to') else '')})
+        elif e['kind'] == 'status':
+            out.append({'at': e['at'][:16].replace('T', ' '), 'kind': 'status', 'title': e['role'], 'company': e['company'],
+                        'detail': f'{d.get("frm")} -> {d.get("to")}'})
+        elif e['kind'] == 'ghosted':
+            out.append({'at': e['at'][:16].replace('T', ' '), 'kind': 'ghosted', 'title': e['role'], 'company': e['company'], 'detail': 'no reply in three weeks'})
+    out.sort(key=lambda x: x['at'], reverse=True)
+    return out[:limit]
+
+
+# ── the client report: what was done, what came back, what is next ───────────
+def client_report_data(owner='', pid=None, days=7):
+    from datetime import date, timedelta
+    today = _local_today()
+    since = (date.fromisoformat(today) - timedelta(days=days)).isoformat()
+    profs = [p for p in store.list_profiles(owner=owner) if not pid or p['id'] == pid]
+    if not profs:
+        raise store.StoreError('profile not found')
+    prof = profs[0]
+    cname = next((c['name'] for c in store.list_clients() if c['id'] == owner), '') if owner else ''
+    items = store.list_queue(prof['id'], owner=owner)
+    apps = store.list_applications(owner=owner)
+    by_app = {i.get('application_id'): i for i in items if i.get('application_id')}
+    submitted = []
+    for a in apps:
+        if a['status'] in ('applied', 'interview', 'offer', 'rejected') and (a.get('applied_on') or '') >= since:
+            i = by_app.get(a['id']) or {}
+            submitted.append({'date': a.get('applied_on'), 'company': a['company'], 'role': a['role'], 'status': a['status'],
+                              'how': 'APEX' if (i.get('kit') or {}).get('submission') else 'you', 'fit': i.get('fit')})
+    submitted.sort(key=lambda x: x['date'] or '', reverse=True)
+    ev = store.events_since(since + 'T00:00:00', owner=owner)
+    replies = [{'company': e['company'], 'role': e['role'], 'to': (e.get('detail') or {}).get('to'), 'at': e['at'][:10]}
+               for e in ev if e['kind'] == 'status' and (e.get('detail') or {}).get('to') in ('interview', 'offer', 'rejected')]
+    followups = [{'company': e['company'], 'role': e['role'], 'at': e['at'][:10], 'by': (e.get('detail') or {}).get('by', 'you')}
+                 for e in ev if e['kind'] == 'followup_sent']
+    needs = [{'title': i['title'], 'company': i['company'], 'why': ((i.get('kit') or {}).get('attempt') or {}).get('detail', '')[:140]}
+             for i in items if i['status'] == 'ready' and ((i.get('kit') or {}).get('attempt') or {}).get('status') in ('needs_you', 'captcha', 'filled', 'below_bar')]
+    upcoming = [{'title': i['title'], 'company': i['company'], 'fit': i['fit'], 'fresh': bool((i.get('reasons') or {}).get('fresh'))}
+                for i in items if i['status'] in ('proposed', 'approved', 'preparing')][:10]
+    radar = agent_radar(prof['id'], owner)
+    health = agent_analytics(owner)
+    return {'client': cname or 'Me', 'profile': prof['name'], 'targets': prof['targets'], 'period': {'from': since, 'to': today},
+            'submitted': submitted, 'replies': replies, 'followups': followups, 'needs': needs, 'upcoming': upcoming,
+            'ghosts': (_SCAN_STATS.get(prof['id']) or {}).get('ghosts', 0), 'gaps': radar['gaps'][:5], 'postings': radar['postings'],
+            'funnel': health['funnel'], 'median_days_to_reply': health['median_days_to_reply'], 'recommendations': health['recommendations']}
+
+
+def client_report_html(owner='', pid=None, days=7):
+    d = client_report_data(owner, pid, days)
+    e = html_lib.escape
+    rows = lambda xs, cols: ''.join('<tr>' + ''.join(f'<td>{e(str(x.get(c, "") if x.get(c) is not None else ""))}</td>' for c in cols) + '</tr>' for x in xs) or f'<tr><td colspan="{len(cols)}" class="muted">none this week</td></tr>'
+    f = d['funnel']
+    html = f"""<!doctype html><html><head><meta charset="utf-8"><title>{e(d['client'])} · job search report {e(d['period']['to'])}</title>
+<style>body{{font:14px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;color:#111;max-width:860px;margin:32px auto;padding:0 20px}}
+h1{{font-size:22px;margin:0}} h2{{font-size:15px;margin:28px 0 8px;text-transform:uppercase;letter-spacing:.06em;color:#444}}
+.sub{{color:#666}} .kpis{{display:flex;gap:14px;flex-wrap:wrap;margin:16px 0}} .kpi{{border:1px solid #ddd;border-radius:8px;padding:10px 14px;min-width:110px}}
+.kpi b{{display:block;font-size:22px}} table{{width:100%;border-collapse:collapse}} td,th{{text-align:left;padding:6px 8px;border-bottom:1px solid #eee;vertical-align:top}}
+th{{font-size:12px;color:#666;font-weight:600}} .muted{{color:#888}} .rec{{background:#f4f6fb;border-radius:8px;padding:10px 14px}}
+@media print{{body{{margin:0;max-width:none}} .noprint{{display:none}}}}</style></head><body>
+<p class="noprint sub"><a href="javascript:print()">Print / save as PDF</a></p>
+<h1>{e(d['client'])}: job search report</h1>
+<div class="sub">{e(d['profile'])} · {e(', '.join(d['targets']))} · {e(d['period']['from'])} to {e(d['period']['to'])} · prepared by APEX</div>
+<div class="kpis"><div class="kpi"><b>{len(d['submitted'])}</b>applications this week</div><div class="kpi"><b>{len(d['replies'])}</b>replies this week</div>
+<div class="kpi"><b>{f['sent']}</b>applications in all</div><div class="kpi"><b>{f['interviews']}</b>interviews</div><div class="kpi"><b>{f['offers']}</b>offers</div>
+<div class="kpi"><b>{e(str(d['median_days_to_reply'] if d['median_days_to_reply'] is not None else '—'))}</b>median days to a reply</div></div>
+<h2>Applications submitted</h2><table><tr><th>Date</th><th>Company</th><th>Role</th><th>Status</th><th>Sent by</th><th>Fit</th></tr>{rows(d['submitted'], ['date', 'company', 'role', 'status', 'how', 'fit'])}</table>
+<h2>Replies</h2><table><tr><th>Date</th><th>Company</th><th>Role</th><th>Moved to</th></tr>{rows(d['replies'], ['at', 'company', 'role', 'to'])}</table>
+<h2>Follow-ups sent</h2><table><tr><th>Date</th><th>Company</th><th>Role</th><th>By</th></tr>{rows(d['followups'], ['at', 'company', 'role', 'by'])}</table>
+<h2>Waiting on the client</h2><table><tr><th>Role</th><th>Company</th><th>What is needed</th></tr>{rows(d['needs'], ['title', 'company', 'why'])}</table>
+<h2>Lined up for next week</h2><table><tr><th>Role</th><th>Company</th><th>Fit</th></tr>{rows(d['upcoming'], ['title', 'company', 'fit'])}</table>
+<h2>Market signal</h2><p class="sub">{d['postings']} postings read in the last 14 days · {d['ghosts']} likely ghost postings filtered on the last scan</p>
+<table><tr><th>Most-asked skill the resume does not show yet</th><th>Share of postings</th></tr>{rows([{'term': g['term'], 'share': f"{g['share']}%"} for g in d['gaps']], ['term', 'share'])}</table>
+{('<h2>APEX recommends</h2><div class="rec">' + '<br>'.join(e(r) for r in d['recommendations']) + '</div>') if d['recommendations'] else ''}
+<p class="sub" style="margin-top:32px">Every application APEX sent carries a record of exactly what was entered; nothing is stated that the resume or confirmed facts do not back.</p>
+</body></html>"""
+    return html
 
 
 # ── who to write to: recruiter contacts from postings and replies ────────────
@@ -6125,6 +6291,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {'error': str(e)})
             return
 
+        if path == '/report':
+            if HOSTED:
+                self._send_json(403, {'error': 'Client reports are only in your local APEX.'}); return
+            cid = (qs.get('client', [''])[0] or '').strip().lower()
+            if cid and (not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,39}', cid) or not store.client_exists(cid)):
+                self._send_json(400, {'error': 'unknown client'}); return
+            try:
+                self._send_html(200, client_report_html(cid or self.owner, qs.get('profile', [''])[0] or None))
+            except store.StoreError as e:
+                self._send_json(404, {'error': str(e)})
+            return
         if path == '/health':
             try:
                 store.ping()
@@ -6317,6 +6494,23 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {'deleted': True}); return
             if method == 'GET' and path == '/api/agent/analytics':
                 self._send_json(200, agent_analytics(o)); return
+            if method == 'GET' and path == '/api/agent/activity':
+                self._send_json(200, {'activity': agent_activity(o, q('profile') or None)}); return
+            if method == 'GET' and path == '/api/agent/report':
+                self._send_json(200, client_report_data(o, q('profile') or None)); return
+            if method == 'POST' and path == '/api/agent/report/send':
+                to = str(b.get('to') or '').strip()
+                if not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', to):
+                    raise store.StoreError('enter the address to send the report to')
+                if not smtp_ready():
+                    raise store.StoreError('email sending is not set up (Alerts tab, SMTP)')
+                d = client_report_data(o, str(b.get('profile') or '') or None)
+                ok, msg = send_alert_email(to, f'{d["client"]}: job search report {d["period"]["to"]}', client_report_html(o, str(b.get('profile') or '') or None))
+                if not ok:
+                    raise store.StoreError(f'could not send: {msg}')
+                self._send_json(200, {'sent': True, 'to': to}); return
+            if method == 'POST' and path == '/api/agent/submit_now':
+                self._send_json(200, agent_submit_now(str(b.get('id') or ''), o)); return
             if method == 'GET' and path == '/api/agent/item':
                 self._send_json(200, {'item': store.get_queue_item(q('id'), owner=o)}); return
             if method == 'POST' and path == '/api/agent/profiles':

@@ -106,3 +106,19 @@ def test_which_job_board_uses_the_publisher_and_never_guesses():
     hear = {'label': 'How did you hear about us?', 'kind': 'select', 'required': True, 'options': ['LinkedIn', 'Indeed', 'Referral']}
     assert apex_apply.decide(hear, {}, dict(CONTACT, source='Indeed')) == 'Indeed'
     assert apex_apply.decide(hear, {}, dict(CONTACT, source='BeBee')) is None
+
+
+def test_the_record_of_what_was_entered_and_submit_later(pg, tmp_path):
+    (tmp_path / 'app.html').write_text(APP_PAGE, encoding='utf-8')
+    pdf = tmp_path / 'r.pdf'
+    pdf.write_bytes(b'%PDF-1.4\n')
+    page = apex_apply.reach_form(pg, (tmp_path / 'app.html').as_uri())
+    r = apex_apply.fill_form(page, page.url, str(pdf), '', CONTACT, {}, ask=None, do_submit=False, shot_path=str(tmp_path / 'x_confirmation.png'))
+    assert r['status'] == 'filled' and r['record']['first_name'] == 'Jo' and r['record']['email'] == 'jo@example.com' and r['record']['resume'] == 'r.pdf'
+    assert (tmp_path / 'x_form.png').exists(), 'a picture of the filled form is kept before any Submit'
+    assert page.evaluate('window.SUBMITTED') is None
+    # review mode: a person presses Submit later, on the same open tab
+    scope = apex_apply._form_scope(page)
+    status, detail = apex_apply.submit(scope, str(tmp_path / 'x_confirmation.png'))
+    assert status == 'submitted' and page.evaluate('window.SUBMITTED') == 1
+    assert (tmp_path / 'x_confirmation.png').exists()

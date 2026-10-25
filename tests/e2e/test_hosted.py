@@ -233,3 +233,8 @@ def test_client_workspaces_are_local_only_and_the_header_is_ignored_online(hoste
     assert st == 403
     st, _, j = req(hosted, 'GET', '/api/applications', headers={'Cookie': login(hosted), 'X-Apex-Client': 'someone-else'})
     assert st == 200, 'online, the session decides the owner; the header does nothing'
+
+
+def test_the_client_report_is_local_only(hosted):
+    st, _, j = req(hosted, 'GET', '/report', headers={'Cookie': login(hosted)})
+    assert st == 403

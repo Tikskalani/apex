@@ -29,7 +29,7 @@ QUEUE_STATUSES = ('proposed', 'approved', 'preparing', 'ready', 'applied', 'skip
 MAX_PROFILES_PER_OWNER = 10
 MAX_QUEUE_PER_PROFILE = 3000        # old skipped / applied rows are kept so a job is never proposed twice
 ARTIFACT_KINDS = ('tailored_resume', 'cover_letter', 'followup', 'outreach', 'note', 'interview_prep', 'company_brief',
-                  'warm_path')
+                  'warm_path', 'submission_record')
 FOLLOWUP_MODES = ('auto', 'draft', 'off')
 FOLLOWUP_AFTER_DAYS = 7
 MAX_TEXT = 200_000           # per artifact; a resume is ~5 KB
@@ -98,6 +98,8 @@ CREATE TABLE IF NOT EXISTS profiles (       -- one per person the job agent sear
     followups    TEXT NOT NULL DEFAULT 'draft',  -- auto (send when a recruiter address is known) | draft | off
     digest_email TEXT NOT NULL DEFAULT '',     -- the morning digest goes here when SMTP is set up
     skip_ghosts  INTEGER NOT NULL DEFAULT 1,   -- likely ghost postings are not proposed
+    review_first INTEGER NOT NULL DEFAULT 0,   -- the agent fills and waits for a person to press Submit
+    min_fit_submit INTEGER NOT NULL DEFAULT 55, -- the quality bar: fit below this is never sent unasked
     active       INTEGER NOT NULL DEFAULT 1,   -- scanned every morning
     last_scan    TEXT,                         -- YYYY-MM-DD (local) of the last scan
     created_at   TEXT NOT NULL,
@@ -249,6 +251,9 @@ def init():
             conn.execute("ALTER TABLE profiles ADD COLUMN followups TEXT NOT NULL DEFAULT 'draft'")
             conn.execute("ALTER TABLE profiles ADD COLUMN digest_email TEXT NOT NULL DEFAULT ''")
             conn.execute("ALTER TABLE profiles ADD COLUMN skip_ghosts INTEGER NOT NULL DEFAULT 1")
+        if not any(r['name'] == 'review_first' for r in conn.execute("SELECT name FROM pragma_table_info('profiles')")):
+            conn.execute('ALTER TABLE profiles ADD COLUMN review_first INTEGER NOT NULL DEFAULT 0')
+            conn.execute('ALTER TABLE profiles ADD COLUMN min_fit_submit INTEGER NOT NULL DEFAULT 55')
         if not any(r['name'] == 'contact_email' for r in conn.execute("SELECT name FROM pragma_table_info('applications')")):
             conn.execute("ALTER TABLE applications ADD COLUMN contact_email TEXT NOT NULL DEFAULT ''")
             conn.execute("ALTER TABLE applications ADD COLUMN contact_name TEXT NOT NULL DEFAULT ''")
@@ -659,6 +664,8 @@ def _profile_row(r):
     d['skip_ghosts'] = bool(d.get('skip_ghosts', 1))
     d['followups'] = d.get('followups') or 'draft'
     d['digest_email'] = d.get('digest_email') or ''
+    d['review_first'] = bool(d.get('review_first'))
+    d['min_fit_submit'] = int(d.get('min_fit_submit') if d.get('min_fit_submit') is not None else 55)
     return d
 
 
@@ -689,7 +696,9 @@ def save_profile(data, *, owner=''):
            'answers': json.dumps(_answers(data.get('answers')), ensure_ascii=False),
            'followups': data.get('followups') if data.get('followups') in FOLLOWUP_MODES else 'draft',
            'digest_email': _text(data.get('digest_email'), 'digest email', 200),
-           'skip_ghosts': 1 if data.get('skip_ghosts', True) not in (False, 0, '0', 'false') else 0}
+           'skip_ghosts': 1 if data.get('skip_ghosts', True) not in (False, 0, '0', 'false') else 0,
+           'review_first': 1 if data.get('review_first') not in (None, False, 0, '0', 'false', '') else 0,
+           'min_fit_submit': _int(data.get('min_fit_submit'), 'minimum fit to submit', 0, 100, 55)}
     if rec['digest_email'] and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', rec['digest_email']):
         raise StoreError('digest email does not look like an address')
     now = _now()
@@ -698,11 +707,11 @@ def save_profile(data, *, owner=''):
         row = conn.execute('SELECT id FROM profiles WHERE id = ? AND owner = ?', (pid, owner)).fetchone() if pid else None
         vals = (rec['name'], rec['base_resume'], rec['targets'], rec['location'], rec['remote_ok'],
                 rec['daily_limit'], rec['min_fit'], rec['auto_prepare'], rec['active'], rec['auto_submit'], rec['answers'],
-                rec['followups'], rec['digest_email'], rec['skip_ghosts'])
+                rec['followups'], rec['digest_email'], rec['skip_ghosts'], rec['review_first'], rec['min_fit_submit'])
         if row:
             conn.execute('UPDATE profiles SET name = ?, base_resume = ?, targets = ?, location = ?, remote_ok = ?,'
                          ' daily_limit = ?, min_fit = ?, auto_prepare = ?, active = ?, auto_submit = ?, answers = ?,'
-                         ' followups = ?, digest_email = ?, skip_ghosts = ?,'
+                         ' followups = ?, digest_email = ?, skip_ghosts = ?, review_first = ?, min_fit_submit = ?,'
                          ' updated_at = ? WHERE id = ? AND owner = ?', (*vals, now, pid, owner))
         else:
             n = conn.execute('SELECT count(*) FROM profiles WHERE owner = ?', (owner,)).fetchone()[0]
@@ -711,7 +720,7 @@ def save_profile(data, *, owner=''):
             pid = uuid.uuid4().hex
             conn.execute('INSERT INTO profiles (id, owner, name, base_resume, targets, location, remote_ok, daily_limit,'
                          ' min_fit, auto_prepare, active, auto_submit, answers, followups, digest_email, skip_ghosts,'
-                         ' created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                         ' review_first, min_fit_submit, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                          (pid, owner, *vals, now, now))
     return get_profile(pid, owner=owner)
 
@@ -1014,6 +1023,14 @@ def note_sightings(jobs, day, *, owner=''):
 
 # ── client workspaces ────────────────────────────────────────────────────────
 OWNER_TABLES = ('profiles', 'applications', 'facts', 'logins', 'sightings', 'score_history')
+_DELETE_BY_OWNER = {
+    'profiles': 'DELETE FROM profiles WHERE owner = ?',
+    'applications': 'DELETE FROM applications WHERE owner = ?',
+    'facts': 'DELETE FROM facts WHERE owner = ?',
+    'logins': 'DELETE FROM logins WHERE owner = ?',
+    'sightings': 'DELETE FROM sightings WHERE owner = ?',
+    'score_history': 'DELETE FROM score_history WHERE owner = ?',
+}
 
 
 def list_clients():
@@ -1046,8 +1063,8 @@ def delete_client(cid):
         if not conn.execute('SELECT 1 FROM clients WHERE id = ?', (cid,)).fetchone():
             raise StoreError('client not found')
         removed = {}
-        for t in OWNER_TABLES:
-            removed[t] = conn.execute(f'DELETE FROM {t} WHERE owner = ?', (cid,)).rowcount   # noqa: S608 (table names are a fixed tuple)
+        for t, sql in _DELETE_BY_OWNER.items():        # fixed statements, one per table
+            removed[t] = conn.execute(sql, (cid,)).rowcount
         conn.execute('DELETE FROM clients WHERE id = ?', (cid,))
     return removed
 
