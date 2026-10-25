@@ -95,3 +95,14 @@ def test_citizenship_clearance_government_and_source_answers():
     assert apex_apply.decide(q('Which job board?', []), {}, C) == 'Job board'
     assert apex_apply.decide(q('Are you a U.S. Person?', ['Yes', 'No']), {}, C) is None, 'not set: never guessed'
     assert apex_apply.decide(q('Security clearance level', ['None', 'Secret']), {'clearance': 'Secret'}, C) == 'Secret'
+
+
+def test_which_job_board_uses_the_publisher_and_never_guesses():
+    q = {'label': 'Which job board?', 'kind': 'combobox', 'required': True,
+         'options': ['ClearanceJobs', 'Glassdoor', 'Handshake', 'Indeed', 'ZipRecruiter']}
+    assert apex_apply.decide(q, {}, dict(CONTACT, source='Indeed')) == 'Indeed'
+    assert apex_apply.decide(q, {}, dict(CONTACT, source='BeBee')) is None
+    assert apex_apply.decide(dict(q, options=q['options'] + ['Other']), {}, dict(CONTACT, source='BeBee')) == 'Other'
+    hear = {'label': 'How did you hear about us?', 'kind': 'select', 'required': True, 'options': ['LinkedIn', 'Indeed', 'Referral']}
+    assert apex_apply.decide(hear, {}, dict(CONTACT, source='Indeed')) == 'Indeed'
+    assert apex_apply.decide(hear, {}, dict(CONTACT, source='BeBee')) is None

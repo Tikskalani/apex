@@ -1479,6 +1479,7 @@ def _jsearch_local_fetch(query, location):
                     'location': loc or 'Various',
                     'url': best_apply_link(j),
                     'website': j.get('employer_website') or '',
+                    'publisher': (j.get('job_publisher') or '')[:60],
                     'source': 'JSearch',
                     'posted': (j.get('job_posted_at_datetime_utc','') or '')[:10],
                     'snippet': clean(j.get('job_description',''))[:240],
@@ -4379,7 +4380,7 @@ def agent_scan(pid, owner=''):
                               'fit': max(0, fit - (8 if ghost['score'] == 2 else 0)) + (3 if j.get('fresh') else 0),
                               'reasons': {'target': target, 'matched': matched, 'missing': missing,
                                           'full_posting': bool(j.get('text')), 'ghost': ghost, 'fresh': bool(j.get('fresh')),
-                                          'website': (j.get('website') or '')[:200]}})
+                                          'website': (j.get('website') or '')[:200], 'publisher': j.get('publisher') or ''}})
         cands.sort(key=lambda c: (c['fit'], c['reasons']['full_posting']), reverse=True)
         top = resolve_direct(cands[:prof['daily_limit'] + 5])
         kept = []
@@ -4654,7 +4655,8 @@ def _contact(item, prof):
             'linkedin': st.get('linkedin'), 'location': st.get('location') or prof.get('location'),
             'github': site if 'github.com' in site.lower() else '', 'website': '' if 'github.com' in site.lower() else site,
             'company': (exp or {}).get('company') or '', 'title': (exp or {}).get('title') or '',
-            'source': {'JSearch': 'Job board', 'Link': 'Company website'}.get(item.get('source') or '', item.get('source') or 'Job board')}
+            'source': (item.get('reasons') or {}).get('publisher')
+                      or {'JSearch': 'Job board', 'Link': 'Company website'}.get(item.get('source') or '', item.get('source') or 'Job board')}
 
 
 def agent_submit(qid, owner='', pdf_b64='', do_submit=None, template=''):

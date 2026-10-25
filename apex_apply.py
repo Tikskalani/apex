@@ -406,8 +406,10 @@ def decide(q, answers, contact, ask=None):
     if key in ('month', 'day', 'year'):
         return time.strftime({'month': '%m', 'day': '%d', 'year': '%Y'}[key])
     if key == 'source_name':
-        src = contact.get('source') or 'Job board'
-        return (pick(options, src) or pick(options, 'Other')) if options else src
+        src = contact.get('source') or ''
+        if not options:
+            return src or None
+        return pick(options, src) or pick(options, 'Other') or None     # never names a board the job did not come from
     if key == 'clearance':
         val = a.get('clearance')
         if not val:
@@ -456,7 +458,9 @@ def decide(q, answers, contact, ask=None):
         if not val:
             return None
         if options:
-            return pick(options, val) or (pick(options, 'Other') if key == 'hear' else None)
+            if key == 'hear':
+                return pick(options, val) or pick(options, contact.get('source') or '') or pick(options, 'Other') or None
+            return pick(options, val) or None
         return val
     if ask is None:
         return None
