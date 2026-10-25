@@ -664,7 +664,11 @@ def test_tracker_card_keeps_the_recruiter_contact(ui, app):
     page.fill('#pp-contact-name', 'Maria K')
     page.fill('#pp-contact-email', 'maria@example.com')
     page.click('#pp-save')
-    st, j = call(app, 'GET', '/api/application?id=' + aid)
+    for _ in range(40):                                   # the save is asynchronous
+        st, j = call(app, 'GET', '/api/application?id=' + aid)
+        if j['application']['contact_email']:
+            break
+        page.wait_for_timeout(250)
     assert j['application']['contact_email'] == 'maria@example.com' and j['application']['contact_name'] == 'Maria K'
     expect(page.locator('#pp-brief-btn')).to_be_visible()
     expect(page.locator('#pp-warm-btn')).to_be_visible()
