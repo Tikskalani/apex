@@ -132,6 +132,11 @@ CREATE TABLE IF NOT EXISTS radar (           -- what a day's scanned postings as
     data       TEXT NOT NULL,                  -- {postings, terms: {term: n}, families: {id: n}}
     PRIMARY KEY (owner, profile_id, day)
 );
+CREATE TABLE IF NOT EXISTS clients (         -- workspaces: one per person an agency works for (owner = id)
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL CHECK (length(trim(name)) > 0),
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS logins (          -- sign-ins APEX created for the person on employers' career sites
     owner      TEXT NOT NULL DEFAULT '',
     host       TEXT NOT NULL,
@@ -1005,3 +1010,50 @@ def note_sightings(jobs, day, *, owner=''):
                 out[k] = {'first_seen': r['first_seen'], 'last_seen': day, 'times': times, 'posted': posted or r['posted'],
                           'reposted': reposted}
     return out
+
+
+# ── client workspaces ────────────────────────────────────────────────────────
+OWNER_TABLES = ('profiles', 'applications', 'facts', 'logins', 'sightings', 'score_history')
+
+
+def list_clients():
+    with _db() as conn:
+        return [dict(r) for r in conn.execute('SELECT id, name, created_at FROM clients ORDER BY created_at')]
+
+
+def client_exists(cid):
+    with _db() as conn:
+        return conn.execute('SELECT 1 FROM clients WHERE id = ?', (cid,)).fetchone() is not None
+
+
+def create_client(name):
+    """A new workspace. Its id is a slug of the name (made unique), which the page sends as X-Apex-Client."""
+    name = _text(name, 'client name', 80, required=True)
+    base = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')[:32] or 'client'
+    with _db(immediate=True) as conn:
+        cid, n = base, 1
+        while conn.execute('SELECT 1 FROM clients WHERE id = ?', (cid,)).fetchone():
+            n += 1
+            cid = f'{base}-{n}'
+        conn.execute('INSERT INTO clients (id, name, created_at) VALUES (?,?,?)', (cid, name, _now()))
+    return {'id': cid, 'name': name}
+
+
+def delete_client(cid):
+    """Remove a workspace and everything in it (profiles with their queue and radar, applications with
+    their events and artifacts, facts, sign-ins, sightings, scores). Returns what was removed."""
+    with _db(immediate=True) as conn:
+        if not conn.execute('SELECT 1 FROM clients WHERE id = ?', (cid,)).fetchone():
+            raise StoreError('client not found')
+        removed = {}
+        for t in OWNER_TABLES:
+            removed[t] = conn.execute(f'DELETE FROM {t} WHERE owner = ?', (cid,)).rowcount   # noqa: S608 (table names are a fixed tuple)
+        conn.execute('DELETE FROM clients WHERE id = ?', (cid,))
+    return removed
+
+
+def list_owners():
+    """Every owner with a profile: '' (the default workspace) and every client id."""
+    with _db() as conn:
+        rows = conn.execute('SELECT DISTINCT owner FROM profiles').fetchall()
+    return sorted({r['owner'] for r in rows} | {''})

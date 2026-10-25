@@ -171,3 +171,31 @@ def test_follow_up_send_needs_an_address(app):
     assert st == 200 and j['application']['contact_email'] == 'rec@example.com'
     st, j = call(app, 'POST', '/api/applications/followup/send', {'id': aid})
     assert st == 400 and 'not set up' in j['error']
+
+
+def test_client_workspaces_are_isolated_per_request(app, fixture_resume):
+    st, j = call(app, 'POST', '/api/clients', {'name': 'Workspace Test ' + uniq('')})
+    assert st == 201 and j['client']['id'].startswith('workspace-test')
+    cid = j['client']['id']
+    H = {'X-Apex-Client': cid}
+    st, j = call(app, 'GET', '/api/clients', headers=H)
+    assert st == 200 and j['current'] == cid and any(c['id'] == cid for c in j['clients'])
+    st, j = call(app, 'POST', '/api/agent/profiles', {'name': 'Dana', 'targets': 'Data Analyst', 'base_resume': fixture_resume, 'active': False}, headers=H)
+    assert st == 200
+    pid = j['profile']['id']
+    st, j = call(app, 'GET', '/api/agent/profiles', headers=H)
+    assert [p['id'] for p in j['profiles']] == [pid]
+    st, j = call(app, 'GET', '/api/agent/profiles')
+    assert pid not in [p['id'] for p in j['profiles']], 'the default workspace does not see the client profile'
+    st, j = call(app, 'POST', '/api/facts', {'text': 'Client-only fact', 'topic': 'X'}, headers=H)
+    assert st == 201
+    st, j = call(app, 'GET', '/api/facts')
+    assert all(f['text'] != 'Client-only fact' for f in j['facts'])
+    st, j = call(app, 'GET', '/api/agent/queue?profile=' + pid)
+    assert st == 404, 'a client profile is not reachable from the default workspace'
+    st, j = call(app, 'GET', '/api/agent/profiles', headers={'X-Apex-Client': 'no-such-client'})
+    assert st == 400 and 'unknown client' in j['error']
+    st, j = call(app, 'POST', '/api/clients/delete', {'id': cid})
+    assert st == 200 and j['removed']['profiles'] == 1 and j['removed']['facts'] == 1
+    st, j = call(app, 'GET', '/api/agent/profiles', headers=H)
+    assert st == 400

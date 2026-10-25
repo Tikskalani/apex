@@ -1327,6 +1327,11 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
       </div>
     </div>
 
+    <div class="client-pick local-only" id="client-pick-wrap" style="display:flex;align-items:center;gap:6px;margin-left:12px">
+      <label for="client-pick" style="font-size:12px;color:var(--fg-2)">Client</label>
+      <select id="client-pick" aria-label="Client workspace" style="min-width:150px"><option value="">Me</option></select>
+    </div>
+
     <div class="telemetry">
       <div class="tel-item"><span class="tel-dot live" id="tel-server"></span>SERVER<span class="tel-val" id="tel-server-v">…</span></div>
       <div class="tel-item local-only"><span class="tel-dot" id="tel-smtp"></span>SMTP<span class="tel-val" id="tel-smtp-v">—</span></div>
@@ -3109,7 +3114,7 @@ async function streamSSE(path, payload, onEvent, opts = {}) {
   ACTIVE_STREAMS++;
   try {
     const resp = await fetch(SERVER + path, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: apexHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload), signal: opts.signal
     });
     if (!resp.ok) {
@@ -4024,7 +4029,7 @@ async function loadLiveJobs(opts = {}) {
   try {
     // POST so the (potentially long) resume can be sent for per-job scoring
     const r = await fetch(SERVER + '/live-jobs', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: apexHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ q: rawQ, location: rawLoc, limit: 80, resume: resume })
     });
     const j = await r.json().catch(() => ({}));
@@ -4253,7 +4258,7 @@ async function openTailorApplyModal(job) {
   const coverPromise = (async () => {
     try {
       const r = await fetch(SERVER + '/draft-cover-letter', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
+        method: 'POST', headers: apexHeaders({ 'Content-Type': 'application/json' }), signal: ctrl.signal,
         body: JSON.stringify({
           jobTitle: job.title || '', company: job.company || '',
           posting: posting, resume: resume, sector: state.sector,
@@ -4352,7 +4357,7 @@ async function parseResumeText(text) {
   if (STRUCT_CACHE.has(text)) return STRUCT_CACHE.get(text);
   if (text.length > MAX_PARSE_CHARS) throw new Error(`the text is too long to parse (${text.length.toLocaleString()} of ${MAX_PARSE_CHARS.toLocaleString()} characters)`);
   const r = await fetch(SERVER + '/parse-resume', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: apexHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ resume: text })
   });
   const data = await r.json().catch(() => ({}));
@@ -5298,7 +5303,7 @@ $('alert-form').addEventListener('submit', async (e) => {
   };
   try {
     const r = await fetch(SERVER + '/alerts/subscribe', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: apexHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload)
     });
     const j = await r.json().catch(() => ({}));
@@ -5336,7 +5341,7 @@ async function smtpTest(save) {
   $('smtp-result').innerHTML = '<span class="spinner"></span>Connecting to ' + escHtml(payload.host) + '…';
   try {
     const r = await fetch(SERVER + '/config/smtp/test', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: apexHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload)
     });
     const j = await r.json().catch(() => ({}));
@@ -5344,7 +5349,7 @@ async function smtpTest(save) {
       $('smtp-result').innerHTML = '<span style="color:var(--green-soft)">✓ ' + escHtml(j.msg) + '</span>';
       if (save) {
         const sr = await fetch(SERVER + '/config/smtp', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: apexHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(payload)
         });
         const sj = await sr.json().catch(() => ({}));
@@ -5373,7 +5378,7 @@ $('al-test-btn').addEventListener('click', async () => {
   if (!email) return toast('Enter your email', 'err');
   try {
     const r = await fetch(SERVER + '/alerts/test', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: apexHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ email })
     });
     const j = await r.json().catch(() => ({}));
@@ -5404,7 +5409,7 @@ async function loadMyAlerts(email) {
 
 window.unsubAlert = async (id, email) => {
   await fetch(SERVER + '/alerts/unsubscribe', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: apexHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ id })
   });
   toast('Removed', 'ok');
@@ -5489,9 +5494,48 @@ const STATUS_LABELS = { saved: 'Saved', applied: 'Applied', interview: 'Intervie
 const KIT_LABELS = { tailored_resume: 'Tailored resume', cover_letter: 'Cover letter', followup: 'Follow-up sequence', outreach: 'Outreach', note: 'Note', interview_prep: 'Interview prep pack', company_brief: 'Company brief', warm_path: 'Warm path' };
 
 // JSON call to the local API. Throws Error(message) on any non-2xx.
+// The client workspace every request is for ('' = the default one, "Me").
+const CLIENT = { id: (() => { try { return localStorage.getItem('apex.client') || ''; } catch (e) { return ''; } })() };
+function apexHeaders(h) { const out = Object.assign({}, h || {}); if (CLIENT.id) out['X-Apex-Client'] = CLIENT.id; return out; }
+async function clientsLoad() {
+  if (!$('client-pick')) return;
+  try {
+    const r = await fetch(SERVER + '/api/clients', { headers: apexHeaders() });
+    if (!r.ok) throw new Error('unavailable');
+    const j = await r.json();
+    const sel = $('client-pick');
+    sel.innerHTML = '<option value="">Me</option>' + j.clients.map(c => `<option value="${escHtml(c.id)}">${escHtml(c.name)}</option>`).join('')
+      + '<option value="__new">+ New client…</option><option value="__remove">− Remove this client…</option>';
+    if (CLIENT.id && !j.clients.some(c => c.id === CLIENT.id)) { CLIENT.id = ''; try { localStorage.removeItem('apex.client'); } catch (e) {} location.reload(); return; }
+    sel.value = CLIENT.id;
+    document.body.classList.toggle('has-client', !!CLIENT.id);
+  } catch (e) { $('client-pick-wrap').style.display = 'none'; }
+}
+async function clientSwitch(v) {
+  const sel = $('client-pick');
+  if (v === '__new') {
+    const name = window.prompt('Client name (a separate workspace: its own profiles, queue, Tracker, vault and sign-ins):');
+    sel.value = CLIENT.id;
+    if (!name || !name.trim()) return;
+    try { const j = await api('/api/clients', { name: name.trim() }); try { localStorage.setItem('apex.client', j.client.id); } catch (e) {} location.reload(); }
+    catch (e) { toast(e.message, 'err'); }
+    return;
+  }
+  if (v === '__remove') {
+    sel.value = CLIENT.id;
+    if (!CLIENT.id) { toast('The default workspace cannot be removed', 'err'); return; }
+    const name = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : CLIENT.id;
+    if (!window.confirm(`Remove client "${name}" and everything in that workspace (profiles, queue, Tracker, vault, sign-ins)? This cannot be undone.`)) return;
+    try { await api('/api/clients/delete', { id: CLIENT.id }); try { localStorage.removeItem('apex.client'); } catch (e) {} location.reload(); }
+    catch (e) { toast(e.message, 'err'); }
+    return;
+  }
+  try { if (v) localStorage.setItem('apex.client', v); else localStorage.removeItem('apex.client'); } catch (e) {}
+  location.reload();
+}
 async function api(path, body) {
-  const r = await fetch(SERVER + path, body === undefined ? {} : {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  const r = await fetch(SERVER + path, body === undefined ? { headers: apexHeaders() } : {
+    method: 'POST', headers: apexHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body)
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
@@ -5887,7 +5931,7 @@ $('ix-scan').addEventListener('click', async ev => {
   $('ix-results').innerHTML = '<div class="empty" role="status"><span class="spinner"></span>Scanning…</div>';
   try {
     const r = await fetch(SERVER + '/inbox/scan', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: apexHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ user, password: pwd, host: 'imap.gmail.com', days })
     });
     const j = await r.json().catch(() => ({}));
@@ -5965,6 +6009,8 @@ async function ixUpdate(rows) {
 }
 
 migrateLocalApplications().then(loadPipeline);
+clientsLoad();
+if ($('client-pick')) $('client-pick').addEventListener('change', ev => clientSwitch(ev.target.value));
 
 // ═══════════════════════ VOICE INTERVIEW SIMULATOR ═══════════════════════
 const VI = {
@@ -6152,7 +6198,7 @@ async function viOnStop(mime) {
     $('vi-record').disabled = true;
     try {
       const tr = await fetch(SERVER + '/transcribe', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: apexHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ audio_b64: b64, mime: mime.split(';')[0] })
       });
       const tj = await tr.json().catch(() => ({}));

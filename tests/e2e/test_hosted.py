@@ -226,3 +226,10 @@ def test_vault_and_job_agent_are_local_only(hosted, path):
 def test_research_and_outbound_mail_are_local_only(hosted, path):
     st, _, j = req(hosted, 'POST', path, body={'id': 'x'}, headers={'Cookie': login(hosted)})
     assert st == 403 and 'local APEX' in j['error']
+
+
+def test_client_workspaces_are_local_only_and_the_header_is_ignored_online(hosted):
+    st, _, j = req(hosted, 'GET', '/api/clients', headers={'Cookie': login(hosted)})
+    assert st == 403
+    st, _, j = req(hosted, 'GET', '/api/applications', headers={'Cookie': login(hosted), 'X-Apex-Client': 'someone-else'})
+    assert st == 200, 'online, the session decides the owner; the header does nothing'

@@ -2171,18 +2171,25 @@ Return ONLY JSON:
                       json_mode=True, fast=True))
 
 
-def vault_facts():
+_OWNER = contextvars.ContextVar('apex_owner', default='')     # the client workspace of this request or worker
+
+
+def current_owner():
+    return _OWNER.get()
+
+
+def vault_facts(owner=None):
     """The evidence vault (local only): facts the candidate confirmed, as the engine reads them."""
     if HOSTED:
         return []
     try:
-        return store.engine_facts()
+        return store.engine_facts(owner=current_owner() if owner is None else owner)
     except Exception:
         return []
 
 
-def vault_text():
-    return '\n'.join(f['text'] for f in vault_facts())
+def vault_text(owner=None):
+    return '\n'.join(f['text'] for f in vault_facts(owner))
 
 
 def remember_answers(resume, questions, answers):
@@ -2192,6 +2199,7 @@ def remember_answers(resume, questions, answers):
         return 0
     doc = engine.Doc(resume or '')
     asked = {q.get('id'): q for q in questions or [] if isinstance(q, dict)}
+    owner = current_owner()
     saved = 0
     for i, a in answers.items():
         a = str(a or '').strip()
@@ -2202,7 +2210,7 @@ def remember_answers(resume, questions, answers):
         q = (asked.get(i) or {}).get('question') or ''
         text = f'{a} (answering "{q[:160]}" about: {b["text"][:160]})' if q else f'{a} (about: {b["text"][:160]})'
         try:
-            saved += bool(store.add_fact(text, topic, 'answer'))
+            saved += bool(store.add_fact(text, topic, 'answer', owner=owner))
         except store.StoreError:
             pass
     return saved
@@ -4540,6 +4548,7 @@ def agent_prepare(item, owner=''):
 
 def agent_worker(owner=''):
     """Prepare approved items one by one until none is left; then the agent applies to them."""
+    _OWNER.set(owner)
     while True:
         item = store.claim_approved(owner=owner)
         if not item:
@@ -4567,7 +4576,7 @@ def agent_kick(owner=''):
         return started > 0
 
 
-def github_import(username, limit=12):
+def github_import(username, limit=12, owner=''):
     """Public repositories of a GitHub user into the vault: one fact per repo (what it is, its
     language, stars, topics) plus one with the start of its README, the candidate's own words.
     Forks and empty repos are skipped. Returns {imported, repos}."""
@@ -4604,9 +4613,9 @@ def github_import(username, limit=12):
             bits.append(f'{r["forks_count"]} forks')
         if r.get('topics'):
             bits.append('topics: ' + ', '.join(r['topics'][:8]))
-        added += bool(store.add_fact('; '.join(bits) + '.', r['name'], 'github'))
+        added += bool(store.add_fact('; '.join(bits) + '.', r['name'], 'github', owner=owner))
         if texts.get(r['name']):
-            added += bool(store.add_fact(f'README of {r["name"]}: {texts[r["name"]]}', r['name'], 'github'))
+            added += bool(store.add_fact(f'README of {r["name"]}: {texts[r["name"]]}', r['name'], 'github', owner=owner))
     return {'imported': added, 'repos': [r['name'] for r in repos]}
 
 
@@ -4745,6 +4754,7 @@ def agent_autosubmit(owner=''):
     are left ready with the reason."""
     if not _SUBMIT_LOCK.acquire(blocking=False):
         return
+    _OWNER.set(owner)
     try:
         for prof in store.list_profiles(owner=owner):
             if not prof.get('auto_submit'):
@@ -4818,6 +4828,7 @@ def followup_due(app, today):
 
 
 def _profile_for(app_id, owner=''):
+    owner = owner or current_owner()
     for prof in store.list_profiles(owner=owner):
         for i in store.list_queue(prof['id'], owner=owner):
             if i.get('application_id') == app_id:
@@ -5267,35 +5278,38 @@ def job_agent_loop():
     """Local only. Each morning after AGENT_HOUR: scan every active profile once (the workers then
     prepare and, with Apply for me, submit), run the follow-up autopilot once, and an hour later
     send the morning digest to profiles that asked for it."""
-    store.reset_stuck_preparing()
-    agent_kick()                                  # approvals left from before a restart
+    for owner in store.list_owners():
+        store.reset_stuck_preparing(owner=owner)
+        agent_kick(owner)                         # approvals left from before a restart
     done = {}
     while True:
         try:
             today, hour = _local_today(), int(time.strftime('%H'))
-            if hour >= AGENT_HOUR and not AI_PROBLEM:
-                for prof in store.list_profiles(active_only=True):
-                    if prof.get('last_scan') != today:
+            for owner in store.list_owners():
+                _OWNER.set(owner)
+                if hour >= AGENT_HOUR and not AI_PROBLEM:
+                    for prof in store.list_profiles(owner=owner, active_only=True):
+                        if prof.get('last_scan') != today:
+                            try:
+                                agent_scan(prof['id'], owner)
+                            except Exception as e:
+                                print(f'  [agent] scan for {prof["name"]} failed: {e}', flush=True)
+                    if done.get(('followups', owner)) != today:
+                        done[('followups', owner)] = today
                         try:
-                            agent_scan(prof['id'])
+                            r = followup_autopilot(owner)
+                            print(f'  [followups] {owner or "default"}: {r["drafted"]} drafted, {r["sent"]} sent, {len(r["due"])} due, {r["ghosted"]} ghosted', flush=True)
                         except Exception as e:
-                            print(f'  [agent] scan for {prof["name"]} failed: {e}', flush=True)
-                if done.get('followups') != today:
-                    done['followups'] = today
-                    try:
-                        r = followup_autopilot()
-                        print(f'  [followups] {r["drafted"]} drafted, {r["sent"]} sent, {len(r["due"])} due, {r["ghosted"]} ghosted', flush=True)
-                    except Exception as e:
-                        print(f'  [followups] {e}', flush=True)
-            if hour >= AGENT_HOUR + 1 and done.get('digest') != today and smtp_ready():
-                done['digest'] = today
-                for prof in store.list_profiles():
-                    if prof.get('digest_email') and prof.get('last_scan') == today and _DIGEST_SENT.get(prof['id']) != today:
-                        try:
-                            send_digest(prof)
-                            print(f'  [digest] sent to {prof["digest_email"]}', flush=True)
-                        except Exception as e:
-                            print(f'  [digest] {e}', flush=True)
+                            print(f'  [followups] {e}', flush=True)
+                if hour >= AGENT_HOUR + 1 and done.get(('digest', owner)) != today and smtp_ready():
+                    done[('digest', owner)] = today
+                    for prof in store.list_profiles(owner=owner):
+                        if prof.get('digest_email') and prof.get('last_scan') == today and _DIGEST_SENT.get(prof['id']) != today:
+                            try:
+                                send_digest(prof, owner)
+                                print(f'  [digest] sent to {prof["digest_email"]}', flush=True)
+                            except Exception as e:
+                                print(f'  [digest] {e}', flush=True)
         except Exception as e:
             print(f'  [agent] {e}', flush=True)
         time.sleep(600)
@@ -5931,13 +5945,25 @@ class Handler(BaseHTTPRequestHandler):
         return ''
 
     def _gate(self, path):
-        """Hosted mode: set self.owner from the session, or answer and return False."""
+        """Set self.owner: hosted mode from the session (or answer and return False); local mode from
+        the client workspace the page names in X-Apex-Client ('' is the default workspace)."""
         self.owner = ''
-        if not HOSTED or path in self.OPEN_PATHS:
+        if not HOSTED:
+            cid = (self.headers.get('X-Apex-Client') or '').strip().lower()
+            if cid:
+                if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,39}', cid) or not store.client_exists(cid):
+                    self._send_json(400, {'error': 'unknown client workspace: pick one in the header'})
+                    return False
+                self.owner = cid
+            _OWNER.set(self.owner)
+            return True
+        if path in self.OPEN_PATHS:
+            _OWNER.set('')
             return True
         owner = read_session(self._cookie('apex_session'))
         if owner:
             self.owner = owner
+            _OWNER.set(owner)
             return True
         if self.command == 'GET' and path in ('/', '/index.html'):
             self._redirect('/login')
@@ -6160,6 +6186,20 @@ class Handler(BaseHTTPRequestHandler):
     def _api(self, method, path, qs, body):
         b = body if isinstance(body, dict) else {}
         q = lambda k: (qs.get(k) or [''])[0]
+        if path.startswith('/api/clients'):
+            if HOSTED:
+                self._send_json(403, {'error': 'Client workspaces are only in your local APEX.'}); return
+            try:
+                if method == 'GET' and path == '/api/clients':
+                    self._send_json(200, {'clients': store.list_clients(), 'current': self.owner}); return
+                if method == 'POST' and path == '/api/clients':
+                    self._send_json(201, {'client': store.create_client(b.get('name'))}); return
+                if method == 'POST' and path == '/api/clients/delete':
+                    self._send_json(200, {'removed': store.delete_client(str(b.get('id') or ''))}); return
+                self._send_json(404, {'error': 'not found'})
+            except store.StoreError as e:
+                self._send_json(404 if 'not found' in str(e) else 400, {'error': str(e)})
+            return
         if path.startswith('/api/facts'):
             if HOSTED:
                 self._send_json(403, {'error': 'The evidence vault is only in your local APEX.'}); return
@@ -6224,16 +6264,17 @@ class Handler(BaseHTTPRequestHandler):
     def _facts_api(self, method, path, b):
         """The evidence vault (local only): list, add, delete, import from GitHub."""
         try:
+            o = self.owner
             if method == 'GET' and path == '/api/facts':
-                self._send_json(200, {'facts': store.list_facts()}); return
+                self._send_json(200, {'facts': store.list_facts(owner=o)}); return
             if method == 'POST' and path == '/api/facts':
-                f = store.add_fact(b.get('text'), b.get('topic') or '', 'manual')
+                f = store.add_fact(b.get('text'), b.get('topic') or '', 'manual', owner=o)
                 self._send_json(201 if f else 200, {'fact': f, 'duplicate': f is None}); return
             if method == 'POST' and path == '/api/facts/delete':
-                store.delete_fact(str(b.get('id') or ''))
+                store.delete_fact(str(b.get('id') or ''), owner=o)
                 self._send_json(200, {'deleted': True}); return
             if method == 'POST' and path == '/api/facts/github':
-                self._send_json(200, github_import(str(b.get('username') or ''))); return
+                self._send_json(200, github_import(str(b.get('username') or ''), owner=o)); return
             self._send_json(404, {'error': 'not found'})
         except store.StoreError as e:
             self._send_json(404 if 'not found' in str(e) else 400, {'error': str(e)})
@@ -6244,55 +6285,58 @@ class Handler(BaseHTTPRequestHandler):
     def _agent_api(self, method, path, q, b):
         """The job agent (local only): profiles, scans, the apply queue and approvals."""
         ids = lambda: [str(x) for x in (b.get('ids') or [])] if isinstance(b.get('ids'), list) else []
+        o = self.owner
         try:
             if method == 'GET' and path == '/api/agent/profiles':
-                self._send_json(200, {'profiles': store.list_profiles(), 'scan_hour': AGENT_HOUR}); return
+                self._send_json(200, {'profiles': store.list_profiles(owner=o), 'scan_hour': AGENT_HOUR}); return
             if method == 'GET' and path == '/api/agent/queue':
                 pid = q('profile')
-                self._send_json(200, {'items': store.list_queue(pid), 'scanning': pid in _AGENT_SCANNING,
+                store.get_profile(pid, owner=o)                # 404 unless the profile is in this workspace
+                self._send_json(200, {'items': store.list_queue(pid, owner=o), 'scanning': pid in _AGENT_SCANNING,
                                       'preparing': any(t.is_alive() for t in _AGENT_WORKERS)}); return
             if method == 'GET' and path == '/api/agent/radar':
-                self._send_json(200, agent_radar(q('profile'))); return
+                self._send_json(200, agent_radar(q('profile'), o)); return
             if method == 'GET' and path == '/api/agent/digest':
-                self._send_json(200, agent_digest(q('profile'))); return
+                self._send_json(200, agent_digest(q('profile'), o)); return
             if method == 'GET' and path == '/api/agent/digest/preview':
-                self._send_json(200, digest_data(store.get_profile(q('profile')))); return
+                self._send_json(200, digest_data(store.get_profile(q('profile'), owner=o), o)); return
             if method == 'POST' and path == '/api/agent/digest/send':
-                self._send_json(200, send_digest(store.get_profile(str(b.get('profile') or '')))); return
+                self._send_json(200, send_digest(store.get_profile(str(b.get('profile') or ''), owner=o), o)); return
             if method == 'POST' and path == '/api/agent/followups/run':
-                self._send_json(200, followup_autopilot()); return
+                self._send_json(200, followup_autopilot(o)); return
             if method == 'POST' and path == '/api/agent/radar/ideas':
                 if AI_PROBLEM:
                     self._send_json(503, {'error': AI_PROBLEM}); return
-                self._send_json(200, radar_ideas(str(b.get('profile') or ''))); return
+                self._send_json(200, radar_ideas(str(b.get('profile') or ''), o)); return
             if method == 'GET' and path == '/api/agent/logins':
-                self._send_json(200, {'logins': store.list_logins()}); return
+                self._send_json(200, {'logins': store.list_logins(owner=o)}); return
             if method == 'POST' and path == '/api/agent/logins/reveal':
-                self._send_json(200, store.reveal_login(str(b.get('host') or ''))); return
+                self._send_json(200, store.reveal_login(str(b.get('host') or ''), owner=o)); return
             if method == 'POST' and path == '/api/agent/logins/delete':
-                store.delete_login(str(b.get('host') or ''))
+                store.delete_login(str(b.get('host') or ''), owner=o)
                 self._send_json(200, {'deleted': True}); return
             if method == 'GET' and path == '/api/agent/analytics':
-                self._send_json(200, agent_analytics()); return
+                self._send_json(200, agent_analytics(o)); return
             if method == 'GET' and path == '/api/agent/item':
-                self._send_json(200, {'item': store.get_queue_item(q('id'))}); return
+                self._send_json(200, {'item': store.get_queue_item(q('id'), owner=o)}); return
             if method == 'POST' and path == '/api/agent/profiles':
-                self._send_json(200, {'profile': store.save_profile(b)}); return
+                self._send_json(200, {'profile': store.save_profile(b, owner=o)}); return
             if method == 'POST' and path == '/api/agent/profiles/delete':
-                store.delete_profile(str(b.get('id') or ''))
+                store.delete_profile(str(b.get('id') or ''), owner=o)
                 self._send_json(200, {'deleted': True}); return
             if method == 'POST' and path == '/api/agent/links':
                 if AI_PROBLEM:
                     self._send_json(503, {'error': AI_PROBLEM, 'setup': True}); return
-                self._send_json(200, import_links(str(b.get('profile') or ''), b.get('urls'))); return
+                self._send_json(200, import_links(str(b.get('profile') or ''), b.get('urls'), o)); return
             if method == 'POST' and path == '/api/agent/scan':
                 pid = str(b.get('profile') or '')
-                store.get_profile(pid)                         # 404 before starting anything
+                store.get_profile(pid, owner=o)                # 404 before starting anything
                 if pid in _AGENT_SCANNING:
                     self._send_json(200, {'started': False, 'msg': 'Already scanning'}); return
                 def run():
+                    _OWNER.set(o)
                     try:
-                        agent_scan(pid)
+                        agent_scan(pid, o)
                     except Exception as e:
                         print(f'  [agent] scan failed: {e}', flush=True)
                 threading.Thread(target=run, daemon=True).start()
@@ -6300,15 +6344,15 @@ class Handler(BaseHTTPRequestHandler):
             if method == 'POST' and path == '/api/agent/approve':
                 if AI_PROBLEM:
                     self._send_json(503, {'error': AI_PROBLEM, 'setup': True}); return
-                n = store.set_queue_status(ids(), 'approved', only_from=('proposed', 'failed', 'skipped'))
-                agent_kick()
+                n = store.set_queue_status(ids(), 'approved', owner=o, only_from=('proposed', 'failed', 'skipped'))
+                agent_kick(o)
                 self._send_json(200, {'approved': n}); return
             if method == 'POST' and path == '/api/agent/skip':
-                self._send_json(200, {'skipped': store.set_queue_status(ids(), 'skipped', only_from=('proposed', 'ready', 'failed'))}); return
+                self._send_json(200, {'skipped': store.set_queue_status(ids(), 'skipped', owner=o, only_from=('proposed', 'ready', 'failed'))}); return
             if method == 'POST' and path == '/api/agent/apply':
-                self._send_json(200, agent_apply(str(b.get('id') or ''), b.get('pdf_b64') or '', template=str(b.get('template') or ''))); return
+                self._send_json(200, agent_apply(str(b.get('id') or ''), b.get('pdf_b64') or '', owner=o, template=str(b.get('template') or ''))); return
             if method == 'POST' and path == '/api/agent/applied':
-                self._send_json(200, {'application': agent_mark_applied(str(b.get('id') or ''))}); return
+                self._send_json(200, {'application': agent_mark_applied(str(b.get('id') or ''), o)}); return
             self._send_json(404, {'error': 'not found'})
         except store.StoreError as e:
             self._send_json(404 if 'not found' in str(e) else 400, {'error': str(e)})
