@@ -1,0 +1,158 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Careers at Acme (Workday fixture)</title>
+<style>.step{display:none}.step.on{display:block}[role=listbox]{border:1px solid #888;position:absolute;background:#fff}li[role=option]{padding:2px 6px;cursor:pointer}</style></head>
+<body>
+<!-- A faithful copy of a Workday career site's apply flow, by data-automation-id, for tests. -->
+<div id="posting">
+  <h1 data-automation-id="jobPostingHeader">Machine Learning Engineer</h1>
+  <a href="#" data-automation-id="adventureButton">Apply</a>
+  <div id="applyChoices" style="display:none">
+    <a href="#" data-automation-id="autofillWithResume">Autofill with Resume</a>
+    <a href="#" data-automation-id="applyManually">Apply Manually</a>
+  </div>
+</div>
+
+<div id="flow" style="display:none">
+  <ol data-automation-id="progressBar"><li data-automation-id="progressBarActiveStep" id="stepLabel">Create Account</li></ol>
+
+  <div class="step" id="s0">
+    <div data-automation-id="signInContent">
+      <button data-automation-id="SignInWithEmailButton">Sign in with email</button>
+      <div id="signin" style="display:none">
+        <label for="email">Email Address</label><input id="email" data-automation-id="email" type="text">
+        <label for="pw">Password</label><input id="pw" data-automation-id="password" type="password">
+        <button data-automation-id="signInSubmitButton">Sign In</button>
+        <button data-automation-id="createAccountLink">Create Account</button>
+      </div>
+      <div id="create" style="display:none">
+        <label for="cemail">Email Address</label><input id="cemail" data-automation-id="email" type="text">
+        <label for="cpw">Password</label><input id="cpw" data-automation-id="password" type="password">
+        <label for="cpw2">Verify New Password</label><input id="cpw2" data-automation-id="verifyPassword" type="password">
+        <input type="text" data-automation-id="beecatcher" style="position:absolute;left:-9999px">
+        <label><input type="checkbox" data-automation-id="createAccountCheckbox"> I have read and consent to the privacy policy</label>
+        <button data-automation-id="createAccountSubmitButton">Create Account</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="step" id="s1">
+    <h2>Autofill with Resume</h2>
+    <label for="cv">Resume/CV</label><input id="cv" type="file" data-automation-id="file-upload-input-ref">
+  </div>
+
+  <div class="step" id="s2">
+    <h2>My Information</h2>
+    <label for="src">How Did You Hear About Us?*</label>
+    <button id="src" aria-haspopup="listbox" aria-required="true" data-automation-id="sourceDropdown">Select One</button>
+    <label for="country">Country*</label>
+    <button id="country" aria-haspopup="listbox" aria-required="true" data-automation-id="countryDropdown">Select One</button>
+    <label for="fn">First Name*</label><input id="fn" data-automation-id="legalNameSection_firstName" required>
+    <label for="ln">Last Name*</label><input id="ln" data-automation-id="legalNameSection_lastName" required>
+    <label for="a1">Address Line 1*</label><input id="a1" data-automation-id="addressSection_addressLine1" required>
+    <label for="city">City*</label><input id="city" data-automation-id="addressSection_city" required>
+    <label for="st">State*</label>
+    <button id="st" aria-haspopup="listbox" aria-required="true" data-automation-id="addressSection_countryRegion">Select One</button>
+    <label for="zip">Postal Code*</label><input id="zip" data-automation-id="addressSection_postalCode" required>
+    <label for="pt">Phone Device Type*</label>
+    <button id="pt" aria-haspopup="listbox" aria-required="true" data-automation-id="phone-device-type">Select One</button>
+    <label for="ph">Phone Number*</label><input id="ph" data-automation-id="phone-number" required>
+    <fieldset data-automation-id="previousWorker"><legend>Have you previously worked for Acme?*</legend>
+      <label><input type="radio" name="prev" value="y"> Yes</label><label><input type="radio" name="prev" value="n"> No</label></fieldset>
+  </div>
+
+  <div class="step" id="s3">
+    <h2>Application Questions</h2>
+    <label for="q1">Are you legally authorized to work in the United States?*</label>
+    <button id="q1" aria-haspopup="listbox" aria-required="true">Select One</button>
+    <label for="q2">Will you now or in the future require sponsorship for employment visa status?*</label>
+    <button id="q2" aria-haspopup="listbox" aria-required="true">Select One</button>
+    <label for="q3">Why are you interested in this role?*</label><textarea id="q3" required></textarea>
+    <div id="extra"></div>
+  </div>
+
+  <div class="step" id="s4">
+    <h2>Voluntary Disclosures</h2>
+    <label for="g">Gender</label><button id="g" aria-haspopup="listbox" data-automation-id="gender">Select One</button>
+    <label for="v">Veteran Status</label><button id="v" aria-haspopup="listbox" data-automation-id="veteranStatus">Select One</button>
+    <label><input type="checkbox" id="terms" data-automation-id="agreementCheckbox" required> I agree to the Terms and Conditions*</label>
+  </div>
+
+  <div class="step" id="s5">
+    <h2>Review</h2><p>Please review your application.</p>
+  </div>
+
+  <div class="step" id="s6">
+    <h2>Congratulations!</h2><p>Your application has been submitted.</p>
+  </div>
+
+  <div data-automation-id="errorBanner" id="err" style="display:none;color:red"></div>
+  <button data-automation-id="bottom-navigation-next-button" id="next">Save and Continue</button>
+</div>
+
+<script>
+const OPTIONS = {
+  src: ['Job Board', 'LinkedIn', 'Referral', 'Other'],
+  country: ['Afghanistan', 'Albania', 'Canada', 'United States of America', 'Zimbabwe'],
+  st: ['Alabama', 'California', 'Texas', 'Wyoming'],
+  pt: ['Home', 'Mobile', 'Work'],
+  q1: ['Yes', 'No'], q2: ['Yes', 'No'],
+  g: ['Male', 'Female', 'I do not wish to answer'],
+  v: ['I am a veteran', 'I am not a veteran', 'I decline to self identify'],
+};
+window.STATE = { step: 0, created: null, signedIn: false, submitted: false, nexts: 0 };
+const steps = ['Create Account', 'Autofill with Resume', 'My Information', 'Application Questions', 'Voluntary Disclosures', 'Review', 'Done'];
+function show(n) {
+  STATE.step = n;
+  document.querySelectorAll('.step').forEach((s, i) => s.classList.toggle('on', i === n));
+  document.getElementById('stepLabel').textContent = steps[n];
+  document.getElementById('next').textContent = n === 5 ? 'Submit' : 'Save and Continue';
+  document.getElementById('next').style.display = n === 0 || n === 6 ? 'none' : '';
+  document.getElementById('err').style.display = 'none';
+}
+document.querySelector('[data-automation-id="adventureButton"]').onclick = e => { e.preventDefault(); document.getElementById('applyChoices').style.display = ''; };
+document.querySelector('[data-automation-id="autofillWithResume"]').onclick = e => { e.preventDefault(); document.getElementById('posting').style.display = 'none'; document.getElementById('flow').style.display = ''; show(0); };
+document.querySelector('[data-automation-id="SignInWithEmailButton"]').onclick = () => { document.getElementById('signin').style.display = ''; };
+document.querySelector('[data-automation-id="createAccountLink"]').onclick = () => { document.getElementById('signin').style.display = 'none'; document.getElementById('create').style.display = ''; };
+document.querySelector('[data-automation-id="signInSubmitButton"]').onclick = () => {
+  const c = STATE.created || window.EXISTING;
+  if (c && c.email === document.getElementById('email').value && c.password === document.getElementById('pw').value) { STATE.signedIn = true; show(1); }
+  else document.getElementById('err').style.display = '';
+};
+document.querySelector('[data-automation-id="createAccountSubmitButton"]').onclick = () => {
+  const pw = document.getElementById('cpw').value, bee = document.querySelector('[data-automation-id="beecatcher"]').value;
+  const ok = pw.length >= 8 && /[A-Z]/.test(pw) && /[a-z]/.test(pw) && /\d/.test(pw) && /[^A-Za-z0-9]/.test(pw)
+          && pw === document.getElementById('cpw2').value && document.querySelector('[data-automation-id="createAccountCheckbox"]').checked && !bee;
+  if (window.EXISTING && window.EXISTING.email === document.getElementById('cemail').value) { document.body.insertAdjacentHTML('beforeend', '<p id="dup">An account with this email already exists.</p>'); return; }
+  if (!ok) { document.getElementById('err').textContent = 'Password does not meet requirements'; document.getElementById('err').style.display = ''; return; }
+  STATE.created = { email: document.getElementById('cemail').value, password: pw, bee };
+  STATE.signedIn = true; show(1);
+};
+// listbox buttons
+document.querySelectorAll('button[aria-haspopup="listbox"]').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('[role=listbox]').forEach(l => l.remove());
+    const ul = document.createElement('ul'); ul.setAttribute('role', 'listbox');
+    (OPTIONS[b.id] || []).forEach(t => { const li = document.createElement('li'); li.setAttribute('role', 'option'); li.textContent = t;
+      li.onclick = () => { b.textContent = t; b.dataset.value = t; ul.remove(); }; ul.appendChild(li); });
+    b.after(ul);
+  };
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('[role=listbox]').forEach(l => l.remove()); });
+function missingOn(n) {
+  const root = document.getElementById('s' + n);
+  const bad = [];
+  root.querySelectorAll('input[required], textarea[required]').forEach(i => { if (!i.value && i.type !== 'checkbox') bad.push(i.id); if (i.type === 'checkbox' && !i.checked) bad.push(i.id); });
+  root.querySelectorAll('button[aria-required="true"]').forEach(b => { if (!b.dataset.value) bad.push(b.id); });
+  root.querySelectorAll('fieldset').forEach(f => { if (!f.querySelector('input:checked')) bad.push('prev'); });
+  if (n === 1 && !document.getElementById('cv').files.length) bad.push('cv');
+  return bad;
+}
+document.getElementById('next').onclick = () => {
+  STATE.nexts++;
+  const bad = missingOn(STATE.step);
+  if (bad.length) { const e = document.getElementById('err'); e.textContent = 'Required: ' + bad.join(', '); e.style.display = ''; return; }
+  if (STATE.step === 5) { STATE.submitted = true; show(6); return; }
+  show(STATE.step + 1);
+};
+</script>
+</body></html>
