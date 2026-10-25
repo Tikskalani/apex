@@ -310,8 +310,10 @@ _RULES = [
     (r'phone device type|phone type|device type', 'phone_type'), (r'country phone code|^country code', 'phone_code'),
     (r'country', 'country'), (r'zip|postal', 'zip'), (r'address line 2|apt|suite', 'skip'), (r'street|address', 'address'),
     (r'\bstate\b|province|county', 'state'), (r'\bcity\b|location|where are you (?:located|based)', 'city'),
-    (r'^(?:mobile |cell |phone|telephone)', 'phone'), (r'^e ?mail', 'email'), (r'^first name|^given name', 'first_name'),
-    (r'^last name|^surname|family name', 'last_name'), (r'^(?:full |legal )?name\W*$', 'full_name'),
+    (r'extension|^ext\b', 'skip'),
+    (r'^(?:mobile |cell |phone|telephone)', 'phone'), (r'^e ?mail|^verify your e ?mail', 'email'),
+    (r'^(?:verify your |legal )?first name|^given name', 'first_name'),
+    (r'^(?:verify your |legal )?last name|^surname|family name', 'last_name'), (r'^(?:full |legal )?name\W*$', 'full_name'),
     (r'linkedin', 'linkedin'), (r'github', 'github'), (r'website|portfolio|personal site', 'website'),
     (r'(?:current|recent)\W.{0,25}(?:company|employer)|(?:company|employer) name', 'company'),
     (r'(?:current|recent)\W.{0,25}(?:job )?title|job title', 'title'),
@@ -340,9 +342,9 @@ def pick(options, value):
             return o
     if v in ('yes', 'no'):
         return None
-    for o, n in opts:
-        if v in n or (len(n) > 3 and n in v):
-            return o
+    contains = [(o, n) for o, n in opts if v in n or (len(n) > 3 and n in v)]
+    if contains:                                       # the closest in length wins: "United States" over "United States Minor Outlying Islands"
+        return min(contains, key=lambda on: (abs(len(on[1]) - len(v)), opts.index(on)))[0]
     if v in ('united states', 'usa', 'us'):
         return next((o for o, n in opts if n in ('us', 'usa', 'united states of america', 'u s')), None)
     return None
@@ -395,6 +397,8 @@ def decide(q, answers, contact, ask=None):
     if key == 'phone_type':
         return pick(options, 'Mobile') or pick(options, 'Cell') or pick(options, 'Home') or (options[0] if options else 'Mobile')
     if key == 'phone_code':
+        if not options and kind in ('combobox', 'listbox'):
+            return 'United States'
         return pick(options, 'United States of America (+1)') or pick(options, 'United States') or pick(options, '+1')
     first, last = split_name(contact.get('name'))
     contact_keys = {'phone': contact.get('phone'), 'email': contact.get('email'), 'first_name': first, 'last_name': last,
@@ -411,6 +415,8 @@ def decide(q, answers, contact, ask=None):
     if key == 'state' and options:
         val = a.get('state') or ''
         return pick(options, val) or pick(options, _STATE_ABBR.get(val.lower(), '')) or None
+    if key in ('country', 'state', 'hear') and not options and kind in ('combobox', 'listbox') and a.get(key):
+        return a[key]                                    # typed into the box; _set only accepts a matching option
     if key:
         val = a.get(key)
         if key == 'salary' and not val and kind in ('text', 'textarea'):
@@ -432,18 +438,41 @@ def decide(q, answers, contact, ask=None):
     return None
 
 
-def _visible_options(scope, wait_ms=1800):
+def _option_scope(scope, el):
+    """Where this control's options live: the element its aria-controls/aria-owns names, else the page."""
+    try:
+        for attr in ('aria-controls', 'aria-owns'):
+            ident = el.get_attribute(attr, timeout=800)
+            if ident:
+                box = scope.locator('#' + ident.split()[0].replace(':', '\\:'))
+                if box.count():
+                    return box.first
+    except Exception:
+        pass
+    return scope
+
+
+def _visible_options(scope, wait_ms=1800, el=None):
     """The options of the open dropdown, waiting up to wait_ms for them to render."""
     page = _page_of(scope)
+    where = _option_scope(scope, el) if el is not None else scope
     end = time.time() + wait_ms / 1000
     while True:
         try:
-            texts = [t.strip() for t in scope.locator('[role="option"]:visible').all_inner_texts() if t.strip()][:300]
+            texts = [t.strip() for t in where.locator('[role="option"]:visible').all_inner_texts() if t.strip()][:300]
         except Exception:
             texts = []
         if texts or time.time() > end:
             return texts
         page.wait_for_timeout(200)
+
+
+def _close_lists(page):
+    try:
+        page.keyboard.press('Escape')
+        page.wait_for_timeout(120)
+    except Exception:
+        pass
 
 
 def _set(scope, q, value):
@@ -473,73 +502,92 @@ def _set(scope, q, value):
         el.select_option(label=value, timeout=5000)
         return True
     if kind == 'listbox':                              # a button that opens a list (Workday)
+        _close_lists(page)
         el.click(timeout=5000)
         page.wait_for_timeout(500)
-        texts = _visible_options(scope)
+        texts = _visible_options(scope, el=el)
         hit = pick(texts, value) if texts else None
         if hit is None and len(texts) >= 40:            # a long list (countries): type to jump, then look again
             page.keyboard.type(str(value)[:30], delay=15)
             page.wait_for_timeout(500)
-            texts = _visible_options(scope)
+            texts = _visible_options(scope, el=el)
             hit = pick(texts, value) if texts else None
         if hit is None:
-            page.keyboard.press('Escape')
+            _close_lists(page)
             return False
-        scope.locator('[role="option"]:visible').nth(texts.index(hit)).click(timeout=4000)
+        _option_scope(scope, el).locator('[role="option"]:visible').nth(texts.index(hit)).click(timeout=4000)
         page.wait_for_timeout(300)
         return True
     if kind == 'combobox':
+        _close_lists(page)
         el.click(timeout=5000)
         try:
             el.fill(str(value)[:60], timeout=3000)
         except Exception:
             el.type(str(value)[:60], delay=20)
-        page.wait_for_timeout(700)
-        opts = scope.locator('[role="option"]:visible')
-        texts = [t.strip() for t in opts.all_inner_texts()][:200]
+        texts = _visible_options(scope, el=el)
         hit = pick(texts, value) if texts else None
-        if hit is not None:
-            opts.nth(texts.index(hit)).click(timeout=4000)
-        else:
-            page.keyboard.press('Enter')
-        page.wait_for_timeout(200)
+        if hit is None and texts and len(str(value)) > 3:    # the typed text narrowed the list: a shorter prefix may show it
+            el.fill(str(value)[:4], timeout=3000)
+            texts = _visible_options(scope, el=el)
+            hit = pick(texts, value) if texts else None
+        if hit is None:                                  # never Enter blindly: that picks whatever is first
+            try:
+                el.fill('', timeout=2000)
+            except Exception:
+                pass
+            _close_lists(page)
+            return False
+        _option_scope(scope, el).locator('[role="option"]:visible').nth(texts.index(hit)).click(timeout=4000)
+        page.wait_for_timeout(250)
         return True
     el.fill(str(value), timeout=5000)
     return True
 
 
-def answer_questions(scope, answers, contact, ask=None, log=None):
-    """Answer every question it can. Returns the labels of required questions left unanswered."""
+def answer_questions(scope, answers, contact, ask=None, log=None, passes=3):
+    """Answer every question it can, in passes (an answer can reveal further questions).
+    Returns the labels of required questions left unanswered."""
     log = log if log is not None else []
-    for q in scope.evaluate(_EXTRACT):
-        if q['value'] or q['kind'] == 'file':
-            continue
-        if q['kind'] in ('combobox', 'listbox') and not q['options']:
-            q['options'] = _combobox_options(scope, q)
-        try:
-            v = decide(q, answers, contact, ask)
-        except Exception:
-            v = None
-        if v in (None, '', []):
-            continue
-        try:
-            if _set(scope, q, v):
-                log.append(q['label'][:60])
-        except Exception:
-            continue
+    tried = set()
+    for _ in range(passes):
+        progress = False
+        for q in scope.evaluate(_EXTRACT):
+            if q['value'] or q['kind'] == 'file' or q['label'] in tried:
+                continue
+            tried.add(q['label'])
+            if q['kind'] in ('combobox', 'listbox') and not q['options']:
+                q['options'] = _combobox_options(scope, q)
+            try:
+                v = decide(q, answers, contact, ask)
+            except Exception:
+                v = None
+            if v in (None, '', []):
+                continue
+            try:
+                if _set(scope, q, v):
+                    log.append(q['label'][:60])
+                    progress = True
+            except Exception:
+                continue
+        if not progress:
+            break
     left = [q for q in scope.evaluate(_EXTRACT) if q['required'] and not q['value']]
     return [q['label'][:120] for q in left]
 
 
 def _combobox_options(scope, q):
-    """Open a custom dropdown and read its options (then close it)."""
+    """Open a custom dropdown and read its options (then close it). A list that shows a single
+    Yes or No has not finished rendering: it counts as unreadable rather than as a choice."""
     page = _page_of(scope)
     el = scope.locator(f'[data-apex-q="{q["i"]}"]').first
     try:
+        _close_lists(page)
         el.click(timeout=3000)
-        texts = _visible_options(scope)
-        page.keyboard.press('Escape')
-        page.wait_for_timeout(150)
+        texts = _visible_options(scope, el=el)
+        _close_lists(page)
+        if len(texts) == 1 and _norm(texts[0]) in ('yes', 'no'):
+            return []
         return texts if len(texts) < 150 else []          # a long list (countries): type to filter instead
     except Exception:
         return []
