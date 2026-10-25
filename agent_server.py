@@ -4896,7 +4896,11 @@ def client_report_data(owner='', pid=None, days=7):
                for e in ev if e['kind'] == 'status' and (e.get('detail') or {}).get('to') in ('interview', 'offer', 'rejected')]
     followups = [{'company': e['company'], 'role': e['role'], 'at': e['at'][:10], 'by': (e.get('detail') or {}).get('by', 'you')}
                  for e in ev if e['kind'] == 'followup_sent']
-    needs = [{'title': i['title'], 'company': i['company'], 'why': ((i.get('kit') or {}).get('attempt') or {}).get('detail', '')[:140]}
+    def _why(att):
+        if att.get('status') == 'filled':
+            return 'filled; waiting for Submit now'
+        return (att.get('detail') or '; '.join(att.get('missing') or []) or att.get('status', ''))[:160]
+    needs = [{'title': i['title'], 'company': i['company'], 'why': _why((i.get('kit') or {}).get('attempt') or {})}
              for i in items if i['status'] == 'ready' and ((i.get('kit') or {}).get('attempt') or {}).get('status') in ('needs_you', 'captcha', 'filled', 'below_bar')]
     upcoming = [{'title': i['title'], 'company': i['company'], 'fit': i['fit'], 'fresh': bool((i.get('reasons') or {}).get('fresh'))}
                 for i in items if i['status'] in ('proposed', 'approved', 'preparing')][:10]
