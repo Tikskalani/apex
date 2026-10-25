@@ -925,7 +925,7 @@ def queue_posting_for_application(app_id, *, owner=''):
 
 ANSWER_KEYS = ('authorized', 'sponsorship', 'relocate', 'salary', 'start', 'hear', 'former', 'restrictions', 'adult',
                'country', 'city', 'state', 'zip', 'address', 'preferred_name', 'pronouns', 'gender', 'race', 'hispanic',
-               'veteran', 'disability', 'orientation', 'transgender')
+               'veteran', 'disability', 'orientation', 'transgender', 'us_person', 'clearance', 'gov_employee')
 
 
 def _answers(v):

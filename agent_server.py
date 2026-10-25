@@ -4653,7 +4653,8 @@ def _contact(item, prof):
     return {'name': st.get('name'), 'email': st.get('email'), 'phone': st.get('phone'),
             'linkedin': st.get('linkedin'), 'location': st.get('location') or prof.get('location'),
             'github': site if 'github.com' in site.lower() else '', 'website': '' if 'github.com' in site.lower() else site,
-            'company': (exp or {}).get('company') or '', 'title': (exp or {}).get('title') or ''}
+            'company': (exp or {}).get('company') or '', 'title': (exp or {}).get('title') or '',
+            'source': {'JSearch': 'Job board', 'Link': 'Company website'}.get(item.get('source') or '', item.get('source') or 'Job board')}
 
 
 def agent_submit(qid, owner='', pdf_b64='', do_submit=None, template=''):

@@ -79,3 +79,19 @@ def test_cookie_banner_is_declined_before_the_form(pg, tmp_path):
     page = apex_apply.reach_form(pg, (tmp_path / 'app.html').as_uri())
     assert page.evaluate('[window.DECLINED, window.ACCEPTED]') == [1, None]
     assert apex_apply.is_application_form(page)
+
+
+def test_citizenship_clearance_government_and_source_answers():
+    C = dict(CONTACT, source='Job board')
+    q = lambda label, opts: {'label': label, 'kind': 'combobox', 'options': opts, 'required': True}
+    a = {'us_person': 'Yes', 'clearance': 'None', 'gov_employee': 'Never'}
+    assert apex_apply.decide(q('Are you a U.S. Person? This includes a U.S. Citizen.', ['Yes', 'No']), a, C) == 'Yes'
+    assert apex_apply.decide(q('Do you currently possess an active security clearance?', ['Yes', 'No']), a, C) == 'No'
+    assert apex_apply.decide(q('If you currently possess an active security clearance, which agency sponsored the clearance?',
+                               ['I do not possess an active security clearance.', 'DOD', 'CIA']), a, C) == 'I do not possess an active security clearance.'
+    assert apex_apply.decide(q('The below survey requests information so that CACI can fulfill its obligations (U.S. Government employment)',
+                               ['I am currently employed by the U.S. Government.', 'I have never been employed by the U.S. Government.']), a, C) \
+        == 'I have never been employed by the U.S. Government.'
+    assert apex_apply.decide(q('Which job board?', []), {}, C) == 'Job board'
+    assert apex_apply.decide(q('Are you a U.S. Person?', ['Yes', 'No']), {}, C) is None, 'not set: never guessed'
+    assert apex_apply.decide(q('Security clearance level', ['None', 'Secret']), {'clearance': 'Secret'}, C) == 'Secret'

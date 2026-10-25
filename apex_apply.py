@@ -43,6 +43,7 @@ DEFAULT_ANSWERS = {
     'hear': 'Job board', 'former': 'No', 'restrictions': 'No', 'adult': 'Yes',
     'country': 'United States', 'city': '', 'state': '', 'zip': '', 'address': '', 'preferred_name': '', 'pronouns': '',
     'gender': '', 'race': '', 'hispanic': '', 'veteran': '', 'disability': '', 'orientation': '', 'transgender': '',
+    'us_person': '', 'clearance': '', 'gov_employee': '',
 }
 
 
@@ -295,6 +296,7 @@ _RULES = [
     (r'gender|sex\b', 'gender'), (r'transgender', 'transgender'), (r'sexual orientation', 'orientation'),
     (r'hispanic|latin[oa]|latinx', 'hispanic'), (r'\brace\b|ethnic', 'race'), (r'veteran|military|served in', 'veteran'),
     (r'disabilit', 'disability'), (r'pronoun', 'pronouns'),
+    (r'security clearance|clearance level|clearance status', 'clearance'),
     (r'sponsor|visa|immigration', 'sponsorship'),
     (r'authori[sz]ed to work|legally (?:authori|eligible|able|permitted)|eligib\w* to work|right to work|work authori', 'authorized'),
     (r'previously (?:worked|been employed|applied)|ever (?:worked|been employed)|former employee|worked (?:at|for) .{0,40}before'
@@ -302,6 +304,9 @@ _RULES = [
     (r'employment agreement|non-?compete|post-employment|restrictive covenant', 'restrictions'),
     (r'18 years|at least 18|over 18|legal age', 'adult'),
     (r'relocat', 'relocate'),
+    (r'u\.?s\.? person|u\.?s\.? citizen|citizenship|permanent resident|green card', 'us_person'),
+    (r'employed by the u\.?s\.? government|government (?:officer|employee)|federal (?:employee|service)|government service', 'gov_employee'),
+    (r'which job board|name of (?:the )?job board|job board name|which (?:site|website|source)', 'source_name'),
     (r'hear about|how did you (?:find|learn|hear)|where did you (?:find|see|hear)|referral source|^source', 'hear'),
     (r'salary|compensation|pay (?:expectation|requirement)|desired pay|expected pay', 'salary'),
     (r'start date|when can you start|available to start|notice period|earliest', 'start'),
@@ -369,6 +374,12 @@ def decide(q, answers, contact, ask=None):
     label, kind, options = q['label'], q['kind'], q.get('options') or []
     flat = ' '.join(re.sub(r'[^\w/+.\-\s]', ' ', label).split())         # "current (or most recent) company"
     key = next((k for rx, k in _RULES if rx.search(label) or rx.search(flat)), None)
+    if key is None and options:                        # a long survey sentence: the options say what it asks
+        joined = ' | '.join(options)
+        if re.search(r'employed by the u\.?s\.? government|government (?:officer|employee)', joined, re.I):
+            key = 'gov_employee'
+        elif re.search(r'security clearance', joined, re.I):
+            key = 'clearance'
     a = {**DEFAULT_ANSWERS, **{k: v for k, v in (answers or {}).items() if v not in (None, '')}}
     city = a['city'] or (contact.get('location') or '').split(',')[0].strip()
     choice = kind in ('select', 'radio', 'combobox', 'checkbox', 'listbox')
@@ -394,6 +405,27 @@ def decide(q, answers, contact, ask=None):
         return time.strftime('%m/%d/%Y')
     if key in ('month', 'day', 'year'):
         return time.strftime({'month': '%m', 'day': '%d', 'year': '%Y'}[key])
+    if key == 'source_name':
+        src = contact.get('source') or 'Job board'
+        return (pick(options, src) or pick(options, 'Other')) if options else src
+    if key == 'clearance':
+        val = a.get('clearance')
+        if not val:
+            return None
+        if options:
+            if _norm(val) in ('none', 'no', 'no clearance'):
+                return next((o for o in options if re.search(r'do not (?:possess|have|hold)|\bnone\b|no clearance|not applicable|n/?a\b|^\s*no\s*$', o, re.I)), None)
+            return pick(options, val)
+        return val
+    if key == 'gov_employee':
+        val = a.get('gov_employee')
+        if not val:
+            return None
+        if options:
+            if _norm(val) in ('never', 'no'):
+                return next((o for o in options if re.search(r'never been employed|not (?:a )?(?:current|former)|\bno\b', o, re.I)), None)
+            return pick(options, val)
+        return val
     if key == 'phone_type':
         return pick(options, 'Mobile') or pick(options, 'Cell') or pick(options, 'Home') or (options[0] if options else 'Mobile')
     if key == 'phone_code':
