@@ -1478,6 +1478,7 @@ def _jsearch_local_fetch(query, location):
                     'company': j.get('employer_name',''),
                     'location': loc or 'Various',
                     'url': best_apply_link(j),
+                    'website': j.get('employer_website') or '',
                     'source': 'JSearch',
                     'posted': (j.get('job_posted_at_datetime_utc','') or '')[:10],
                     'snippet': clean(j.get('job_description',''))[:240],
@@ -4377,7 +4378,8 @@ def agent_scan(pid, owner=''):
                               'posted': j.get('posted'), 'posting': posting,
                               'fit': max(0, fit - (8 if ghost['score'] == 2 else 0)) + (3 if j.get('fresh') else 0),
                               'reasons': {'target': target, 'matched': matched, 'missing': missing,
-                                          'full_posting': bool(j.get('text')), 'ghost': ghost, 'fresh': bool(j.get('fresh'))}})
+                                          'full_posting': bool(j.get('text')), 'ghost': ghost, 'fresh': bool(j.get('fresh')),
+                                          'website': (j.get('website') or '')[:200]}})
         cands.sort(key=lambda c: (c['fit'], c['reasons']['full_posting']), reverse=True)
         top = resolve_direct(cands[:prof['daily_limit'] + 5])
         kept = []
@@ -4706,7 +4708,8 @@ def agent_submit(qid, owner='', pdf_b64='', do_submit=None, template=''):
                                   prof.get('answers') or {}, application_answerer(item, prof), bool(do_submit),
                                   os.path.join(APPLY_DIR, f'{stem}_confirmation.png'), None if pdf_b64 else pdf_maker,
                                   logins=store.logins(owner=owner),
-                                  on_login=lambda h, e, pw: store.save_login(h, e, pw, owner=owner))
+                                  on_login=lambda h, e, pw: store.save_login(h, e, pw, owner=owner),
+                                  website=(item.get('reasons') or {}).get('website') or '', title=item['title'])
     r = r or {'filled': [], 'missing': [], 'status': 'error', 'detail': ''}
     out = {'mode': 'filled', 'status': r['status'] if not err else 'error', 'url': url, 'url_final': r.get('url') or '', 'filled': r['filled'],
            'missing': r['missing'], 'detail': r['detail'], 'error': err}

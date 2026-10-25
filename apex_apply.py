@@ -298,7 +298,7 @@ _RULES = [
     (r'sponsor|visa|immigration', 'sponsorship'),
     (r'authori[sz]ed to work|legally (?:authori|eligible|able|permitted)|eligib\w* to work|right to work|work authori', 'authorized'),
     (r'previously (?:worked|been employed|applied)|ever (?:worked|been employed)|former employee|worked (?:at|for) .{0,40}before'
-     r'|consulted for|currently (?:work|employed) (?:at|for)', 'former'),
+     r'|consulted for|currently (?:work|employed) (?:at|for)|current (?:employee|contractor)|currently an? employee', 'former'),
     (r'employment agreement|non-?compete|post-employment|restrictive covenant', 'restrictions'),
     (r'18 years|at least 18|over 18|legal age', 'adult'),
     (r'relocat', 'relocate'),
@@ -432,8 +432,18 @@ def decide(q, answers, contact, ask=None):
     return None
 
 
-def _visible_options(scope):
-    return [t.strip() for t in scope.locator('[role="option"]:visible').all_inner_texts()][:300]
+def _visible_options(scope, wait_ms=1800):
+    """The options of the open dropdown, waiting up to wait_ms for them to render."""
+    page = _page_of(scope)
+    end = time.time() + wait_ms / 1000
+    while True:
+        try:
+            texts = [t.strip() for t in scope.locator('[role="option"]:visible').all_inner_texts() if t.strip()][:300]
+        except Exception:
+            texts = []
+        if texts or time.time() > end:
+            return texts
+        page.wait_for_timeout(200)
 
 
 def _set(scope, q, value):
@@ -527,7 +537,6 @@ def _combobox_options(scope, q):
     el = scope.locator(f'[data-apex-q="{q["i"]}"]').first
     try:
         el.click(timeout=3000)
-        page.wait_for_timeout(400)
         texts = _visible_options(scope)
         page.keyboard.press('Escape')
         page.wait_for_timeout(150)
@@ -583,6 +592,35 @@ def _button(scope, text_rx):
     return found
 
 
+def _submit_button(scope):
+    """The Submit control of the application form: inside the form that holds the filled fields when
+    there is one, never a button that reports, saves, shares or searches."""
+    try:
+        sel = scope.evaluate("""() => {
+          const vis = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+          const fields = [...document.querySelectorAll('input[type=file], [data-apex-q]')];
+          const form = fields.map(f => f.closest('form')).find(Boolean);
+          const pool = form ? [...form.querySelectorAll('button, input[type=submit]')] : [...document.querySelectorAll('button[type=submit], input[type=submit], button')];
+          const text = b => (b.innerText || b.value || b.getAttribute('aria-label') || '').trim();
+          const bad = /report|alert|save (?:job|this|search)|share|sign ?in|log ?in|subscribe|newsletter|search|follow|cancel|back|close|delete|remove|unsubscribe|flag|add |upload|attach|choose|browse/i;
+          const good = /submit|send application|^apply|finish|complete application/i;
+          const cands = pool.filter(b => vis(b) && !bad.test(text(b)) && (b.type === 'submit' || good.test(text(b))));
+          const pick = cands.reverse().find(b => good.test(text(b))) || cands[0];
+          if (!pick) return '';
+          pick.setAttribute('data-apex-submit', '1');
+          return '[data-apex-submit="1"]';
+        }""")
+    except Exception:
+        return None
+    if not sel:
+        return None
+    el = scope.locator(sel).first
+    try:
+        return el if el.is_visible() else None
+    except Exception:
+        return None
+
+
 def submit(scope, shot_path='', wait=25, button=None):
     """Press Submit and confirm the site accepted it. Returns (status, detail): 'submitted'
     (detail: the confirmation text), 'captcha' (a bot check is showing: left for the person),
@@ -590,13 +628,9 @@ def submit(scope, shot_path='', wait=25, button=None):
     page = _page_of(scope)
     btn = button
     if btn is None:
-        for loc in (scope.locator('button[type="submit"]:visible, input[type="submit"]:visible'),
-                    scope.get_by_role('button', name=re.compile(r'submit|send application|apply', re.I))):
-            if loc.count():
-                btn = loc.last
-                break
+        btn = _submit_button(scope)
     if btn is None:
-        return 'invalid', 'no Submit button found'
+        return 'invalid', 'no Submit button found on the application form'
     before = page.url
     btn.scroll_into_view_if_needed(timeout=5000)
     btn.click(timeout=8000)
@@ -651,13 +685,16 @@ def walk_form(page, pdf_path, letter, contact, answers, ask, do_submit, shot_pat
                 nxt_text = nxt.inner_text(timeout=1000)
             except Exception:
                 nxt_text = ''
+        if nxt is not None and _NEVER_PRESS.search(nxt_text or ''):
+            nxt = None
         is_last = nxt is None or _SUBMIT_TEXT.search(nxt_text or '')
         if is_last:
             if not do_submit:
                 return 'filled', '', missing
             if missing:
                 return 'needs_you', '', missing
-            return (*submit(scope, shot_path, button=nxt), missing)
+            final = nxt if (nxt is not None and _SUBMIT_TEXT.search(nxt_text or '')) else None
+            return (*submit(scope, shot_path, button=final), missing)
         if missing:                                      # the site would refuse Next; leave this page to the person
             return ('needs_you' if do_submit else 'filled'), '', missing
         step_before = _step_label(scope)
@@ -686,7 +723,7 @@ def _step_label(scope):
 
 
 def fill_form(page, url, pdf_path, letter, contact, answers=None, ask=None, do_submit=False, shot_path='',
-              logins=None, on_login=None):
+              logins=None, on_login=None, website='', title=''):
     """Go to the application form, fill it and answer its questions; with do_submit, submit it.
     Returns {filled: [fields], missing: [required questions left], status, detail}. status is
     'filled' (not submitted), 'submitted', 'captcha', 'invalid', 'unconfirmed' or 'needs_you'
@@ -696,15 +733,27 @@ def fill_form(page, url, pdf_path, letter, contact, answers=None, ask=None, do_s
         return workday_flow(page, url, pdf_path, letter, contact, answers, ask, do_submit, shot_path, logins or {}, on_login, log)
     page = reach_form(page, url)
     wall = sign_in_wall(page)
+    if wall and is_aggregator(page.url) and website:
+        found = find_on_careers_site(page, website, title)
+        if found is not None:
+            page = reach_form(found, found.url)
+            if board(page.url) == 'workday':
+                return workday_flow(page, page.url, pdf_path, letter, contact, answers, ask, do_submit, shot_path, logins or {}, on_login, log)
+            wall = sign_in_wall(page)
     if wall:
-        return _left_for_person(page, {'filled': [], 'missing': [wall], 'status': 'needs_you', 'detail': wall})
+        return _left_for_person(page, {'filled': [], 'missing': [wall], 'status': 'needs_you', 'detail': wall}, shot_path)
     status, detail, missing = walk_form(page, pdf_path, letter, contact, answers, ask, do_submit, shot_path, log)
-    return _left_for_person(page, {'filled': log, 'missing': missing, 'status': status, 'detail': detail})
+    return _left_for_person(page, {'filled': log, 'missing': missing, 'status': status, 'detail': detail}, shot_path)
 
 
-def _left_for_person(page, r):
-    """Show the person, in the APEX window, what is left to do on this form."""
+def _left_for_person(page, r, shot_path=''):
+    """Show the person, in the APEX window, what is left to do on this form; keep a picture of it."""
     status = r['status']
+    if status != 'submitted' and shot_path:
+        try:
+            page.screenshot(path=re.sub(r'_confirmation\.png$', '', shot_path) + '_left.png', full_page=True)
+        except Exception:
+            pass
     if status != 'submitted':
         msg = {'captcha': 'APEX filled this application. The site wants a bot check: complete it and press Submit.',
                'needs_you': 'APEX filled what it could. Answer the questions it left, then press Submit.',
@@ -726,6 +775,39 @@ def _left_for_person(page, r):
 
 _INPUTS = ('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=search]), textarea, select, '
            'button[aria-haspopup="listbox"]')
+# Job boards and aggregators: their pages carry alert sign-ups, "report this listing" and search
+# forms, never the employer's application. APEX only follows their Apply link outward.
+AGGREGATOR_HOSTS = ('linkedin.com', 'indeed.com', 'glassdoor.com', 'ziprecruiter.com', 'learn4good.com', 'jobleads.com',
+                    'trabajo.org', 'bebee.com', 'jobilize.com', 'dice.com', 'theladders.com', 'jobserve.com', 'talent.com',
+                    'simplyhired.com', 'monster.com', 'jobrapido.com', 'adzuna.com', 'careerjet.com', 'jooble.org',
+                    'jobtome.com', 'neuvoo.com', 'lensa.com', 'whatjobs.com', 'joblift.com', 'jobisjob.com', 'recruit.net',
+                    'jobgether.com', 'himalayas.app', 'remoteok.com', 'remotive.com', 'jobicy.com', 'wellfound.com')
+_NEVER_PRESS = re.compile(r'report|alert|save (?:job|this|search)|share|sign ?in|log ?in|subscribe|newsletter|search|follow|'
+                          r'cancel|back|close|delete|remove|unsubscribe|flag', re.I)
+
+
+def is_aggregator(url):
+    h = host_of(url)
+    return any(h == a or h.endswith('.' + a) for a in AGGREGATOR_HOSTS)
+
+
+def is_application_form(scope):
+    """Does this page hold an application form (not a job-alert or search box)? A resume upload,
+    or a name field with an email or phone field and at least four fields in all."""
+    try:
+        return bool(scope.evaluate("""() => {
+          const vis = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+          const els = [...document.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button]), textarea, select, button[aria-haspopup="listbox"]')];
+          const files = els.filter(e => e.type === 'file').length;
+          const shown = els.filter(e => vis(e) || e.type === 'file');
+          const txt = e => ((e.id || '') + ' ' + (e.name || '') + ' ' + (e.getAttribute('aria-label') || '') + ' ' + (e.placeholder || '') + ' '
+            + ((e.labels && e.labels[0]) ? e.labels[0].innerText : '') + ' ' + (e.getAttribute('data-automation-id') || '')).toLowerCase();
+          const has = rx => shown.some(e => rx.test(txt(e)));
+          if (files) return true;
+          return shown.length >= 4 && has(/name/) && (has(/e-?mail/) || has(/phone|tel/) || shown.some(e => e.type === 'email' || e.type === 'tel'));
+        }"""))
+    except Exception:
+        return False
 _APPLY_TEXT = re.compile(r'^\s*(?:apply(?: now| for this (?:job|position|role)| on (?:the )?company(?:\'s)? (?:site|website))?'
                          r'|apply externally|continue to (?:apply|application)|i.?m interested)\s*$', re.I)
 
@@ -754,12 +836,33 @@ def _form_scope(page):
     return best
 
 
+_BANNER_DECLINE = re.compile(r'^\s*(?:reject all|decline(?: all)?|necessary only|only (?:necessary|essential)|refuse)\s*$', re.I)
+_BANNER_OK = re.compile(r'^\s*(?:accept all|allow all|i understand|got it|accept(?: cookies)?|agree|ok(?:ay)?|continue)\s*$', re.I)
+
+
+def dismiss_banners(page):
+    """Close a cookie or consent banner that would sit over the page (decline when it offers that)."""
+    for rx in (_BANNER_DECLINE, _BANNER_OK):
+        try:
+            loc = page.get_by_role('button', name=rx)
+            for k in range(min(loc.count(), 4)):
+                b = loc.nth(k)
+                if b.is_visible():
+                    b.click(timeout=2000)
+                    page.wait_for_timeout(400)
+                    return True
+        except Exception:
+            continue
+    return False
+
+
 def _settle(page):
     try:
         page.wait_for_load_state('domcontentloaded', timeout=20000)
         page.wait_for_load_state('networkidle', timeout=8000)
     except Exception:
         pass
+    dismiss_banners(page)
 
 
 def reach_form(page, url, hops=3):
@@ -777,7 +880,7 @@ def reach_form(page, url, hops=3):
         if board(page.url) and board(page.url) != 'workday' and form_url(page.url) != page.url:
             page.goto(form_url(page.url), wait_until='domcontentloaded', timeout=45000)
             _settle(page)
-        if _form_fields(_form_scope(page)) >= 3:
+        if not is_aggregator(page.url) and is_application_form(_form_scope(page)):
             return page
         btn = None
         for loc in (page.get_by_role('link', name=_APPLY_TEXT), page.get_by_role('button', name=_APPLY_TEXT)):
@@ -806,6 +909,60 @@ def reach_form(page, url, hops=3):
     return page
 
 
+_CAREERS_PATHS = ('/careers', '/careers/jobs', '/jobs', '/careers/search', '/en/careers', '/company/careers', '/about/careers', '')
+
+
+_TITLE_ABBR = (('machine learning', 'ml'), ('artificial intelligence', 'ai'), ('software engineer', 'swe'), ('natural language processing', 'nlp'),
+               ('site reliability engineer', 'sre'), ('large language model', 'llm'))
+
+
+def _title_words(t):
+    """A title's distinguishing words: abbreviations unified, level and location words dropped."""
+    t = re.split(r'\s[-|,(]\s?|\(|\|', str(t or ''), 1)[0]        # "Staff ML Engineer - Houston" -> "Staff ML Engineer"
+    n = ' ' + _norm(t) + ' '
+    for long, short in _TITLE_ABBR:
+        n = n.replace(' ' + long + ' ', ' ' + short + ' ')
+    return {w for w in n.split() if (len(w) > 2 or w in ('ml', 'ai')) and w not in ('and', 'the', 'for', 'with', 'senior', 'staff', 'lead', 'principal', 'remote', 'hybrid', 'sr', 'jr')}
+
+
+def find_on_careers_site(page, website, title):
+    """When the only link is a job board's, look for the job on the employer's own careers pages:
+    follow the link whose text matches the title best. Returns the page on the posting, or None."""
+    if not website:
+        return None
+    base = website if website.startswith(('http', 'file:')) else 'https://' + website
+    want = _title_words(title)
+    if not want:
+        return None
+    for path in _CAREERS_PATHS:
+        try:
+            page.goto(base.rstrip('/') + path, wait_until='domcontentloaded', timeout=25000)
+        except Exception:
+            continue
+        _settle(page)
+        try:
+            links = page.evaluate("""() => [...document.querySelectorAll('a[href]')].map(a => [a.innerText.trim().slice(0, 140), a.href])
+                .filter(([t, h]) => t && t.length > 8 && /^(?:https?|file):/.test(h))""")
+        except Exception:
+            continue
+        best, score = None, 0.0
+        for text, href in links:
+            have = _title_words(text)
+            if not have:
+                continue
+            sc = len(want & have) / len(want | have)
+            if sc > score:
+                best, score = href, sc
+        if best and score >= 0.5:
+            try:
+                page.goto(best, wait_until='domcontentloaded', timeout=30000)
+                _settle(page)
+                return page
+            except Exception:
+                return None
+    return None
+
+
 _SSO = re.compile(r'linkedin\.com|indeed\.com|taleo|successfactors|icims\.com/.*login|oraclecloud\.com', re.I)
 
 
@@ -819,6 +976,10 @@ def sign_in_wall(page):
         pw = 0
     host = host_of(page.url)
     n = _form_fields(scope)
+    if is_aggregator(page.url):
+        return f'{host} only has a copy of this posting and no link to the employer\'s application; paste the employer\'s own posting link'
+    if not is_application_form(scope) and n >= 3 and not pw:
+        return f'the form on {host} is not an application form (a job alert or search box); open the posting in the APEX window'
     if pw and n <= 4:
         return f'sign in or create an account on {host} once in the APEX window; APEX applies from then on'
     if _SSO.search(page.url) and n < 3:
@@ -1068,7 +1229,7 @@ def make_pdf(ctx, app_url, struct, template='tech'):
 
 
 def apply_job(url, pdf_path, letter, contact, answers=None, ask=None, do_submit=False, shot_path='', pdf_maker=None,
-              logins=None, on_login=None):
+              logins=None, on_login=None, website='', title=''):
     """Open the application in the APEX browser window, fill it, answer it and (do_submit) submit it.
     pdf_maker(ctx) -> path makes the resume PDF on the browser thread when pdf_path is ''.
     logins: {host: {email, password}} APEX kept; on_login(host, email, password) saves a new one.
@@ -1077,7 +1238,7 @@ def apply_job(url, pdf_path, letter, contact, answers=None, ask=None, do_submit=
         path = pdf_path or (pdf_maker(ctx) if pdf_maker else '')
         page = ctx.new_page()
         page.bring_to_front()
-        r = fill_form(page, url, path, letter, contact, answers, ask, do_submit, shot_path, logins, on_login)
+        r = fill_form(page, url, path, letter, contact, answers, ask, do_submit, shot_path, logins, on_login, website, title)
         if r['status'] == 'submitted':
             for pg in list(ctx.pages):
                 if pg.url == r.get('url') or pg is page:
