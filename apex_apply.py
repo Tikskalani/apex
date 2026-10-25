@@ -797,9 +797,12 @@ def is_application_form(scope):
     try:
         return bool(scope.evaluate("""() => {
           const vis = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+          const hiddenAncestor = e => { for (let p = e.parentElement; p && p !== document.body; p = p.parentElement) {
+            const s = getComputedStyle(p); if (s.display === 'none' || s.visibility === 'hidden') return true; } return false; };
           const els = [...document.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button]), textarea, select, button[aria-haspopup="listbox"]')];
-          const files = els.filter(e => e.type === 'file').length;
-          const shown = els.filter(e => vis(e) || e.type === 'file');
+          const files = els.filter(e => e.type === 'file' && !hiddenAncestor(e)).length;
+          const shown = els.filter(e => e.type === 'file' ? !hiddenAncestor(e) : vis(e));
+          if (files && shown.length < 2) return false;        // a lone upload box (search by resume) is not an application
           const txt = e => ((e.id || '') + ' ' + (e.name || '') + ' ' + (e.getAttribute('aria-label') || '') + ' ' + (e.placeholder || '') + ' '
             + ((e.labels && e.labels[0]) ? e.labels[0].innerText : '') + ' ' + (e.getAttribute('data-automation-id') || '')).toLowerCase();
           const has = rx => shown.some(e => rx.test(txt(e)));
