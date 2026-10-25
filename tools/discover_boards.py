@@ -12,7 +12,6 @@ list are kept. Writes data/boards.json: {"greenhouse": {slug: company}, "ashby":
 """
 import argparse
 import json
-import os
 import re
 import sys
 import threading
