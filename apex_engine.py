@@ -1007,8 +1007,10 @@ DOCUMENT-LEVEL PROBLEMS TO FIX: {_safe(json.dumps(docx.get('problems') or [], en
 MOST RELEVANT TO THE TARGET: {_safe(", ".join(str(x) for x in docx.get('most_relevant') or [])) or 'use your judgement'}
 {chr(10).join(extra)}
 Rewrite these ids: {", ".join(part)}.
-For each id return the new text as a list of lines (one line for the summary; a bullet may become 1-2 bullets,
-no marker characters). A bullet keeps its own achievement: never move another bullet's achievement into it (that
+For each id return the new text as a list of lines (one line for the summary; a bullet may become 1-3 bullets,
+no marker characters). A bullet is ONE achievement that fits in two printed lines: at most 200 characters. A source
+bullet longer than that is split into 2-3 bullets of one idea each, every fact kept exactly once; a bullet is never
+padded to reach the limit. A bullet keeps its own achievement: never move another bullet's achievement into it (that
 bullet stays on the page, so the fact would appear twice). Within each role, return the order you want its bullets in ("order"), most relevant to the
 target first, using the ORIGINAL ids (all of that role's ids). {sec}
 Return only the ids you change: leave out any id whose text you would keep as it is.

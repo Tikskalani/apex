@@ -616,3 +616,36 @@ def test_inbox_reply_moves_a_tracked_application_and_prep_pack(ui, app):
     expect(page.locator('#pp-prep')).to_contain_text('Tell me about your dashboards', timeout=30000)
     page.unroute('**/inbox/scan')
     ui.assert_clean()
+
+
+def test_add_jobs_by_link_queues_them(ui, fixture_resume):
+    """Pasted job links go to /api/agent/links; the page reports what was queued and what failed."""
+    page = ui.page
+    page.evaluate('r => { document.getElementById("resume-text").value = r; }', fixture_resume)
+    go(page, 'queue')
+    if page.locator('#ag-profile option[value=""]').count():
+        page.click('[data-action="agNew"]')
+        page.fill('#ag-name', 'Links')
+        page.fill('#ag-targets', 'AI Engineer')
+        page.uncheck('#ag-active')
+        page.click('[data-action="agUseResume"]')
+        page.click('[data-action="agSave"]')
+        expect(page.locator('#ag-editor')).to_be_hidden()
+    seen = {}
+
+    def links(route):
+        seen['body'] = json.loads(route.request.post_data)
+        route.fulfill(status=200, content_type='application/json', body=json.dumps({
+            'added': 1, 'items': [{'url': 'https://jobs.ashbyhq.com/acme/1', 'title': 'AI Engineer', 'company': 'Acme',
+                                   'fit': 80, 'new': True, 'status': 'approved', 'direct': False}],
+            'failed': [{'url': 'https://www.linkedin.com/jobs/view/1/', 'reason': 'the page shows a sign-in'}]}))
+    page.route('**/api/agent/links', links)
+    page.click('text=Add jobs by link')
+    page.fill('#ag-links', 'https://jobs.ashbyhq.com/acme/1\nnot a link\nhttps://www.linkedin.com/jobs/view/1/')
+    page.click('#ag-add-links')
+    expect(page.locator('#ag-links-status')).to_contain_text('1 queued and being tailored')
+    expect(page.locator('#ag-links-status')).to_contain_text('sign-in')
+    assert seen['body']['urls'] == ['https://jobs.ashbyhq.com/acme/1', 'https://www.linkedin.com/jobs/view/1/']
+    assert page.input_value('#ag-links').strip() == 'https://www.linkedin.com/jobs/view/1/', 'failed links stay to fix'
+    page.unroute('**/api/agent/links')
+    ui.assert_clean()

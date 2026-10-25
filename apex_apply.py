@@ -517,23 +517,10 @@ def fill_form(page, url, pdf_path, letter, contact, answers=None, ask=None, do_s
     Returns {filled: [fields], missing: [required questions left], status, detail}. status is
     'filled' (not submitted), 'submitted', 'captcha', 'invalid', 'unconfirmed' or 'needs_you'
     (required questions APEX could not answer; nothing was submitted)."""
-    page.goto(form_url(url), wait_until='domcontentloaded', timeout=45000)
-    try:
-        page.wait_for_load_state('networkidle', timeout=8000)
-    except Exception:
-        pass
-    gh = next((f.url for f in page.frames if 'greenhouse.io' in (f.url or '') and 'job_app' in (f.url or '')), '')
-    if gh and gh != page.url:                            # a form embedded in a careers page: open it directly
-        page.goto(gh, wait_until='domcontentloaded', timeout=45000)
-    if board(url) == 'greenhouse':                       # older boards show the form after "Apply"
-        for label in ('Apply for this job', 'Apply Now', 'Apply'):
-            btn = page.get_by_role('button', name=label).first
-            try:
-                if btn.count() and btn.is_visible() and not page.locator('#first_name').count():
-                    btn.click()
-                    break
-            except Exception:
-                pass
+    page = reach_form(page, url)
+    wall = sign_in_wall(page)
+    if wall:
+        return _left_for_person(page, {'filled': [], 'missing': [wall], 'status': 'needs_you', 'detail': wall})
     log = []
     first, last = split_name(contact.get('name'))
     if not _fill(page, 'first_name', first, log) | _fill(page, 'last_name', last, log):
@@ -548,12 +535,20 @@ def fill_form(page, url, pdf_path, letter, contact, answers=None, ask=None, do_s
         status, detail = submit(page, shot_path)
     else:
         status, detail = ('needs_you', '') if do_submit else ('filled', '')
+    return _left_for_person(page, {'filled': log, 'missing': missing, 'status': status, 'detail': detail})
+
+
+def _left_for_person(page, r):
+    """Show the person, in the APEX window, what is left to do on this form."""
+    status = r['status']
     if status != 'submitted':
         msg = {'captcha': 'APEX filled this application. The site wants a bot check: complete it and press Submit.',
                'needs_you': 'APEX filled what it could. Answer the questions it left, then press Submit.',
                'invalid': 'APEX pressed Submit but the site flagged some fields: fix them and press Submit.',
                'unconfirmed': 'APEX pressed Submit but saw no confirmation: check this page.'}.get(
                    status, 'APEX filled this application. Check it and press Submit.')
+        if status == 'needs_you' and r['detail']:
+            msg = 'APEX needs you here: ' + r['detail']
         try:
             page.evaluate("""m => { const d = document.createElement('div'); d.textContent = m;
               d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#1f5fbf;color:#fff;'
@@ -561,16 +556,134 @@ def fill_form(page, url, pdf_path, letter, contact, answers=None, ask=None, do_s
               document.body.appendChild(d); }""", msg)
         except Exception:
             pass
-    return {'filled': log, 'missing': missing, 'status': status, 'detail': detail}
+    r['url'] = page.url
+    return r
+
+
+_INPUTS = 'input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=search]), textarea, select'
+_APPLY_TEXT = re.compile(r'^\s*(?:apply(?: now| for this (?:job|position|role)| on (?:the )?company(?:\'s)? (?:site|website))?'
+                         r'|apply externally|continue to (?:apply|application)|i.?m interested)\s*$', re.I)
+
+
+def _form_fields(page):
+    try:
+        return page.locator(_INPUTS).evaluate_all(
+            'els => els.filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 }).length')
+    except Exception:
+        return 0
+
+
+def _settle(page):
+    try:
+        page.wait_for_load_state('domcontentloaded', timeout=20000)
+        page.wait_for_load_state('networkidle', timeout=8000)
+    except Exception:
+        pass
+
+
+def reach_form(page, url, hops=3):
+    """Open the posting and get to its application form: Greenhouse forms embedded in a careers
+    page are opened directly; a job board's or aggregator's "Apply" button is followed (also into
+    a new tab) until a page with a form, or a known applicant tracking system, is reached.
+    Returns the page holding the form (which may be a new tab)."""
+    page.goto(form_url(url), wait_until='domcontentloaded', timeout=45000)
+    _settle(page)
+    for _ in range(hops):
+        gh = next((f.url for f in page.frames if 'greenhouse.io' in (f.url or '') and 'job_app' in (f.url or '')), '')
+        if gh and gh != page.url:                        # a form embedded in a careers page: open it directly
+            page.goto(gh, wait_until='domcontentloaded', timeout=45000)
+            _settle(page)
+        if board(page.url) and form_url(page.url) != page.url:
+            page.goto(form_url(page.url), wait_until='domcontentloaded', timeout=45000)
+            _settle(page)
+        if _form_fields(page) >= 3:
+            return page
+        btn = None
+        for loc in (page.get_by_role('link', name=_APPLY_TEXT), page.get_by_role('button', name=_APPLY_TEXT)):
+            for k in range(min(loc.count(), 5)):
+                try:
+                    if loc.nth(k).is_visible():
+                        btn = loc.nth(k)
+                        break
+                except Exception:
+                    continue
+            if btn is not None:
+                break
+        if btn is None:
+            return page
+        before = set(page.context.pages)
+        try:
+            btn.click(timeout=8000)
+        except Exception:
+            return page
+        page.wait_for_timeout(2500)
+        new = [p for p in page.context.pages if p not in before]
+        if new:                                          # the employer's site opened in a new tab
+            page = new[-1]
+            page.bring_to_front()
+        _settle(page)
+    return page
+
+
+_SSO = re.compile(r'linkedin\.com|indeed\.com|myworkdayjobs\.com|workday|taleo|successfactors|icims\.com/.*login|'
+                  r'oraclecloud\.com', re.I)
+
+
+def sign_in_wall(page):
+    """'' when the form is open; otherwise what the person must do first (sign in, create an account)."""
+    try:
+        pw = page.locator('input[type=password]').evaluate_all(
+            'els => els.filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 }).length')
+    except Exception:
+        pw = 0
+    host = re.sub(r'^https?://(?:www\.)?([^/]+).*', r'\1', page.url)
+    if pw and _form_fields(page) <= 4:
+        return f'sign in or create an account on {host} once in the APEX window; APEX applies from then on'
+    if _SSO.search(page.url) and _form_fields(page) < 3:
+        return f'{host} needs you to sign in once in the APEX window'
+    if _form_fields(page) < 3:
+        return f'APEX could not find the application form on {host}; open it in the APEX window'
+    return ''
 
 
 # ── the APEX browser window (one thread owns Playwright) ─────────────────────
 
+# The installed Chrome first: Playwright's own Chromium is unsigned, and Windows 11 (Smart App
+# Control) refuses to start unsigned programs. APEX's window always uses its own profile folder.
+CHANNELS = [c for c in (os.environ.get('APEX_BROWSER_CHANNEL') or 'chrome,msedge,chromium').split(',') if c]
+
+
+def launch(pw):
+    """The APEX browser window. Raises RuntimeError naming every browser tried."""
+    errors = []
+    for ch in CHANNELS:
+        try:
+            return pw.chromium.launch_persistent_context(
+                PROFILE_DIR, channel=None if ch == 'chromium' else ch, headless=False, no_viewport=True,
+                args=['--start-maximized'])
+        except Exception as e:
+            errors.append(f'{ch}: {str(e).splitlines()[0][:120]}')
+    raise RuntimeError('APEX could not open a browser window (' + '; '.join(errors) + '). Install Google Chrome, '
+                       'or close every Microsoft Edge window and try again.')
+
+
 def _browser_loop():
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
-        ctx = pw.chromium.launch_persistent_context(PROFILE_DIR, headless=False, no_viewport=True,
-                                                    args=['--start-maximized'])
+        try:
+            ctx = launch(pw)
+        except Exception as e:
+            _STATE['error'] = str(e)
+            print(f'  [apply] {e}', flush=True)
+            while True:                                  # every waiting job learns why at once
+                try:
+                    job = _JOBS.get_nowait()
+                except queue.Empty:
+                    break
+                if job:
+                    job[1](None, str(e))
+            return
+        _STATE['error'] = ''
         try:
             while True:
                 job = _JOBS.get()
@@ -612,8 +725,13 @@ def run(fn, timeout=240):
         box.update(result=result, err=err)
         ev.set()
     _JOBS.put((fn, done))
-    if not ev.wait(timeout):
-        return None, 'The application took too long; it is open in the APEX browser window.'
+    end = time.time() + timeout
+    while not ev.wait(1):
+        t = _STATE['thread']
+        if not (t and t.is_alive()):                     # the browser could not start, or crashed
+            return None, _STATE['error'] or 'The APEX browser window closed unexpectedly; try again.'
+        if time.time() > end:
+            return None, 'The application took too long; it is open in the APEX browser window.'
     if box['err'] and 'closed' in box['err']:
         _STATE['thread'] = None
     return box['result'], box['err']
@@ -625,7 +743,12 @@ def make_pdf(ctx, app_url, struct, template='tech'):
     page = ctx.new_page()
     try:
         page.goto(app_url, wait_until='domcontentloaded', timeout=30000)
-        page.wait_for_function('() => typeof ATS !== "undefined" && typeof jspdf !== "undefined"', timeout=30000)
+        for _ in range(60):          # APEX's CSP forbids string evaluation, so no wait_for_function: poll
+            if page.evaluate("() => typeof ATS !== 'undefined'"):
+                break
+            page.wait_for_timeout(500)
+        else:
+            raise RuntimeError('the APEX page did not load its PDF exporter')
         return page.evaluate("""async ([st, tpl]) => {
             if (!st.name && st.raw) st = (await parseResumeText(st.raw)).struct;
             const out = await ATS.pdf(st, 'tailored', tpl, { blob: true });
@@ -646,7 +769,9 @@ def apply_job(url, pdf_path, letter, contact, answers=None, ask=None, do_submit=
         page.bring_to_front()
         r = fill_form(page, url, path, letter, contact, answers, ask, do_submit, shot_path)
         if r['status'] == 'submitted':
-            page.close()
+            for pg in list(ctx.pages):
+                if pg.url == r.get('url') or pg is page:
+                    pg.close()
         return r
     return run(fn)
 

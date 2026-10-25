@@ -1807,6 +1807,15 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
               <button class="btn btn-primary btn-sm" data-action="agScan" id="ag-scan">Scan now</button>
             </div>
             <div id="ag-status" role="status" style="margin-top:var(--s3);font-size:13px;color:var(--fg-2)"></div>
+            <details style="margin-top:var(--s3)">
+              <summary style="cursor:pointer;font-weight:600">Add jobs by link</summary>
+              <p style="font-size:13px;color:var(--fg-2);margin:var(--s2) 0">Paste job links, one per line: LinkedIn, Indeed, Greenhouse, Lever, Ashby or a company careers page. APEX reads each posting, finds the employer's own application when the link is a job board's, tailors your resume to the posting, writes the cover letter and applies.</p>
+              <textarea id="ag-links" rows="4" aria-label="Job links, one per line" placeholder="https://www.linkedin.com/jobs/view/…&#10;https://boards.greenhouse.io/…"></textarea>
+              <div style="display:flex;gap:var(--s2);align-items:center;margin-top:var(--s2);flex-wrap:wrap">
+                <button class="btn btn-primary btn-sm" data-action="agAddLinks" id="ag-add-links">Add and apply</button>
+                <span id="ag-links-status" style="font-size:13px;color:var(--fg-2)"></span>
+              </div>
+            </details>
           </div>
           <div class="card" id="ag-editor" hidden style="margin-bottom:var(--s4)">
             <div class="card-h"><h3 id="ag-editor-title">Profile</h3></div>
@@ -2456,6 +2465,25 @@ async function agDelete() {
   catch (e) { toast(e.message, 'err'); }
 }
 
+async function agAddLinks(btn) {
+  const urls = $('ag-links').value.split(/\s+/).map(x => x.trim()).filter(x => /^https?:\/\//i.test(x));
+  if (!urls.length) { toast('Paste at least one job link', 'err'); return; }
+  if (!AG.pid) { toast('Create a profile first', 'err'); return; }
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Reading…';
+  $('ag-links-status').textContent = `Reading ${urls.length} posting${urls.length === 1 ? '' : 's'}…`;
+  try {
+    const j = await api('/api/agent/links', { profile: AG.pid, urls });
+    const ok = j.items.filter(i => i.new);
+    $('ag-links-status').innerHTML = `${escHtml(String(ok.length))} queued and being tailored`
+      + (j.items.length - ok.length ? ` · ${j.items.length - ok.length} already in the queue` : '')
+      + (j.failed.length ? `<div style="color:var(--amber);margin-top:4px">Could not read ${j.failed.length}:<br>` + j.failed.map(f => escHtml(f.url.slice(0, 70)) + ' — ' + escHtml(f.reason)).join('<br>') + '</div>' : '');
+    $('ag-links').value = j.failed.map(f => f.url).join('\n');
+    toast(ok.length ? `${ok.length} job${ok.length === 1 ? '' : 's'} added. Tailoring now; each applies when its kit is ready.` : 'Nothing new was added', ok.length ? 'ok' : '');
+    await agQueue();
+  } catch (e) { toast(e.message, 'err'); $('ag-links-status').textContent = e.message; }
+  finally { btn.disabled = false; btn.textContent = 'Add and apply'; }
+}
+
 async function agScan(btn) {
   if (!AG.pid) return;
   btn.disabled = true;
@@ -2492,7 +2520,7 @@ function agCard(i) {
   const meta = [i.company, i.location, i.salary, i.posted && 'posted ' + i.posted, i.source].filter(Boolean).map(escHtml).join(' · ');
   const why = (arr(r.matched).length ? `<div style="font-size:12.5px;color:var(--green-soft)">You show: ${escHtml(arr(r.matched).join(', '))}</div>` : '')
     + (arr(r.missing).length ? `<div style="font-size:12.5px;color:var(--fg-3)">Not on your resume: ${escHtml(arr(r.missing).join(', '))}</div>` : '');
-  const link = i.url ? `<a class="copy-btn" href="${escHtml(i.url)}" target="_blank" rel="noopener noreferrer">Open posting</a>` : '';
+  const link = (k.direct_url || i.url) ? `<a class="copy-btn" href="${escHtml(k.direct_url || i.url)}" target="_blank" rel="noopener noreferrer">Open posting</a>` : '';
   let act = '';
   if (i.status === 'proposed') act = `<button class="btn btn-primary btn-sm" data-action="agApplyNow" data-arg="${escHtml(i.id)}">Apply</button><button class="btn btn-sm" data-action="agApprove" data-arg="${escHtml(i.id)}">Prepare only</button><button class="btn btn-sm" data-action="agSkip" data-arg="${escHtml(i.id)}">Skip</button>${link}`;
   else if (i.status === 'approved' || i.status === 'preparing') act = `<span class="spinner"></span><span style="font-size:13px">Tailoring the resume and writing the cover letter…${AG.autoApply.has(i.id) ? ' The application opens when it is ready.' : ''}</span>${link}`;
@@ -2655,6 +2683,7 @@ const ACTIONS = {
   agSave:      el => agSave(el),
   agDelete:    () => agDelete(),
   agScan:      el => agScan(el),
+  agAddLinks:  el => agAddLinks(el),
   agApprove:   el => agAct('/api/agent/approve', [el.dataset.arg], el),
   agApproveAll: el => agApproveAll(el),
   agSkip:      el => agAct('/api/agent/skip', [el.dataset.arg], el),
@@ -4297,17 +4326,17 @@ async function ensureResumeStruct({ quiet = false } = {}) {
 // ─── PDF Templates ───
 // What each style changes in the PDF and DOCX (single column, real text).
 const TPL_STYLE = {
-  modern:    { serif: false, align: 'left',   caps: true,  rule: 'thin',  accent: [31, 95, 191],  name: 18, head: 11.5, body: 10.5, lead: 0.165, gap: 0.10, docx: 'Calibri',
+  modern:    { serif: false, align: 'left',   caps: true,  rule: 'thin',  accent: [31, 95, 191],  name: 18, head: 11.5, body: 10.5, lead: 0.178, gap: 0.11, docx: 'Calibri',
                desc: 'Sans-serif, blue headings over a thin rule, left-aligned header. The safe default.' },
-  classic:   { serif: true,  align: 'center', caps: true,  rule: 'thin',  accent: [0, 0, 0],      name: 17, head: 11.5, body: 10.5, lead: 0.165, gap: 0.10, docx: 'Times New Roman',
+  classic:   { serif: true,  align: 'center', caps: true,  rule: 'thin',  accent: [0, 0, 0],      name: 17, head: 11.5, body: 10.5, lead: 0.178, gap: 0.11, docx: 'Times New Roman',
                desc: 'Serif (Times), centred header, black ruled headings. Conservative fields.' },
-  tech:      { serif: false, align: 'center', caps: true,  rule: 'thin',  accent: [17, 17, 17],   name: 20, head: 11,   body: 10.5, lead: 0.158, gap: 0.07, docx: 'Arial',
+  tech:      { serif: false, align: 'center', caps: true,  rule: 'thin',  accent: [17, 17, 17],   name: 20, head: 11,   body: 10.5, lead: 0.178, gap: 0.11, docx: 'Arial',
                desc: "The engineers' favourite (Jake's-resume layout): centred header, black headings over thin rules, dense and easy to scan." },
-  executive: { serif: true,  align: 'center', caps: true,  rule: 'thick', accent: [20, 33, 61],   name: 21, head: 12,   body: 10.5, lead: 0.17,  gap: 0.12, docx: 'Georgia',
+  executive: { serif: true,  align: 'center', caps: true,  rule: 'thick', accent: [20, 33, 61],   name: 21, head: 12,   body: 10.5, lead: 0.182, gap: 0.13, docx: 'Georgia',
                desc: 'Large serif name, centred header, heavy navy rules. Senior and leadership roles.' },
-  creative:  { serif: false, align: 'left',   caps: false, rule: 'none',  accent: [190, 24, 93],  name: 20, head: 13,   body: 10.5, lead: 0.165, gap: 0.11, docx: 'Calibri',
+  creative:  { serif: false, align: 'left',   caps: false, rule: 'none',  accent: [190, 24, 93],  name: 20, head: 13,   body: 10.5, lead: 0.178, gap: 0.12, docx: 'Calibri',
                desc: 'Sans-serif with magenta title-case headings and no rules.' },
-  minimal:   { serif: false, align: 'left',   caps: false, rule: 'none',  accent: [95, 99, 104],  name: 17, head: 11,   body: 10.5, lead: 0.175, gap: 0.15, docx: 'Calibri Light',
+  minimal:   { serif: false, align: 'left',   caps: false, rule: 'none',  accent: [95, 99, 104],  name: 17, head: 11,   body: 10.5, lead: 0.185, gap: 0.16, docx: 'Calibri Light',
                desc: 'Grey headings, no rules, extra white space.' },
 };
 async function initTemplatesTab() {
@@ -4571,11 +4600,29 @@ const ATS = {
   },
 
   // ─── PDF: real selectable text via jsPDF ───
+  // Drawn with breathing room first; if that spills past the page limit (2 by default), the
+  // spacing is tightened in steps, the body size last, until it fits. The tightest step is
+  // still as open as a standard one-page resume.
+  PDF_DENSITY: [{ lead: 1, gap: 1, body: 0 }, { lead: 0.955, gap: 0.85, body: 0 }, { lead: 0.915, gap: 0.7, body: 0 },
+                { lead: 0.885, gap: 0.6, body: -0.5 }, { lead: 0.86, gap: 0.55, body: -0.5 }],
   async pdf(struct, tag, tpl, opts) {
+    const max = (opts && opts.maxPages) || 2;
+    let r = null;
+    for (const density of this.PDF_DENSITY) {
+      r = await this._pdfOnce(struct, tag, tpl, Object.assign({}, opts, { density }));
+      if (r.pages <= max) break;
+    }
+    const out = { font: r.font, missing: r.missing, pages: r.pages };
+    if (opts && opts.blob) return Object.assign(out, { blob: r.doc.output('blob') });
+    r.doc.save(this.filename(this.norm(struct), 'pdf', tag));
+    return out;
+  },
+  async _pdfOnce(struct, tag, tpl, opts) {
     const { jsPDF } = await loadLib('jspdf');
     const fonts = await loadPdfFonts();
     const d = this.norm(struct);
-    const T = this.style(tpl);
+    const T0 = this.style(tpl), dn = (opts && opts.density) || { lead: 1, gap: 1, body: 0 };
+    const T = Object.assign({}, T0, { lead: T0.lead * dn.lead, gap: T0.gap * dn.gap, body: T0.body + dn.body });
     const doc = new jsPDF({ unit: 'in', format: 'letter', orientation: 'portrait' });
     const warn = { missing: new Set() };
 
@@ -4669,7 +4716,7 @@ const ATS = {
         doc.text(ln, X0 + IND, y);
         y += LEAD;
       });
-      y += LEAD * 0.08;
+      y += 0.028;
     };
     // An entry: bold title with the dates flush right, then company and location in italics.
     const entry = (main, dates, sub) => {
@@ -4742,7 +4789,7 @@ const ATS = {
         if (!d.experience.length) return;
         section('Professional Experience');
         d.experience.forEach((e, i) => {
-          if (i) y += GAP * 0.8;
+          if (i) y += GAP * 0.9;
           const h = this.entryHead(e);
           entry(h.main, this.dateRange(e), h.sub);
           e.bullets.forEach(bullet);
@@ -4752,7 +4799,7 @@ const ATS = {
         if (!d.projects.length) return;
         section('Projects');
         d.projects.forEach((p, i) => {
-          if (i) y += GAP * 0.8;
+          if (i) y += GAP * 0.9;
           entry(p.name, p.date, p.description);
           p.bullets.forEach(bullet);
           if (p.tech.length) labelled('Technologies', p.tech.join(', '), T.body - 1, 'italic');
@@ -4769,7 +4816,7 @@ const ATS = {
       skills: () => {
         if (!d.skills.length) return;
         section('Skills');
-        d.skills.forEach(g => labelled(g.label, g.items.join(', '), T.body));
+        d.skills.forEach((g, i) => { if (i) y += 0.03; labelled(g.label, g.items.join(', '), T.body); });
       },
       languages: () => { if (d.languages.length) { section('Languages'); text(d.languages.join(', '), T.body, 'normal'); } },
       awards: () => { if (d.awards.length) { section('Awards'); d.awards.forEach(bullet); } },
@@ -4788,9 +4835,7 @@ const ATS = {
     }
 
     doc.setProperties({ title: (d.name ? d.name + ' — ' : '') + 'Resume', creator: 'APEX' });
-    if (opts && opts.blob) return { blob: doc.output('blob'), font: FAM, missing: [...warn.missing], pages };
-    doc.save(this.filename(d, 'pdf', tag));
-    return { font: FAM, missing: [...warn.missing], pages };
+    return { doc, font: FAM, missing: [...warn.missing], pages };
   },
 
   // ─── DOCX: Word renders it with the template's font ───
@@ -4820,7 +4865,7 @@ const ATS = {
       Object.assign({ spacing: { before: Math.round(T.gap * 1440 * 1.6), after: 80 } },
         T.rule !== 'none' ? { border: { bottom: { color: T.rule === 'thick' ? ACC : '999999', size: T.rule === 'thick' ? 12 : 6, style: D.BorderStyle.SINGLE, space: 2 } } } : {})
     ));
-    const body = (t, o) => para([run(t, { size: HALF(T.body) })], Object.assign({ spacing: { after } }, o || {}));
+    const body = (t, o) => para([run(t, { size: HALF(T.body) })], Object.assign({ spacing: { after, line: 276 } }, o || {}));
 
     const headed = (left, right, before) => kids.push(para(
       [run(left || '', { bold: true, size: HALF(T.body) })].concat(right ? [run('\t' + right, { size: HALF(T.body) })] : []),
