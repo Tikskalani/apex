@@ -401,7 +401,7 @@ The job agent (`/api/agent/*`, JSON, local only):
 | Method | Path | Body / query | Response |
 |---|---|---|---|
 | GET | `/api/agent/profiles` | | `{"profiles": [{id, name, base_resume, targets, location, remote_ok, daily_limit, min_fit, active, last_scan}], "scan_hour"}` |
-| POST | `/api/agent/profiles` | `id` (to update), `name` (required), `targets` (list or comma-separated, up to 6), `base_resume`, `location`, `remote_ok`, `daily_limit` (1-50, 30), `min_fit` (0-90, 35), `active` | `{"profile"}` |
+| POST | `/api/agent/profiles` | `id` (to update), `name` (required), `targets` (list or comma-separated, up to 6), `base_resume`, `location`, `remote_ok`, `daily_limit` (1-50, 30), `min_fit` (0-90, 35), `active`, `auto_prepare` (0-20), `auto_submit`, `answers` {authorized, sponsorship, relocate, salary, start, hear, city, state, zip, address, preferred_name, gender, race, hispanic, veteran, disability, pronouns...}, `followups` (`auto`, `draft`, `off`), `digest_email`, `skip_ghosts` | `{"profile"}` |
 | POST | `/api/agent/profiles/delete` | `id` | `{"deleted": true}` (its queue goes with it; Tracker rows stay) |
 | POST | `/api/agent/scan` | `profile` | `{"started": true}`; the scan runs in the background |
 | GET | `/api/agent/queue` | `?profile=` | `{"items": [{id, title, company, location, url, source, salary, posted, posting (first 400 chars), fit, reasons {target, matched, missing}, status, kit, application_id, scanned_on}], "scanning", "preparing"}`. Status: `proposed`, `approved`, `preparing`, `ready`, `applied`, `skipped`, `failed` |
@@ -411,7 +411,17 @@ The job agent (`/api/agent/*`, JSON, local only):
 | POST | `/api/agent/apply` | `id`, `pdf_b64` (the tailored resume PDF the page made) | One-tap Apply. `{"mode": "filled", "url", "filled": [fields], "error"}`: the application opened in the APEX browser window (a Chromium profile in `apex_browser/`, via `apex_apply.py`) and its contact fields, resume and cover letter were filled; nothing is submitted. `{"mode": "link", "url"}` when Playwright is not installed or `APEX_FORM_FILL=0`: the page opens the posting |
 | GET | `/api/agent/radar` | `?profile=` | `{"postings", "days", "skills": [{term, share, shown, trend}], "gaps": [...the most-asked skills not shown], "families": [{family, label, share}]}` over the last 14 days of scans. `share` is the % of full postings asking for the skill; `shown` is whether the base resume or the evidence vault shows it; `trend` is the change in share against the 14 days before (null with fewer than 10 postings then) |
 | GET | `/api/agent/digest` | `?profile=` | `{"day", "new", "ready", "top": [{id, title, company, fit, status}], "gaps", "postings"}`: today's new matches, kits ready to apply, the top gaps |
+| POST | `/api/applications/followup/send` | `id`, `which` (1 or 2; default: the one due) | `{"sent": true, "to", "subject", "which"}` from your SMTP mailbox; `400` without a contact address, without SMTP, or when the draft was withheld |
+| POST | `/api/applications/brief` | `id` | `{"brief": {company, site, github, sources, what, product, stack, recent, size_funding, culture, angle (fact-checked), questions, withheld}}`; saved as the `company_brief` artifact |
+| POST | `/api/applications/warm` | `id` | `{"warm": {company, people: [{name, how (email, github, hn), url, address?, why}], github, note_recruiter, note_engineer, withheld}}`; saved as the `warm_path` artifact |
 | POST | `/api/applications/prep` | `id`, `resume` | `{"pack": {company, role, from_posting, focus, questions: [{q, kind, why, outline}], stories: [{title, situation, action, result}], ask, review, withheld}}`, also saved as the application's `interview_prep` artifact (JSON). Outlines and stories are fact-checked against the resume and the evidence vault: a withheld outline is `""`, a withheld story is left out, `withheld` counts both. One model call. `503` without an AI key |
+| GET | `/api/agent/logins` | | `{"logins": [{host, email, created_at}]}`: sign-ins APEX created on career sites (no passwords) |
+| POST | `/api/agent/logins/reveal` | `host` | `{"email", "password"}` |
+| POST | `/api/agent/logins/delete` | `host` | `{"deleted": true}` |
+| GET | `/api/agent/analytics` | | `{"funnel": {sent, replied, interviews, offers, rejected, ghosted, submitted_by_apex}, "by_family", "by_source", "by_fit", "by_weekday", "by_template": [{key, n, replied, rate, interviews}], "median_days_to_reply", "recommendations": [...], "enough_data"}` |
+| GET | `/api/agent/digest/preview` | `?profile=` | The digest as data: `{day, new, top, ready, applied, needs_you, replies, followups_due, ghosts, gaps, postings}` |
+| POST | `/api/agent/digest/send` | `profile` | `{"sent": true, "to", "subject"}`; `400` without a digest address or SMTP |
+| POST | `/api/agent/followups/run` | | Runs the follow-up autopilot now: `{"drafted", "sent", "due": [{id, company, role, which, contact, reason?}], "ghosted"}` |
 | POST | `/api/agent/radar/ideas` | `profile` | `{"ideas": [{title, closes, builds_on, plan, measure, resume_line}], "gaps"}`: three project ideas for the top gaps (one model call). `400` with no gaps yet, `503` without an AI key |
 | POST | `/api/agent/applied` | `id` | `{"application"}`: created in the Tracker (status applied, source `agent`) with the tailored resume and cover letter as artifacts |
 

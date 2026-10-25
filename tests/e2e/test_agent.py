@@ -1,7 +1,7 @@
 """The job agent end to end, offline: profile -> scan (saved postings) -> approve -> kit -> applied -> Tracker."""
 import time
 
-from test_api import call
+from test_api import call, uniq
 
 
 def wait_for(app, pid, pred, timeout=60):
@@ -137,3 +137,37 @@ def test_radar_and_digest_routes(app, fixture_resume):
     assert st == 400 and 'scan first' in j['error']
     st, j = call(app, 'GET', '/api/agent/radar?profile=nope')
     assert st == 404
+
+
+def test_sign_ins_analytics_and_digest_routes(app, fixture_resume):
+    st, j = call(app, 'GET', '/api/agent/logins')
+    assert st == 200 and j == {'logins': []}
+    st, j = call(app, 'POST', '/api/agent/logins/reveal', {'host': 'nowhere.myworkdayjobs.com'})
+    assert st == 404
+    st, j = call(app, 'GET', '/api/agent/analytics')
+    assert st == 200 and set(j) >= {'funnel', 'by_family', 'by_source', 'recommendations', 'enough_data'}
+    st, j = call(app, 'POST', '/api/agent/profiles', {'name': 'Digest', 'targets': 'AI Engineer', 'base_resume': fixture_resume,
+                                                      'active': False, 'digest_email': 'me@example.com', 'followups': 'auto', 'skip_ghosts': False})
+    assert st == 200 and j['profile']['digest_email'] == 'me@example.com' and j['profile']['followups'] == 'auto' and j['profile']['skip_ghosts'] is False
+    pid = j['profile']['id']
+    st, j = call(app, 'GET', '/api/agent/digest/preview?profile=' + pid)
+    assert st == 200 and j['new'] == 0 and 'followups_due' in j and 'ghosts' in j
+    st, j = call(app, 'POST', '/api/agent/digest/send', {'profile': pid})
+    assert st == 400 and 'not set up' in j['error'], 'no SMTP in tests: a clear message, nothing sent'
+    st, j = call(app, 'POST', '/api/agent/profiles', {'name': 'Bad', 'targets': 'AI Engineer', 'digest_email': 'not-an-address'})
+    assert st == 400
+    st, j = call(app, 'POST', '/api/agent/followups/run', {})
+    assert st == 200 and set(j) == {'drafted', 'sent', 'due', 'ghosted'}
+
+
+def test_follow_up_send_needs_an_address(app):
+    st, j = call(app, 'POST', '/api/applications', {'company': uniq('FU'), 'role': 'AI Engineer', 'status': 'applied'})
+    aid = j['application']['id']
+    st, j = call(app, 'POST', '/api/applications/followup/send', {'id': aid})
+    assert st == 400 and 'no recruiter address' in j['error']
+    st, j = call(app, 'POST', '/api/applications/update', {'id': aid, 'contact_email': 'bad address'})
+    assert st == 400
+    st, j = call(app, 'POST', '/api/applications/update', {'id': aid, 'contact_email': 'rec@example.com', 'contact_name': 'Rec'})
+    assert st == 200 and j['application']['contact_email'] == 'rec@example.com'
+    st, j = call(app, 'POST', '/api/applications/followup/send', {'id': aid})
+    assert st == 400 and 'not set up' in j['error']

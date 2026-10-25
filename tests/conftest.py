@@ -19,6 +19,8 @@ sys.path.insert(0, str(ROOT))
 def server(tmp_path_factory):
     d = tmp_path_factory.mktemp('server_module')
     shutil.copy(ROOT / 'agent_server.py', d / 'agent_server.py')
+    (d / 'data').mkdir(exist_ok=True)
+    shutil.copy(ROOT / 'data' / 'boards.json', d / 'data' / 'boards.json')
     old = {k: os.environ.get(k) for k in ('APEX_DB', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'APEX_FIXTURE_JOBS')}
     os.environ['APEX_DB'] = str(d / 'apex.db')
     os.environ['APEX_FIXTURE_JOBS'] = str(ROOT / 'tests' / 'e2e' / 'fixtures' / 'jobs.json')

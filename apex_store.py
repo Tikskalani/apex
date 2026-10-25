@@ -15,6 +15,7 @@ Rules:
   message fit to show the user.
 """
 import json
+import re
 import os
 import sqlite3
 import uuid
@@ -27,7 +28,9 @@ SOURCES = ('manual', 'tailor', 'gmail', 'jobs', 'import', 'agent')
 QUEUE_STATUSES = ('proposed', 'approved', 'preparing', 'ready', 'applied', 'skipped', 'failed')
 MAX_PROFILES_PER_OWNER = 10
 MAX_QUEUE_PER_PROFILE = 3000        # old skipped / applied rows are kept so a job is never proposed twice
-ARTIFACT_KINDS = ('tailored_resume', 'cover_letter', 'followup', 'outreach', 'note', 'interview_prep')
+ARTIFACT_KINDS = ('tailored_resume', 'cover_letter', 'followup', 'outreach', 'note', 'interview_prep', 'company_brief',
+                  'warm_path')
+FOLLOWUP_MODES = ('auto', 'draft', 'off')
 FOLLOWUP_AFTER_DAYS = 7
 MAX_TEXT = 200_000           # per artifact; a resume is ~5 KB
 MAX_APPS_PER_OWNER = 2000    # a hosted visitor can't fill the disk
@@ -48,6 +51,10 @@ CREATE TABLE IF NOT EXISTS applications (
     next_action_on TEXT,                 -- YYYY-MM-DD, when to follow up
     notes          TEXT NOT NULL DEFAULT '',
     source         TEXT NOT NULL DEFAULT 'manual',
+    contact_email  TEXT NOT NULL DEFAULT '',   -- the recruiter or hiring contact, when known
+    contact_name   TEXT NOT NULL DEFAULT '',
+    followups_sent INTEGER NOT NULL DEFAULT 0,
+    last_reply_on  TEXT,                       -- YYYY-MM-DD of the last reply from the employer
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL
 );
@@ -88,6 +95,9 @@ CREATE TABLE IF NOT EXISTS profiles (       -- one per person the job agent sear
     auto_prepare INTEGER NOT NULL DEFAULT 5,   -- the best N new matches of each scan are prepared without asking
     auto_submit  INTEGER NOT NULL DEFAULT 0,   -- the agent submits prepared applications itself
     answers      TEXT NOT NULL DEFAULT '{}',   -- application answers: work authorization, sponsorship, demographics...
+    followups    TEXT NOT NULL DEFAULT 'draft',  -- auto (send when a recruiter address is known) | draft | off
+    digest_email TEXT NOT NULL DEFAULT '',     -- the morning digest goes here when SMTP is set up
+    skip_ghosts  INTEGER NOT NULL DEFAULT 1,   -- likely ghost postings are not proposed
     active       INTEGER NOT NULL DEFAULT 1,   -- scanned every morning
     last_scan    TEXT,                         -- YYYY-MM-DD (local) of the last scan
     created_at   TEXT NOT NULL,
@@ -121,6 +131,24 @@ CREATE TABLE IF NOT EXISTS radar (           -- what a day's scanned postings as
     day        TEXT NOT NULL,                  -- YYYY-MM-DD
     data       TEXT NOT NULL,                  -- {postings, terms: {term: n}, families: {id: n}}
     PRIMARY KEY (owner, profile_id, day)
+);
+CREATE TABLE IF NOT EXISTS logins (          -- sign-ins APEX created for the person on employers' career sites
+    owner      TEXT NOT NULL DEFAULT '',
+    host       TEXT NOT NULL,
+    email      TEXT NOT NULL,
+    password   TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (owner, host)
+);
+CREATE TABLE IF NOT EXISTS sightings (       -- every time a scan saw a job: how long it has been up, how often it reappears
+    owner      TEXT NOT NULL DEFAULT '',
+    job_key    TEXT NOT NULL,
+    first_seen TEXT NOT NULL,                  -- YYYY-MM-DD
+    last_seen  TEXT NOT NULL,
+    times      INTEGER NOT NULL DEFAULT 1,
+    posted     TEXT NOT NULL DEFAULT '',       -- the posting date the source showed first
+    reposted   INTEGER NOT NULL DEFAULT 0,     -- how many times the shown posting date moved forward
+    PRIMARY KEY (owner, job_key)
 );
 CREATE TABLE IF NOT EXISTS facts (           -- the evidence vault: things the candidate confirmed are true
     id         TEXT PRIMARY KEY,
@@ -212,6 +240,15 @@ def init():
         if not any(r['name'] == 'auto_submit' for r in conn.execute("SELECT name FROM pragma_table_info('profiles')")):
             conn.execute('ALTER TABLE profiles ADD COLUMN auto_submit INTEGER NOT NULL DEFAULT 0')
             conn.execute("ALTER TABLE profiles ADD COLUMN answers TEXT NOT NULL DEFAULT '{}'")
+        if not any(r['name'] == 'followups' for r in conn.execute("SELECT name FROM pragma_table_info('profiles')")):
+            conn.execute("ALTER TABLE profiles ADD COLUMN followups TEXT NOT NULL DEFAULT 'draft'")
+            conn.execute("ALTER TABLE profiles ADD COLUMN digest_email TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE profiles ADD COLUMN skip_ghosts INTEGER NOT NULL DEFAULT 1")
+        if not any(r['name'] == 'contact_email' for r in conn.execute("SELECT name FROM pragma_table_info('applications')")):
+            conn.execute("ALTER TABLE applications ADD COLUMN contact_email TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE applications ADD COLUMN contact_name TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE applications ADD COLUMN followups_sent INTEGER NOT NULL DEFAULT 0")
+            conn.execute("ALTER TABLE applications ADD COLUMN last_reply_on TEXT")
         conn.execute('DROP INDEX IF EXISTS applications_dedupe')     # pre-owner index
         conn.execute('DROP INDEX IF EXISTS score_title')
         conn.executescript(INDEXES)
@@ -357,7 +394,8 @@ def list_applications(*, owner=''):
 
 
 def update_application(app_id, changes, *, owner=''):
-    allowed = {'status', 'notes', 'next_action_on', 'url', 'location', 'company', 'role', 'applied_on'}
+    allowed = {'status', 'notes', 'next_action_on', 'url', 'location', 'company', 'role', 'applied_on', 'contact_email',
+               'contact_name'}
     unknown = set(changes) - allowed - {'id'}
     if unknown:
         raise StoreError(f'cannot update: {", ".join(sorted(unknown))}')
@@ -386,6 +424,13 @@ def _apply_update(conn, app_id, current, changes, owner):
     for f in ('company', 'role'):
         if f in changes:
             upd[f] = _text(changes[f], f, 200, required=True)
+    if 'contact_email' in changes:
+        v = _text(changes['contact_email'], 'contact email', 200)
+        if v and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', v):
+            raise StoreError('contact email does not look like an address')
+        upd['contact_email'] = v
+    if 'contact_name' in changes:
+        upd['contact_name'] = _text(changes['contact_name'], 'contact name', 200)
     if not upd:
         return
     if 'notes' in upd and len(upd['notes']) > len(current['notes']):
@@ -394,12 +439,16 @@ def _apply_update(conn, app_id, current, changes, owner):
     if upd.get('status') and upd['status'] != 'saved' and not current['applied_on'] and 'applied_on' not in upd:
         upd['applied_on'] = _today()
     m = {**current, **upd, 'updated_at': _now()}
+    if 'status' in upd and upd['status'] in ('interview', 'offer', 'rejected') and upd['status'] != current['status']:
+        m['last_reply_on'] = _today()                     # the employer answered
     try:
         conn.execute(
             'UPDATE applications SET company = ?, role = ?, url = ?, location = ?, status = ?, applied_on = ?,'
-            ' next_action_on = ?, notes = ?, updated_at = ? WHERE id = ? AND owner = ?',
+            ' next_action_on = ?, notes = ?, contact_email = ?, contact_name = ?, last_reply_on = ?, updated_at = ?'
+            ' WHERE id = ? AND owner = ?',
             (m['company'], m['role'], m['url'], m['location'], m['status'], m['applied_on'],
-             m['next_action_on'], m['notes'], m['updated_at'], app_id, owner))
+             m['next_action_on'], m['notes'], m.get('contact_email') or '', m.get('contact_name') or '',
+             m.get('last_reply_on'), m['updated_at'], app_id, owner))
     except sqlite3.IntegrityError:
         raise StoreError('another application already has this company, role and link')
     if 'status' in upd and upd['status'] != current['status']:
@@ -476,15 +525,34 @@ def _check_owner_bytes(conn, owner, adding):
         raise StoreError('your saved documents are using all the space this demo allows; delete some applications first')
 
 
-def record_followup_sent(app_id, days=FOLLOWUP_AFTER_DAYS, *, owner=''):
+def record_followup_sent(app_id, days=FOLLOWUP_AFTER_DAYS, *, owner='', by='you', to=''):
     """Mark that a follow-up went out; schedule the next one."""
     get_application(app_id, owner=owner)
     nxt = (date.fromisoformat(_today()) + timedelta(days=days)).isoformat()
     with _db() as conn:
-        conn.execute('UPDATE applications SET next_action_on = ?, updated_at = ? WHERE id = ? AND owner = ?',
-                     (nxt, _now(), app_id, owner))
-        _event(conn, app_id, 'followup_sent', next_action_on=nxt)
+        conn.execute('UPDATE applications SET next_action_on = ?, followups_sent = followups_sent + 1, updated_at = ?'
+                     ' WHERE id = ? AND owner = ?', (nxt, _now(), app_id, owner))
+        _event(conn, app_id, 'followup_sent', next_action_on=nxt, by=by, to=to)
     return get_application(app_id, owner=owner)
+
+
+def mark_ghosted(app_id, *, owner=''):
+    """Note that the employer has been silent long enough to stop waiting (the status stays)."""
+    with _db() as conn:
+        if conn.execute('SELECT 1 FROM events WHERE application_id = ? AND kind = ?', (app_id, 'ghosted')).fetchone():
+            return False
+        _event(conn, app_id, 'ghosted')
+        conn.execute('UPDATE applications SET updated_at = ? WHERE id = ? AND owner = ?', (_now(), app_id, owner))
+    return True
+
+
+def events_since(since_iso, *, owner=''):
+    """Events on this owner's applications at or after `since_iso`: [{application_id, at, kind, detail, company, role}]."""
+    with _db() as conn:
+        rows = conn.execute('SELECT e.application_id, e.at, e.kind, e.detail, a.company, a.role, a.status FROM events e'
+                            ' JOIN applications a ON a.id = e.application_id WHERE a.owner = ? AND e.at >= ? ORDER BY e.at',
+                            (owner, since_iso)).fetchall()
+    return [dict(r, detail=json.loads(r['detail'] or '{}')) for r in rows]
 
 
 # ── daily AI budget (hosted demo) ─────────────────────────────────────────────
@@ -583,6 +651,9 @@ def _profile_row(r):
     d['active'] = bool(d['active'])
     d['auto_submit'] = bool(d.get('auto_submit'))
     d['answers'] = json.loads(d.get('answers') or '{}')
+    d['skip_ghosts'] = bool(d.get('skip_ghosts', 1))
+    d['followups'] = d.get('followups') or 'draft'
+    d['digest_email'] = d.get('digest_email') or ''
     return d
 
 
@@ -610,16 +681,23 @@ def save_profile(data, *, owner=''):
            'auto_prepare': _int(data.get('auto_prepare'), 'prepared automatically', 0, 20, 5),
            'active': 1 if data.get('active', True) not in (False, 0, '0', 'false') else 0,
            'auto_submit': 1 if data.get('auto_submit') not in (None, False, 0, '0', 'false', '') else 0,
-           'answers': json.dumps(_answers(data.get('answers')), ensure_ascii=False)}
+           'answers': json.dumps(_answers(data.get('answers')), ensure_ascii=False),
+           'followups': data.get('followups') if data.get('followups') in FOLLOWUP_MODES else 'draft',
+           'digest_email': _text(data.get('digest_email'), 'digest email', 200),
+           'skip_ghosts': 1 if data.get('skip_ghosts', True) not in (False, 0, '0', 'false') else 0}
+    if rec['digest_email'] and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', rec['digest_email']):
+        raise StoreError('digest email does not look like an address')
     now = _now()
     with _db(immediate=True) as conn:
         pid = str(data.get('id') or '')
         row = conn.execute('SELECT id FROM profiles WHERE id = ? AND owner = ?', (pid, owner)).fetchone() if pid else None
         vals = (rec['name'], rec['base_resume'], rec['targets'], rec['location'], rec['remote_ok'],
-                rec['daily_limit'], rec['min_fit'], rec['auto_prepare'], rec['active'], rec['auto_submit'], rec['answers'])
+                rec['daily_limit'], rec['min_fit'], rec['auto_prepare'], rec['active'], rec['auto_submit'], rec['answers'],
+                rec['followups'], rec['digest_email'], rec['skip_ghosts'])
         if row:
             conn.execute('UPDATE profiles SET name = ?, base_resume = ?, targets = ?, location = ?, remote_ok = ?,'
                          ' daily_limit = ?, min_fit = ?, auto_prepare = ?, active = ?, auto_submit = ?, answers = ?,'
+                         ' followups = ?, digest_email = ?, skip_ghosts = ?,'
                          ' updated_at = ? WHERE id = ? AND owner = ?', (*vals, now, pid, owner))
         else:
             n = conn.execute('SELECT count(*) FROM profiles WHERE owner = ?', (owner,)).fetchone()[0]
@@ -627,8 +705,8 @@ def save_profile(data, *, owner=''):
                 raise StoreError(f'at most {MAX_PROFILES_PER_OWNER} profiles')
             pid = uuid.uuid4().hex
             conn.execute('INSERT INTO profiles (id, owner, name, base_resume, targets, location, remote_ok, daily_limit,'
-                         ' min_fit, auto_prepare, active, auto_submit, answers, created_at, updated_at)'
-                         ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                         ' min_fit, auto_prepare, active, auto_submit, answers, followups, digest_email, skip_ghosts,'
+                         ' created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                          (pid, owner, *vals, now, now))
     return get_profile(pid, owner=owner)
 
@@ -862,3 +940,68 @@ def submitted_today(pid, day, *, owner=''):
         rows = conn.execute("SELECT kit FROM queue WHERE owner = ? AND profile_id = ? AND status = 'applied'",
                             (owner, pid)).fetchall()
     return sum(1 for r in rows if (json.loads(r['kit'] or '{}').get('submission') or {}).get('day') == day)
+
+
+# ── sign-ins APEX made for the person (Workday and other career sites) ───────
+
+def save_login(host, email, password, *, owner=''):
+    host = _text(host, 'host', 200, required=True).lower()
+    with _db() as conn:
+        conn.execute('INSERT OR REPLACE INTO logins (owner, host, email, password, created_at) VALUES (?,?,?,?,?)',
+                     (owner, host, _text(email, 'email', 200, required=True), str(password or '')[:200], _now()))
+
+
+def logins(*, owner=''):
+    """{host: {email, password}} for the browser flow. Never sent to the page in full."""
+    with _db() as conn:
+        rows = conn.execute('SELECT host, email, password FROM logins WHERE owner = ?', (owner,)).fetchall()
+    return {r['host']: {'email': r['email'], 'password': r['password']} for r in rows}
+
+
+def list_logins(*, owner=''):
+    """For the page: host, email and when; the password only on request (reveal_login)."""
+    with _db() as conn:
+        rows = conn.execute('SELECT host, email, created_at FROM logins WHERE owner = ? ORDER BY created_at DESC', (owner,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def reveal_login(host, *, owner=''):
+    with _db() as conn:
+        r = conn.execute('SELECT email, password FROM logins WHERE owner = ? AND host = ?', (owner, str(host or '').lower())).fetchone()
+    if not r:
+        raise StoreError('sign-in not found for that site')
+    return dict(r)
+
+
+def delete_login(host, *, owner=''):
+    with _db() as conn:
+        n = conn.execute('DELETE FROM logins WHERE owner = ? AND host = ?', (owner, str(host or '').lower())).rowcount
+    if not n:
+        raise StoreError('sign-in not found for that site')
+    return True
+
+
+# ── sightings: how long a job has been up and how often it comes back ────────
+
+def note_sightings(jobs, day, *, owner=''):
+    """Record that today's scan saw these jobs ({job_key, posted}). Returns {job_key: sighting}."""
+    out = {}
+    with _db(immediate=True) as conn:
+        for j in jobs:
+            k = j.get('job_key')
+            if not k:
+                continue
+            posted = str(j.get('posted') or '')[:10]
+            r = conn.execute('SELECT * FROM sightings WHERE owner = ? AND job_key = ?', (owner, k)).fetchone()
+            if r is None:
+                conn.execute('INSERT INTO sightings (owner, job_key, first_seen, last_seen, times, posted, reposted)'
+                             ' VALUES (?,?,?,?,1,?,0)', (owner, k, day, day, posted))
+                out[k] = {'first_seen': day, 'last_seen': day, 'times': 1, 'posted': posted, 'reposted': 0}
+            else:
+                reposted = r['reposted'] + (1 if posted and r['posted'] and posted > r['posted'] else 0)
+                times = r['times'] + (1 if r['last_seen'] != day else 0)
+                conn.execute('UPDATE sightings SET last_seen = ?, times = ?, posted = ?, reposted = ? WHERE owner = ? AND job_key = ?',
+                             (day, times, posted or r['posted'], reposted, owner, k))
+                out[k] = {'first_seen': r['first_seen'], 'last_seen': day, 'times': times, 'posted': posted or r['posted'],
+                          'reposted': reposted}
+    return out

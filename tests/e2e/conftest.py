@@ -46,6 +46,8 @@ class ServerProcess:
         d = tmp_path_factory.mktemp('apex')
         for name in ('agent_server.py', 'apex_store.py', 'apex_engine.py', 'apex_domains.py', 'apex_apply.py', 'index.html'):
             shutil.copy(ROOT / name, d / name)
+        (d / 'data').mkdir()
+        shutil.copy(ROOT / 'data' / 'boards.json', d / 'data' / 'boards.json')
         (d / 'assets').mkdir()
         for font in (ROOT / 'assets').glob('*.ttf'):           # PDF export embeds these
             shutil.copy(font, d / 'assets' / font.name)

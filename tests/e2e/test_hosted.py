@@ -220,3 +220,9 @@ def test_browser_sign_in_flow(browser, hosted):
 def test_vault_and_job_agent_are_local_only(hosted, path):
     st, _, j = req(hosted, 'GET', path, headers={'Cookie': login(hosted)})
     assert st == 403 and 'local APEX' in j['error']
+
+
+@pytest.mark.parametrize('path', ['/api/applications/brief', '/api/applications/warm', '/api/applications/followup/send'])
+def test_research_and_outbound_mail_are_local_only(hosted, path):
+    st, _, j = req(hosted, 'POST', path, body={'id': 'x'}, headers={'Cookie': login(hosted)})
+    assert st == 403 and 'local APEX' in j['error']

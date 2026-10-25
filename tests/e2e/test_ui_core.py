@@ -649,3 +649,33 @@ def test_add_jobs_by_link_queues_them(ui, fixture_resume):
     assert page.input_value('#ag-links').strip() == 'https://www.linkedin.com/jobs/view/1/', 'failed links stay to fix'
     page.unroute('**/api/agent/links')
     ui.assert_clean()
+
+
+def test_tracker_card_keeps_the_recruiter_contact(ui, app):
+    from test_api import call, uniq
+    page = ui.page
+    co = uniq('Contact')
+    st, j = call(app, 'POST', '/api/applications', {'company': co, 'role': 'AI Engineer', 'status': 'applied'})
+    aid = j['application']['id']
+    go(page, 'tracker')
+    page.click(f'[data-action="pipeOpen"][data-arg="{aid}"]')
+    expect(page.locator('#pp-modal')).to_be_visible()
+    expect(page.locator('#pp-followup-send')).to_be_disabled()
+    page.fill('#pp-contact-name', 'Maria K')
+    page.fill('#pp-contact-email', 'maria@example.com')
+    page.click('#pp-save')
+    st, j = call(app, 'GET', '/api/application?id=' + aid)
+    assert j['application']['contact_email'] == 'maria@example.com' and j['application']['contact_name'] == 'Maria K'
+    expect(page.locator('#pp-brief-btn')).to_be_visible()
+    expect(page.locator('#pp-warm-btn')).to_be_visible()
+    ui.assert_clean()
+
+
+def test_search_health_and_sign_ins_cards_render(ui):
+    page = ui.page
+    go(page, 'queue')
+    page.click('#health summary')
+    expect(page.locator('#health-body')).to_contain_text(re.compile(r'No applications sent yet|Sent'))
+    page.click('#logins summary')
+    expect(page.locator('#logins-list')).to_contain_text(re.compile(r'None yet|myworkday'))
+    ui.assert_clean()

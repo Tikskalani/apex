@@ -13,7 +13,7 @@ LICENCE = 'assets/OFL.txt'
 def test_dockerignore_is_an_allowlist_of_the_app_files():
     lines = [l.strip() for l in (ROOT / '.dockerignore').read_text().splitlines() if l.strip() and not l.startswith('#')]
     assert lines[0] == '*'
-    assert sorted(lines[1:]) == sorted(['!' + f for f in APP_FILES + FONTS + [LICENCE, 'requirements.txt']])
+    assert sorted(lines[1:]) == sorted(['!' + f for f in APP_FILES + FONTS + [LICENCE, 'requirements.txt', 'data/boards.json']])
     assert 'SIL OPEN FONT LICENSE' in (ROOT / LICENCE).read_text(encoding='utf-8').upper()
     for f in FONTS:
         assert (ROOT / f).is_file() and (ROOT / f).read_bytes()[:4] in (b'\x00\x01\x00\x00', b'true', b'OTTO'), f
@@ -23,7 +23,7 @@ def test_dockerfile_copies_only_app_files_and_drops_root():
     df = (ROOT / 'Dockerfile').read_text()
     copies = re.findall(r'^COPY (.+)$', df, re.M)
     assert copies == ['requirements.txt ./', 'agent_server.py apex_store.py apex_engine.py apex_domains.py apex_apply.py index.html ./',
-                      'assets/NotoSans-Regular.ttf assets/NotoSans-Bold.ttf assets/OFL.txt ./assets/']
+                      'assets/NotoSans-Regular.ttf assets/NotoSans-Bold.ttf assets/OFL.txt ./assets/', 'data/boards.json ./data/']
     assert 'pip install --no-cache-dir -r requirements.txt' in df
     assert 'setpriv --reuid=10001' in df and 'APEX_BIND=0.0.0.0' in df and 'APEX_DB=/data/apex.db' in df
     assert 'APEX_TRUST_PROXY' not in re.sub(r'#.*', '', df), 'proxy trust belongs to the platform config, not the image'

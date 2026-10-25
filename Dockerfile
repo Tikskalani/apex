@@ -23,6 +23,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY agent_server.py apex_store.py apex_engine.py apex_domains.py apex_apply.py index.html ./
 # Unicode fonts for PDF export (served as /assets/*.ttf).
 COPY assets/NotoSans-Regular.ttf assets/NotoSans-Bold.ttf assets/OFL.txt ./assets/
+# The AI-company boards the job agent reads (tools/discover_boards.py).
+COPY data/boards.json ./data/
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \

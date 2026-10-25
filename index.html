@@ -1805,6 +1805,8 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
               <button class="btn btn-sm" data-action="agEdit">Edit profile</button>
               <button class="btn btn-sm" data-action="agNew">New profile</button>
               <button class="btn btn-primary btn-sm" data-action="agScan" id="ag-scan">Scan now</button>
+              <button class="btn btn-sm" data-action="agFollowups" title="Draft (or send) the follow-ups that are due today">Run follow-ups</button>
+              <button class="btn btn-sm" data-action="agDigestSend" title="Email me today's digest now">Send digest</button>
             </div>
             <div id="ag-status" role="status" style="margin-top:var(--s3);font-size:13px;color:var(--fg-2)"></div>
             <details style="margin-top:var(--s3)">
@@ -1830,6 +1832,9 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
               <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-remote" checked> Include remote jobs</label>
               <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-active" checked> Scan every morning</label>
               <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-submit" checked> Apply for me: APEX submits the applications itself</label>
+              <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-ghosts" checked> Skip likely ghost postings (old, reposted, evergreen)</label>
+              <label>Follow-ups when an employer is silent <select id="ag-followups"><option value="auto">Send them for me (5 and 12 days; needs the recruiter's address and email set up)</option><option value="draft">Draft them, I send</option><option value="off">Off</option></select></label>
+              <label>Morning digest to <input id="ag-digest" type="email" placeholder="you@example.com (needs email set up in Alerts)"></label>
             </div>
             <details style="margin-top:var(--s3)" open>
               <summary style="cursor:pointer;font-weight:600">Application answers <span style="font-weight:400;color:var(--fg-2);font-size:13px">(used on every form; APEX never guesses these)</span></summary>
@@ -1869,6 +1874,16 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
               <button class="btn btn-sm" data-action="radarIdeas" id="radar-ideas-btn">Suggest projects for my gaps (about 2¢)</button>
             </div>
             <div id="radar-ideas" style="margin-top:var(--s3)"></div>
+          </details>
+          <details class="card" id="health" style="margin-top:var(--s4)">
+            <summary style="cursor:pointer;font-weight:600">Search health <span id="health-meta" style="font-weight:400;color:var(--fg-2)"></span></summary>
+            <p style="font-size:13px;color:var(--fg-2);margin:var(--s2) 0 var(--s3)">Which applications get replies: by role family, source, fit, weekday and resume template. APEX recommends a shift once a group has five or more applications.</p>
+            <div id="health-body"></div>
+          </details>
+          <details class="card" id="logins" style="margin-top:var(--s4)">
+            <summary style="cursor:pointer;font-weight:600">Sign-ins APEX made for you <span id="logins-count" style="font-weight:400;color:var(--fg-2)"></span></summary>
+            <p style="font-size:13px;color:var(--fg-2);margin:var(--s2) 0 var(--s3)">Workday and similar career sites need an account per employer. APEX creates one with a strong password and keeps it here, on this computer only, so it can sign in next time. Reveal a password when you need to sign in yourself.</p>
+            <ul id="logins-list" style="list-style:none;padding:0;margin:0;display:grid;gap:6px"></ul>
           </details>
           <details class="card" id="vault" style="margin-top:var(--s4)">
             <summary style="cursor:pointer;font-weight:600">Evidence vault <span id="vault-count" style="font-weight:400;color:var(--fg-2)"></span></summary>
@@ -2096,6 +2111,8 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
         <div class="pp-fields">
           <div><label for="pp-next-date">Next action</label><input type="date" id="pp-next-date"></div>
           <div><label for="pp-url">Job link</label><input type="text" id="pp-url" placeholder="https://…" inputmode="url"></div>
+          <div><label for="pp-contact-name">Recruiter / contact</label><input type="text" id="pp-contact-name" placeholder="Name"></div>
+          <div><label for="pp-contact-email">Contact email</label><input type="email" id="pp-contact-email" placeholder="recruiter@company.com"></div>
         </div>
         <label for="pp-notes">Notes</label>
         <textarea id="pp-notes" rows="5" placeholder="Recruiter, interview dates, salary range, what they asked…"></textarea>
@@ -2106,6 +2123,10 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
       <div class="modal-col">
         <h4>Apply kit</h4>
         <div id="pp-kit"></div>
+        <h4 style="margin-top:var(--s6)">Company brief</h4>
+        <div id="pp-brief"><div class="empty" style="padding:var(--s4)">What the company does, builds and said recently, from its own site and GitHub, and where your work maps to it.</div></div>
+        <h4 style="margin-top:var(--s6)">Warm path</h4>
+        <div id="pp-warm"><div class="empty" style="padding:var(--s4)">People you can reach about this application without LinkedIn: addresses in the posting, the company's public GitHub members, Hacker News hiring posts; with two short notes to send.</div></div>
         <h4 style="margin-top:var(--s6)">Interview prep</h4>
         <div id="pp-prep"><div class="empty" style="padding:var(--s4)">When they invite you to interview: the questions this role asks, answer outlines and STAR stories from your own experience, and what to ask them.</div></div>
         <h4 style="margin-top:var(--s6)">Follow-up</h4>
@@ -2116,6 +2137,9 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
   <div class="modal-footer">
     <button class="btn btn-primary" id="pp-followup-btn">Draft follow-up</button>
     <button class="btn local-only" id="pp-prep-btn">Interview prep pack</button>
+    <button class="btn local-only" data-action="appBrief" id="pp-brief-btn">Company brief</button>
+    <button class="btn local-only" data-action="appWarm" id="pp-warm-btn">Warm path</button>
+    <button class="btn local-only" data-action="appFollowup" id="pp-followup-send">Send follow-up</button>
     <button class="btn" id="pp-sent">Mark follow-up sent</button>
     <span style="flex:1"></span>
     <button class="btn btn-sm btn-quiet-danger" id="pp-delete">Delete application</button>
@@ -2346,6 +2370,9 @@ function agEditor(p) {
   $('ag-remote').checked = p ? p.remote_ok : true;
   $('ag-active').checked = p ? p.active : true;
   $('ag-submit').checked = p ? p.auto_submit : true;
+  $('ag-ghosts').checked = p ? p.skip_ghosts !== false : true;
+  $('ag-followups').value = p ? (p.followups || 'draft') : 'auto';
+  $('ag-digest').value = p ? (p.digest_email || '') : '';
   const ans = (p && p.answers) || {};
   document.querySelectorAll('#ag-answers [data-ans]').forEach(el => { el.value = ans[el.dataset.ans] || ''; });
   $('ag-resume').value = p ? p.base_resume : latestResume();
@@ -2402,6 +2429,61 @@ async function radarIdeas(btn) {
   finally { btn.disabled = false; btn.textContent = label; }
 }
 
+async function agFollowups(btn) {
+  btn.disabled = true;
+  try {
+    const r = await api('/api/agent/followups/run', {});
+    const due = r.due.map(d => `${d.company} (${d.which === 1 ? '1st' : '2nd'}${d.contact ? '' : ', no address'}${d.reason ? ': ' + d.reason : ''})`);
+    toast(`${r.sent} sent · ${r.drafted} drafted · ${r.due.length} waiting for you${due.length ? ': ' + due.slice(0, 3).join('; ') : ''}${r.ghosted ? ' · ' + r.ghosted + ' marked ghosted' : ''}`, r.sent || r.drafted ? 'ok' : '');
+    loadPipeline();
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+async function agDigestSend(btn) {
+  btn.disabled = true;
+  try { const r = await api('/api/agent/digest/send', { profile: AG.pid }); toast(`Digest sent to ${r.to}`, 'ok'); }
+  catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
+async function loginsLoad() {
+  try {
+    const j = await api('/api/agent/logins');
+    $('logins-count').textContent = j.logins.length ? `(${j.logins.length})` : '';
+    $('logins-list').innerHTML = j.logins.map(l => `<li style="display:flex;gap:8px;align-items:center;font-size:13px;flex-wrap:wrap">
+      <b>${escHtml(l.host)}</b><span style="color:var(--fg-2)">${escHtml(l.email)} · ${escHtml((l.created_at || '').slice(0, 10))}</span>
+      <button class="copy-btn" data-action="loginReveal" data-arg="${escHtml(l.host)}">Copy password</button>
+      <button class="copy-btn" data-action="loginDelete" data-arg="${escHtml(l.host)}">Forget</button></li>`).join('')
+      || '<li class="empty" style="font-size:13px">None yet. APEX adds one the first time it applies on a Workday site.</li>';
+  } catch (e) { $('logins-list').innerHTML = `<li class="empty">${escHtml(e.message)}</li>`; }
+}
+async function loginReveal(el) {
+  try { const r = await api('/api/agent/logins/reveal', { host: el.dataset.arg }); await copyText(r.password); toast(`Password for ${el.dataset.arg} copied (sign in as ${r.email})`, 'ok'); }
+  catch (e) { toast(e.message, 'err'); }
+}
+async function loginDelete(el) {
+  if (!window.confirm(`Forget the sign-in APEX kept for ${el.dataset.arg}? You will need the password to sign in there yourself.`)) return;
+  try { await api('/api/agent/logins/delete', { host: el.dataset.arg }); loginsLoad(); } catch (e) { toast(e.message, 'err'); }
+}
+async function healthLoad() {
+  try {
+    const h = await api('/api/agent/analytics');
+    const f = h.funnel;
+    $('health-meta').textContent = f.sent ? `(${f.sent} sent · ${f.replied} replied · ${f.interviews} interviews)` : '';
+    if (!f.sent) { $('health-body').innerHTML = '<div class="empty">No applications sent yet. This fills in as APEX applies.</div>'; return; }
+    const pct = (a, b) => b ? Math.round(100 * a / b) + '%' : '—';
+    const funnel = `<div class="kw-row">${[['Sent', f.sent], ['Replied', f.replied + ' (' + pct(f.replied, f.sent) + ')'], ['Interviews', f.interviews], ['Offers', f.offers],
+      ['Rejected', f.rejected], ['Ghosted', f.ghosted], ['Submitted by APEX', f.submitted_by_apex]].map(([k, v]) => `<span class="kw">${k}: <b>${escHtml(String(v))}</b></span>`).join(' ')}</div>`
+      + (h.median_days_to_reply != null ? `<div style="font-size:13px;margin-top:6px">Median days to a reply: <b>${h.median_days_to_reply}</b></div>` : '');
+    const table = (title, rows) => rows.length ? `<div style="margin-top:var(--s3)"><div style="font-size:13px;font-weight:600">${title}</div>
+      <div style="display:grid;gap:4px;margin-top:4px">${rows.slice(0, 8).map(r => `<div style="display:grid;grid-template-columns:minmax(120px,1fr) 1fr 90px;gap:8px;align-items:center;font-size:12.5px">
+        <span>${escHtml(String(r.key))}</span><span style="background:var(--bg-3);border-radius:4px;height:8px;overflow:hidden"><span style="display:block;height:100%;width:${r.rate || 0}%;background:var(--accent)"></span></span>
+        <span style="text-align:right">${r.rate == null ? '—' : r.rate + '%'} · n=${r.n}</span></div>`).join('')}</div></div>` : '';
+    $('health-body').innerHTML = funnel
+      + (h.recommendations.length ? `<div style="margin-top:var(--s3);padding:10px;border:1px solid var(--line-2);border-radius:8px;font-size:13px"><b>APEX recommends</b><ul style="margin:6px 0 0 18px">${h.recommendations.map(r => `<li>${escHtml(r)}</li>`).join('')}</ul></div>` : (h.enough_data ? '' : '<div style="font-size:12.5px;color:var(--fg-2);margin-top:8px">Recommendations appear once a group has five or more applications.</div>'))
+      + table('Reply rate by role family', h.by_family) + table('By source', h.by_source) + table('By fit', h.by_fit) + table('By weekday applied', h.by_weekday) + table('By resume template', h.by_template);
+  } catch (e) { $('health-body').innerHTML = `<div class="empty">${escHtml(e.message)}</div>`; }
+}
+
 async function vaultLoad() {
   try {
     const facts = (await api('/api/facts')).facts || [];
@@ -2446,7 +2528,8 @@ async function agSave(btn) {
     const j = await api('/api/agent/profiles', { id: $('ag-editor').dataset.id || undefined, name: $('ag-name').value,
       targets: $('ag-targets').value, location: $('ag-location').value, daily_limit: $('ag-limit').value,
       min_fit: $('ag-minfit').value, auto_prepare: $('ag-auto').value, remote_ok: $('ag-remote').checked, active: $('ag-active').checked,
-      auto_submit: $('ag-submit').checked,
+      auto_submit: $('ag-submit').checked, skip_ghosts: $('ag-ghosts').checked,
+      followups: $('ag-followups').value, digest_email: $('ag-digest').value.trim(),
       answers: Object.fromEntries([...document.querySelectorAll('#ag-answers [data-ans]')].map(el => [el.dataset.ans, el.value.trim()])),
       base_resume: $('ag-resume').value });
     AG.pid = j.profile.id;
@@ -2518,7 +2601,13 @@ async function agQueue() {
 function agCard(i) {
   const r = i.reasons || {}, k = i.kit || {};
   const meta = [i.company, i.location, i.salary, i.posted && 'posted ' + i.posted, i.source].filter(Boolean).map(escHtml).join(' · ');
-  const why = (arr(r.matched).length ? `<div style="font-size:12.5px;color:var(--green-soft)">You show: ${escHtml(arr(r.matched).join(', '))}</div>` : '')
+  const g = r.ghost || {};
+  const flags = [r.fresh ? '<span class="kw" style="color:var(--green-soft)">new today</span>' : '',
+                 r.direct ? '<span class="kw">employer\'s own posting</span>' : '',
+                 g.score >= 3 ? `<span class="kw" style="color:var(--red-soft)" title="${escHtml((g.why || []).join('; '))}">likely ghost</span>`
+                   : g.score === 2 ? `<span class="kw" style="color:var(--amber)" title="${escHtml((g.why || []).join('; '))}">stale: ${escHtml((g.why || [])[0] || '')}</span>` : ''].filter(Boolean).join(' ');
+  const why = (flags ? `<div class="kw-row" style="margin:4px 0">${flags}</div>` : '')
+    + (arr(r.matched).length ? `<div style="font-size:12.5px;color:var(--green-soft)">You show: ${escHtml(arr(r.matched).join(', '))}</div>` : '')
     + (arr(r.missing).length ? `<div style="font-size:12.5px;color:var(--fg-3)">Not on your resume: ${escHtml(arr(r.missing).join(', '))}</div>` : '');
   const link = (k.direct_url || i.url) ? `<a class="copy-btn" href="${escHtml(k.direct_url || i.url)}" target="_blank" rel="noopener noreferrer">Open posting</a>` : '';
   let act = '';
@@ -2607,7 +2696,7 @@ async function agApply(btn, id) {
     const out = await ATS.pdf(st, 'tailored', state.selectedTemplate, { blob: true });
     const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(out.blob); });
     if (btn) btn.innerHTML = '<span class="spinner"></span>Applying…';
-    const j = await api('/api/agent/apply', { id, pdf_b64: b64 });
+    const j = await api('/api/agent/apply', { id, pdf_b64: b64, template: state.selectedTemplate });
     if (j.status === 'submitted') { toast(`Submitted ✓ ${it.title} at ${it.company}. It is in the Tracker.`, 'ok'); agQueue(); loadPipeline(); return; }
     if (j.mode === 'link') {
       const w = window.open(j.url, '_blank', 'noopener');
@@ -2693,6 +2782,13 @@ const ACTIONS = {
   agCopy:      el => agCopy(el),
   agPdf:       el => agPdf(el),
   vaultAdd:    el => vaultAdd(el),
+  agFollowups: el => agFollowups(el),
+  agDigestSend: el => agDigestSend(el),
+  loginReveal: el => loginReveal(el),
+  loginDelete: el => loginDelete(el),
+  appFollowup: el => appFollowup(el),
+  appBrief:    el => appBrief(el),
+  appWarm:     el => appWarm(el),
   radarIdeas:  el => radarIdeas(el),
   vaultGithub: el => vaultGithub(el),
   vaultDelete: el => vaultDelete(el),
@@ -2722,7 +2818,7 @@ function switchTab(view) {
   clearNew(view);
   if (view === 'templates') initTemplatesTab();
   if (view === 'tracker') loadPipeline();
-  if (view === 'queue') { agLoad(); vaultLoad(); }
+  if (view === 'queue') { agLoad(); vaultLoad(); loginsLoad(); healthLoad(); }
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   document.querySelector('.canvas').scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
 }
@@ -5385,7 +5481,7 @@ $('br-run').addEventListener('click', ev => {
 // ═══════════════════════ PIPELINE (apex.db via /api) ═══════════════════════
 const PIPE = { apps: [], summary: null, filter: 'active', detail: null };
 const STATUS_LABELS = { saved: 'Saved', applied: 'Applied', interview: 'Interview', offer: 'Offer', rejected: 'Rejected', withdrawn: 'Withdrawn' };
-const KIT_LABELS = { tailored_resume: 'Tailored resume', cover_letter: 'Cover letter', followup: 'Follow-up sequence', outreach: 'Outreach', note: 'Note', interview_prep: 'Interview prep pack' };
+const KIT_LABELS = { tailored_resume: 'Tailored resume', cover_letter: 'Cover letter', followup: 'Follow-up sequence', outreach: 'Outreach', note: 'Note', interview_prep: 'Interview prep pack', company_brief: 'Company brief', warm_path: 'Warm path' };
 
 // JSON call to the local API. Throws Error(message) on any non-2xx.
 async function api(path, body) {
@@ -5531,6 +5627,10 @@ async function pipeOpen(id) {
     $('pp-notes').value = a.notes || '';
     $('pp-next-date').value = a.next_action_on || '';
     $('pp-url').value = a.url || '';
+    $('pp-contact-name').value = a.contact_name || '';
+    $('pp-contact-email').value = a.contact_email || '';
+    $('pp-followup-send').disabled = !(a.contact_email && ['applied', 'interview'].includes(a.status));
+    $('pp-followup-send').title = a.contact_email ? `Send the next follow-up to ${a.contact_email} from your mailbox` : 'Add a contact email first';
     $('pp-timeline').innerHTML = a.events.slice().reverse().map(e =>
       '<li><time>' + escHtml(fmtWhen(e.at)) + '</time><span>' + escHtml(describeEvent(e)) + '</span></li>').join('');
     renderKit(a);
@@ -5541,7 +5641,15 @@ async function pipeOpen(id) {
 
 function renderKit(a) {
   CLIP.clear();   // keys only need to live as long as the buttons that use them
-  const docs = (a.artifacts || []).filter(x => x.kind !== 'followup' && x.kind !== 'interview_prep');
+  const docs = (a.artifacts || []).filter(x => !['followup', 'interview_prep', 'company_brief', 'warm_path'].includes(x.kind));
+  const brief = (a.artifacts || []).find(x => x.kind === 'company_brief');
+  let bd = null; if (brief) { try { bd = JSON.parse(brief.content); } catch (e) {} }
+  if (bd) renderBrief(bd, brief.created_at);
+  else $('pp-brief').innerHTML = '<div class="empty" style="padding:var(--s4)">What the company does, builds and said recently, from its own site and GitHub, and where your work maps to it.</div>';
+  const warm = (a.artifacts || []).find(x => x.kind === 'warm_path');
+  let wd = null; if (warm) { try { wd = JSON.parse(warm.content); } catch (e) {} }
+  if (wd) renderWarm(wd, warm.created_at);
+  else $('pp-warm').innerHTML = '<div class="empty" style="padding:var(--s4)">People you can reach about this application without LinkedIn: addresses in the posting, the company\'s public GitHub members, Hacker News hiring posts; with two short notes to send.</div>';
   const prep = (a.artifacts || []).find(x => x.kind === 'interview_prep');
   let pk = null; if (prep) { try { pk = JSON.parse(prep.content); } catch (e) {} }
   if (pk) renderPrep(pk, prep.created_at);
@@ -5564,6 +5672,47 @@ function renderKit(a) {
   } else {
     $('pp-followup').innerHTML = '<div class="empty" style="padding:var(--s4)">Draft a follow-up sequence tailored to this application.</div>';
   }
+}
+
+function renderBrief(d, when) {
+  const li = xs => (xs || []).map(x => `<li>${escHtml(x)}</li>`).join('');
+  const row = (k, v) => v ? `<div style="margin-top:6px"><b>${k}</b><div style="white-space:pre-wrap">${escHtml(v)}</div></div>` : '';
+  $('pp-brief').innerHTML = `<div class="sub" style="margin-bottom:6px">${escHtml(fmtWhen(when))} · from ${(d.sources || []).map(escHtml).join(', ') || 'public pages'}${d.site ? ` · <a href="${escHtml(safeUrl(d.site))}" target="_blank" rel="noopener noreferrer">site</a>` : ''}${d.github ? ` · <a href="${escHtml(safeUrl(d.github))}" target="_blank" rel="noopener noreferrer">GitHub</a>` : ''}</div>
+    ${row('What they do', d.what)}${row('Product', d.product)}${row('Stack', d.stack)}
+    ${d.recent && d.recent.length ? `<div style="margin-top:6px"><b>Recent</b><ul style="margin:4px 0 0 18px">${li(d.recent)}</ul></div>` : ''}
+    ${row('Size and funding', d.size_funding)}${row('How they work', d.culture)}
+    ${d.angle && d.angle.length ? `<div style="margin-top:6px"><b>Where your work maps</b><ul style="margin:4px 0 0 18px">${li(d.angle)}</ul>${d.withheld ? `<div class="sub">${d.withheld} line(s) withheld by the fact check</div>` : ''}</div>` : ''}
+    ${d.questions && d.questions.length ? `<div style="margin-top:6px"><b>Ask them</b><ul style="margin:4px 0 0 18px">${li(d.questions)}</ul></div>` : ''}`;
+}
+function renderWarm(d, when) {
+  const how = { email: 'email', github: 'GitHub', hn: 'Hacker News' };
+  const people = (d.people || []).map(p => `<li style="font-size:13px"><a href="${escHtml(safeUrl(p.url || '#'))}" target="_blank" rel="noopener noreferrer">${escHtml(p.name || p.address || p.url)}</a> <span class="sub">${escHtml(how[p.how] || p.how)}${p.why ? ' · ' + escHtml(p.why) : ''}</span></li>`).join('');
+  const note = (title, t) => t ? `<div class="kit-item" style="margin-top:8px"><div class="kit-h"><span><strong>${title}</strong></span><span class="kit-actions"><button class="copy-btn" data-action="clip" data-arg="${clipKey(t)}">Copy</button></span></div><pre>${escHtml(t)}</pre></div>` : '';
+  $('pp-warm').innerHTML = `<div class="sub" style="margin-bottom:6px">${escHtml(fmtWhen(when))}${d.github ? ` · <a href="${escHtml(safeUrl(d.github))}" target="_blank" rel="noopener noreferrer">GitHub org</a>` : ''}</div>
+    ${people ? `<ul style="margin:0 0 0 18px">${people}</ul>` : '<div class="sub">No public contacts found for this company yet. Add a recruiter email in Details when you get one.</div>'}
+    ${note('Note to a recruiter', d.note_recruiter)}${note('Note to an engineer there', d.note_engineer)}
+    ${d.withheld && d.withheld.length ? `<div class="sub">${d.withheld.length} note(s) withheld by the fact check</div>` : ''}`;
+}
+async function appBrief(btn) {
+  const a = PIPE.detail; if (!a) return;
+  btn.disabled = true; $('pp-brief').innerHTML = '<div class="empty" style="padding:var(--s4)"><span class="spinner"></span>Reading the company\'s site and GitHub (about 30 seconds)…</div>';
+  try { await api('/api/applications/brief', { id: a.id }); if (PIPE.detail && PIPE.detail.id === a.id) pipeOpen(a.id); }
+  catch (e) { $('pp-brief').innerHTML = errorBlock('Could not write the brief: ' + e.message); }
+  finally { btn.disabled = false; }
+}
+async function appWarm(btn) {
+  const a = PIPE.detail; if (!a) return;
+  btn.disabled = true; $('pp-warm').innerHTML = '<div class="empty" style="padding:var(--s4)"><span class="spinner"></span>Looking for people and drafting notes…</div>';
+  try { await api('/api/applications/warm', { id: a.id }); if (PIPE.detail && PIPE.detail.id === a.id) pipeOpen(a.id); }
+  catch (e) { $('pp-warm').innerHTML = errorBlock('Could not build the warm path: ' + e.message); }
+  finally { btn.disabled = false; }
+}
+async function appFollowup(btn) {
+  const a = PIPE.detail; if (!a) return;
+  if (!window.confirm(`Send the next follow-up to ${a.contact_email} from your mailbox now?`)) return;
+  btn.disabled = true;
+  try { const r = await api('/api/applications/followup/send', { id: a.id }); toast(`Sent "${r.subject}" to ${r.to}`, 'ok'); pipeOpen(a.id); loadPipeline(); }
+  catch (e) { toast(e.message, 'err'); btn.disabled = false; }
 }
 
 // The interview prep pack: outlines and stories passed the fact check (a withheld outline is empty).
@@ -5637,7 +5786,8 @@ $('pp-scrim').addEventListener('click', closePipeModal);
 $('pp-save').addEventListener('click', async () => {
   const a = PIPE.detail; if (!a) return;
   try {
-    await api('/api/applications/update', { id: a.id, notes: $('pp-notes').value, next_action_on: $('pp-next-date').value, url: $('pp-url').value.trim() });
+    await api('/api/applications/update', { id: a.id, notes: $('pp-notes').value, next_action_on: $('pp-next-date').value, url: $('pp-url').value.trim(),
+      contact_name: $('pp-contact-name').value.trim(), contact_email: $('pp-contact-email').value.trim() });
     toast('Saved', 'ok');
     await loadPipeline(); pipeOpen(a.id);
   } catch (e) { toast(e.message, 'err'); }
