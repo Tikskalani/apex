@@ -135,3 +135,72 @@ def test_off_role_postings_drop_out_of_the_market_corpus(server):
     on = server.score_listing('Senior Backend Engineer - Go, Kafka, PostgreSQL. Build payment services.', words, [], [])
     off = server.score_listing('Security Engineer - defence clearance required. Engineer secure systems.', words, [], [])
     assert on >= 35 > off
+
+
+# ── the economy tier ─────────────────────────────────────────────────────────
+
+def test_economy_routes_checks_to_the_check_model_and_writing_to_the_writer(server, monkeypatch):
+    calls = []
+    monkeypatch.setattr(server, 'gpt', lambda system, user, **kw: calls.append((system, kw)) or '{}')
+    E = server.engine
+    token = server._TIER.set('economy')
+    try:
+        for sysp in (E.VERIFY_SYSTEM, E.JUDGE_SYSTEM, E.CUT_SYSTEM, E.REWRITE_SYSTEM, E.DIAGNOSE_SYSTEM, E.REPAIR_SYSTEM):
+            server.engine_llm(sysp, 'x', max_tokens=10, effort='medium')
+    finally:
+        server._TIER.reset(token)
+    by = {s: kw for s, kw in calls}
+    assert all(by[s]['model'] == server.MODEL_CHECK and by[s]['effort'] == 'low'
+               for s in (E.VERIFY_SYSTEM, E.JUDGE_SYSTEM, E.CUT_SYSTEM)), 'checks: cheap model, low effort'
+    assert by[E.REWRITE_SYSTEM] == {'max_tokens': 10, 'effort': 'medium', 'model': server.MODEL_WRITER}, 'the writer keeps its effort'
+    assert by[E.DIAGNOSE_SYSTEM]['model'] == server.MODEL_WRITER and by[E.DIAGNOSE_SYSTEM]['effort'] == 'low'
+    # Best (the default) is unchanged: audit and judge on their own settings, nothing forced low.
+    calls.clear()
+    server.engine_llm(E.VERIFY_SYSTEM, 'x', effort='medium')
+    server.engine_llm(E.REWRITE_SYSTEM, 'x', effort='medium')
+    assert calls[0][1] == {'effort': 'medium', 'model': server.MODEL_AUDIT} and calls[1][1] == {'effort': 'medium'}
+
+
+def test_posting_text_spends_nothing_on_an_empty_posting(server):
+    store = server.store
+    p = store.save_profile({'name': 'P', 'targets': 'Data Analyst', 'base_resume': RESUME})
+    long = 'Own weekly reporting and dashboards. ' * 15
+    store.add_queue_items(p['id'], [
+        {'title': 'Empty', 'company': 'A', 'url': 'https://jobs.example/1', 'posting': '', 'fit': 50, 'reasons': {}},
+        {'title': 'Snippet', 'company': 'B', 'url': 'https://jobs.example/2', 'posting': 'SQL and Tableau for the ops team.',
+         'fit': 50, 'reasons': {}},
+        {'title': 'Full', 'company': 'C', 'url': 'https://jobs.example/3', 'posting': long, 'fit': 50, 'reasons': {}}])
+    items = {i['title']: store.get_queue_item(i['id']) for i in store.list_queue(p['id'])}
+    with pytest.raises(RuntimeError, match='no text to tailor to'):
+        server.posting_text(items['Empty'])
+    assert server.posting_text(items['Snippet']) == 'SQL and Tableau for the ops team.', 'a snippet still serves (fixtures never fetch)'
+    assert server.posting_text(items['Full']) == long.strip()
+
+
+def test_cost_per_job_is_the_tier_default_until_kits_are_measured(server):
+    store = server.store
+    p = store.save_profile({'name': 'Q', 'targets': 'Data Analyst', 'base_resume': RESUME})
+    assert server.cost_per_job(p) == {'usd': 0.08, 'measured': 0, 'tier': 'economy'}
+    best = store.save_profile({'id': p['id'], 'name': 'Q', 'targets': 'Data Analyst', 'base_resume': RESUME, 'tier': 'best'})
+    assert server.cost_per_job(best) == {'usd': 0.96, 'measured': 0, 'tier': 'best'}
+    store.add_queue_items(p['id'], [{'title': f'J{i}', 'company': 'A', 'url': f'https://jobs.example/{i}', 'posting': 'x' * 50,
+                                     'fit': 50, 'reasons': {}} for i in range(3)])
+    for it, c in zip(store.list_queue(p['id']), (0.05, 0.11, 0.07)):
+        store.update_queue_item(it['id'], status='ready', kit={'cost_usd': c})
+    assert server.cost_per_job(best) == {'usd': 0.07, 'measured': 3, 'tier': 'best'}, 'the median of measured kits'
+
+
+def test_meter_prices_cached_tokens_at_their_own_rates(server):
+    m = server.Meter()
+    m.add('claude-sonnet-5-5', 10_000, 1_000)                                   # $2/M in, $10/M out
+    assert round(m.usd, 4) == round(10_000 / 1e6 * 2 + 1_000 / 1e6 * 10, 4)
+    m2 = server.Meter()
+    m2.add('claude-sonnet-5-5', 10_000, 0, cache_read=8_000)                     # 8k read from the cache at 10%
+    assert round(m2.usd, 5) == round((2_000 + 800) / 1e6 * 2, 5)
+    m3 = server.Meter()
+    m3.add('claude-sonnet-5-5', 10_000, 0, cache_write=8_000)                    # 8k written at 125%
+    assert round(m3.usd, 5) == round((2_000 + 10_000) / 1e6 * 2, 5)
+    m4 = server.Meter()
+    m4.add('gpt-4o', 10_000, 0, cache_half=4_000)                                # OpenAI automatic hits at 50%
+    assert round(m4.usd, 5) == round((6_000 + 2_000) / 1e6 * 2.5, 5)
+    assert m2.summary()['tokens_in'] == 10_000, 'tokens are counted in full; only the price changes'

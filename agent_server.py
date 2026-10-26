@@ -141,6 +141,16 @@ MODEL_JUDGE = _model_setting('MODEL_JUDGE', MODEL_AUDIT)
 # fact checks on claude-sonnet-5-5 the engine took ~65 s instead of ~85 s and gained +7.0 instead
 # of +9.0, so quality stays the default and speed is a setting (MODEL_REVIEW / MODEL_AUDIT).
 MODEL_REVIEW = _model_setting('MODEL_REVIEW', MODEL)
+# The economy tier (the job agent's default). Measured 2026-10-26 on one posting: the full pipeline on Opus
+# is 15 calls and $0.96 a job, 37% of it reasoning tokens on verification calls. Economy runs the full
+# pipeline ONCE per resume (the base, on MODEL), then per posting an alignment pass whose writing is
+# MODEL_WRITER and whose checking (fact audit, judge, cuts) is MODEL_CHECK, with low reasoning effort
+# everywhere but the writer. Claude-only keys: Sonnet writes, Haiku checks. With an OpenAI key the
+# writer stays MODEL and the checker MODEL_FAST unless set here.
+MODEL_WRITER = _model_setting('MODEL_WRITER', 'claude-sonnet-5-5' if _CLAUDE_ONLY else MODEL)
+MODEL_CHECK = _model_setting('MODEL_CHECK', 'claude-haiku-5-5' if _CLAUDE_ONLY else MODEL_FAST)
+# What a prepared application costs before this profile has measured kits of its own (USD).
+TIER_COST = {'economy': 0.08, 'best': 0.96}
 
 # USD per 1M tokens (input, output), standard tier, from OpenAI's pricing page
 # (checked 2026-10-08). Unknown models are costed at the most expensive known
@@ -400,6 +410,9 @@ def parse_rss(xml_text):
 # started inside a run inherit it via contextvars.copy_context().
 import contextvars
 _RUN_METER = contextvars.ContextVar('apex_run_meter', default=None)
+# Which models this request's model calls use: 'best' (MODEL everywhere) or 'economy'
+# (MODEL_WRITER writes, MODEL_CHECK checks). The job agent sets it per profile.
+_TIER = contextvars.ContextVar('apex_tier', default='best')
 
 
 class Meter:
@@ -408,13 +421,17 @@ class Meter:
         self.calls = self.tokens_in = self.tokens_out = 0
         self.usd = 0.0
 
-    def add(self, model, tin, tout):
+    def add(self, model, tin, tout, cache_read=0, cache_write=0, cache_half=0):
+        """tin counts every input token. Of those, cache_read were served from the prompt cache
+        (10% of the input price), cache_write were written to it (125%), cache_half were
+        OpenAI's automatic prefix hits (50%)."""
         pin, pout = model_price(model)
+        fresh = max(0, tin - cache_read - cache_write - cache_half)
         with self.lock:
             self.calls += 1
             self.tokens_in += tin
             self.tokens_out += tout
-            self.usd += tin / 1e6 * pin + tout / 1e6 * pout
+            self.usd += (fresh + 0.1 * cache_read + 1.25 * cache_write + 0.5 * cache_half) / 1e6 * pin + tout / 1e6 * pout
 
     def summary(self):
         with self.lock:
@@ -453,17 +470,20 @@ _MODEL_QUIRKS = {}
 _LEGACY = ('gpt-4', 'gpt-3.5')     # accept max_tokens + temperature
 
 
-def gpt(system, user, max_tokens=3000, temp=0.3, *, json_mode=False, fast=False, effort=None, model=None):
+def gpt(system, user, max_tokens=3000, temp=0.3, *, json_mode=False, fast=False, effort=None, model=None, cache=''):
     """One chat completion. Returns the message text.
     json_mode: ask the API for a JSON object (more reliable than prompt-only JSON).
     fast:      use MODEL_FAST (cheap extraction / classification).
     effort:    reasoning effort for reasoning models ('minimal'|'low'|'medium'|'high').
     model:     explicit model id (benchmarks); default MODEL / MODEL_FAST.
+    cache:     a prefix of `user` that other calls in the next minutes send too (the resume
+               and posting a retry or a second batch repeats). Claude keeps it in the prompt
+               cache: reads cost 10% of the input price. OpenAI caches prefixes by itself.
     Retries timeouts, 429 and 5xx with backoff; adapts to each model's parameters."""
-    model = model or (MODEL_FAST if fast else MODEL)
+    model = model or (MODEL_FAST if fast else MODEL_WRITER if _TIER.get() == 'economy' else MODEL)
     cancel_check()
     if model.startswith('claude-'):
-        return _claude(model, system, user, max_tokens, effort)
+        return _claude(model, system, user, max_tokens, effort, role=_role(system), cache=cache)
     if not OPENAI_KEY:
         raise Exception(f'Model {model} needs an OpenAI key (OPENAI_KEY in config.json).')
     q = _MODEL_QUIRKS.setdefault(model, {'legacy': model.startswith(_LEGACY)})
@@ -491,11 +511,13 @@ def gpt(system, user, max_tokens=3000, temp=0.3, *, json_mode=False, fast=False,
                 j = json.loads(r.read())
             u = j.get('usage') or {}
             tin, tout = int(u.get('prompt_tokens') or 0), int(u.get('completion_tokens') or 0)
-            TOTAL_METER.add(model, tin, tout)
+            half = int((u.get('prompt_tokens_details') or {}).get('cached_tokens') or 0)
+            TOTAL_METER.add(model, tin, tout, cache_half=half)
             m = _RUN_METER.get()
             if m is not None:
-                m.add(model, tin, tout)
-            print(f'  [gpt] {model} in={tin} out={tout} {time.time() - t0:.1f}s', flush=True)
+                m.add(model, tin, tout, cache_half=half)
+            print(f'  [gpt] {model} {_role(system)} in={tin} out={tout}' + (f' cached={half}' if half else '')
+                  + f' {time.time() - t0:.1f}s', flush=True)
             msg = j['choices'][0]['message']
             if j['choices'][0].get('finish_reason') == 'length' and not (msg.get('content') or '').strip():
                 raise _NoRetry('model ran out of tokens before answering')
@@ -559,13 +581,28 @@ def _claude_client():
         return _anthropic_client
 
 
-def _claude(model, system, user, max_tokens, effort):
+def _role(system):
+    """Short name of a model call for the console line, from its system prompt."""
+    names = {engine.DIAGNOSE_SYSTEM: 'diagnose', engine.REWRITE_SYSTEM: 'rewrite', engine.VERIFY_SYSTEM: 'audit',
+             engine.REPAIR_SYSTEM: 'repair', engine.JUDGE_SYSTEM: 'judge', engine.CUT_SYSTEM: 'cut'}
+    return names.get(system) or re.sub(r'\W+', '-', str(system)[:24].strip().lower())
+
+
+def _claude(model, system, user, max_tokens, effort, role='', cache=''):
     """One Claude Messages call. Thinking is adaptive by default on current
-    models; `effort` sets its depth. No temperature (rejected on current models)."""
+    models; `effort` sets its depth. No temperature (rejected on current models).
+    cache: a prefix of `user` sent as its own content block with a cache breakpoint, so
+    the next call that starts the same way (same model, within minutes) reads it from the
+    prompt cache instead of paying for it again. Too short a prefix is simply not cached."""
     import anthropic
     client = _claude_client()
+    if cache and user.startswith(cache) and len(cache) < len(user):
+        content = [{'type': 'text', 'text': cache, 'cache_control': {'type': 'ephemeral'}},
+                   {'type': 'text', 'text': user[len(cache):]}]
+    else:
+        content = user
     kw = dict(model=model, max_tokens=max_tokens + 8000, system=system,
-              messages=[{'role': 'user', 'content': user}],
+              messages=[{'role': 'user', 'content': content}],
               output_config={'effort': effort or 'low'})
     t0 = time.time()
     try:
@@ -590,18 +627,21 @@ def _claude(model, system, user, max_tokens, effort):
     except anthropic.APIConnectionError as e:
         raise Exception(f'Could not reach Anthropic: {e}')
     u = resp.usage
-    tin = int((u.input_tokens or 0) + (getattr(u, 'cache_creation_input_tokens', 0) or 0)
-              + (getattr(u, 'cache_read_input_tokens', 0) or 0))
+    c_read = int(getattr(u, 'cache_read_input_tokens', 0) or 0)
+    c_write = int(getattr(u, 'cache_creation_input_tokens', 0) or 0)
+    tin = int((u.input_tokens or 0) + c_write + c_read)
     tout = int(u.output_tokens or 0)
     served = getattr(resp, 'model', None) or model
-    TOTAL_METER.add(served, tin, tout)
+    TOTAL_METER.add(served, tin, tout, cache_read=c_read, cache_write=c_write)
     m = _RUN_METER.get()
     if m is not None:
-        m.add(served, tin, tout)
-    print(f'  [claude] {served} in={tin} out={tout} {time.time() - t0:.1f}s', flush=True)
+        m.add(served, tin, tout, cache_read=c_read, cache_write=c_write)
     if resp.stop_reason == 'refusal':
         raise Exception('The model declined this request. Try again, or switch APEX_MODEL.')
     text = ''.join(getattr(b, 'text', '') for b in resp.content if getattr(b, 'type', '') == 'text')
+    # out counts thinking too; text≈ is the answer's own share (about 4 characters per token)
+    print(f'  [claude] {served} {role or "call"} in={tin}' + (f' cached={c_read}' if c_read else '')
+          + f' out={tout} text≈{len(text) // 4} {time.time() - t0:.1f}s', flush=True)
     if not text.strip() and resp.stop_reason == 'max_tokens':
         raise Exception('model ran out of tokens before answering')
     return text
@@ -613,7 +653,17 @@ class _NoRetry(Exception):
 
 def engine_llm(system, user, **kw):
     """The engine's model calls. The fact-check audit and the blind judge may run
-    on another model (MODEL_AUDIT / MODEL_JUDGE) so the writer never grades itself."""
+    on another model (MODEL_AUDIT / MODEL_JUDGE) so the writer never grades itself.
+    In the economy tier the checks (audit, judge, page cuts) run on MODEL_CHECK and the
+    writing on MODEL_WRITER, at low effort for everything but the rewrite."""
+    if _TIER.get() == 'economy':
+        if system in (engine.VERIFY_SYSTEM, engine.JUDGE_SYSTEM, engine.CUT_SYSTEM):
+            kw.setdefault('model', MODEL_CHECK)
+        else:
+            kw.setdefault('model', MODEL_WRITER)
+        if system != engine.REWRITE_SYSTEM:
+            kw['effort'] = 'low'
+        return gpt(system, user, **kw)
     if system == engine.VERIFY_SYSTEM:
         kw.setdefault('model', MODEL_AUDIT)
     elif system == engine.DIAGNOSE_SYSTEM:
@@ -2310,7 +2360,7 @@ def cover_letter(job_title, sector, resume, supported=(), unsupported=(), *, com
     for attempt in range(2):
         avoid = ('' if not attempt else '\n\nA previous draft was rejected by a fact check for these claims. Do not '
                  'make them, or any like them:\n- ' + '\n- '.join(str(p)[:300] for p in bad.get('letter') or []))
-        letter = _tidy(gpt(sys_p, usr_p + avoid, max_tokens=900, temp=0.4))
+        letter = _tidy(gpt(sys_p, usr_p + avoid, max_tokens=900, temp=0.4, cache=usr_p))
         ok, bad = fact_checked({'letter': {'text': letter, 'evidence': resume + '\n' + vault_text(), 'context': posting}},
                                unsupported, allowed, 'This item is a cover letter.')
         if ok.get('letter'):
@@ -3176,10 +3226,12 @@ Return ONLY JSON:
 # Paste any posting → resume rewritten for THAT job in 30 seconds
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-def job_tailor(job_posting, resume, job_title, sector, emit):
+def job_tailor(job_posting, resume, job_title, sector, emit, align=False):
     """Tailor the resume to one posting with the Evidence Engine: the posting is the
     target, every edit is fact-checked line by line, and the scores come from the
-    blind hiring-manager review against this posting (not the model's own guess)."""
+    blind hiring-manager review against this posting (not the model's own guess).
+    align=True: `resume` is a base the full pipeline already optimized, so only the
+    alignment pass runs (engine.align: one writer call, then the same checks)."""
     log = lambda m: emit({'type': 'log', 'msg': m})
     log('\n⚡ JOB-SPECIFIC TAILORING')
     emit({'type': 'step', 'id': 'analyze', 'status': 'running', 'msg': 'Reading the posting...'})
@@ -3204,7 +3256,7 @@ List up to 20 requirements, most important first.''',
         emit({'type': 'step', 'id': 'rewrite', 'status': 'running', 'msg': 'Rewriting and fact-checking every line...'})
         target = make_target(title, '', sector, {'frequency': [{'name': r} for r in reqs]},
                              supported, unsupported, job_posting[:6000])
-        result = engine.optimize(engine_llm, resume, target, log=log)
+        result = (engine.align if align else engine.optimize)(engine_llm, resume, target, log=log)
         engine_notices(result, emit)
         sc = result.get('score') or {}
         before, after = _norm(resume), _norm(result['final'])
@@ -3579,8 +3631,9 @@ def verify_struct(struct, source):
     return walk(struct if isinstance(struct, dict) else {}, ''), dropped
 
 
-def parse_resume_struct(resume_text):
-    '''Use GPT to extract structured fields from raw resume text.'''
+def parse_resume_struct(resume_text, model=None):
+    '''Use GPT to extract structured fields from raw resume text.
+    model: the economy tier parses on MODEL_CHECK (verify_struct snaps every line to the source).'''
     try:
         raw = gpt(
             'You are a resume parser. Extract structured data. Return ONLY valid JSON.',
@@ -3643,7 +3696,7 @@ Return ONLY this JSON (use empty string/array if missing):
   "awards": ["Award 1"],
   "additional": [{{"header":"PUBLICATIONS","lines":["line 1","line 2"]}}]
 }}''',
-            max_tokens=8000, temp=0.1
+            max_tokens=8000, temp=0.1, model=model
         )
     except Exception as e:
         print(f'  Parse error: {e}')
@@ -4524,26 +4577,112 @@ def agent_digest(pid, owner=''):
             'gaps': radar['gaps'][:3], 'postings': radar['postings']}
 
 
+MIN_POSTING = 30                       # characters; shorter is a stub (a title, a link), not a posting to tailor to
+FULL_POSTING = 400                     # shorter was a board's snippet: the full posting is worth one fetch
+
+
+def posting_text(item, owner=''):
+    """The posting text a kit is tailored to. A queue item saved with only a board's snippet
+    (or nothing: some boards list a job before its description) is fetched from its link
+    once and the full text kept; the snippet still serves when the fetch fails. Nothing at
+    all means no spend. Saved fixtures (tests) never fetch."""
+    text = (item.get('posting') or '').strip()
+    if len(text) >= FULL_POSTING:
+        return text
+    if item.get('url') and not FIXTURE_JOBS:
+        try:
+            found = (fetch_posting(item['url']).get('posting') or '').strip()
+        except Exception:
+            found = ''
+        if len(found) > len(text) and len(found) >= MIN_POSTING:
+            store.update_queue_item(item['id'], owner=owner, posting=found)
+            return found
+    if len(text) >= MIN_POSTING:
+        return text
+    raise RuntimeError('the posting has no text to tailor to (open the link and add it with "Add jobs by link")')
+
+
+def base_key(prof):
+    """What the economy base is made from: the resume, the targets and the evidence vault."""
+    import hashlib
+    raw = (prof.get('base_resume') or '') + '\n' + json.dumps(prof.get('targets') or []) + '\n' + vault_text()
+    return hashlib.sha1(raw.encode('utf-8')).hexdigest()
+
+
+def profile_base(prof, owner='', log=lambda m: None):
+    """The economy tier's base: the profile's resume after the full pipeline (on MODEL), made
+    once and kept until the resume, the targets or the vault change. The target is the
+    profile's first title with the terms its scanned postings ask for most."""
+    key = base_key(prof)
+    if prof.get('base_tailored') and prof.get('base_key') == key:
+        return prof['base_tailored']
+    resume = prof.get('base_resume') or ''
+    title = (prof.get('targets') or ['the role'])[0]
+    sector = apex_domains.sector(apex_domains.detect(title))
+    terms = {}
+    for snap in store.list_radar(prof['id'], owner=owner, limit=14):
+        for k, v in ((snap.get('data') or {}).get('terms') or {}).items():
+            terms[k] = terms.get(k, 0) + v
+    top = [k for k, _ in sorted(terms.items(), key=lambda kv: -kv[1])[:25]]
+    tier = _TIER.set('best')                                     # the base is worth the strong model, once
+    try:
+        supported, unsupported = classify_keywords(resume + '\n' + vault_text(), top, sector, title) if top else ([], [])
+        target = make_target(title, '', sector, {'frequency': [{'name': k} for k in top]}, supported, unsupported)
+        result = engine.optimize(engine_llm, resume, target, log=log)
+        base = result.get('final') or resume
+    finally:
+        _TIER.reset(tier)
+    store.set_profile_base(prof['id'], key, base, owner=owner)
+    log(f'  ✓ Base resume optimized for {title}: {len(result.get("changes") or [])} verified edit(s), kept until the resume changes')
+    return base
+
+
 def agent_prepare(item, owner=''):
-    """Tailor the profile's base resume to one approved posting and write the cover letter."""
+    """Tailor the profile's base resume to one approved posting and write the cover letter.
+    Economy tier (default): the alignment pass on the profile's optimized base; Best: the
+    full pipeline on MODEL. The kit records what the preparation cost."""
     prof = store.get_profile(item['profile_id'], owner=owner)
-    events = []
-    job_tailor(item['posting'], prof['base_resume'], item['title'], apex_domains.sector(apex_domains.detect(item['title'])),
-               events.append)
-    err = next((e.get('msg') for e in events if e.get('type') == 'error'), None)
-    data = next((e.get('data') for e in events if e.get('type') == 'tailor_data'), None) or {}
-    if err or not data.get('tailored_resume'):
-        raise RuntimeError(err or 'the tailored resume came back empty')
-    letter = cover_letter(item['title'], 'general', data['tailored_resume'], company=item['company'],
-                          posting=item['posting'])
-    try:                                   # sections for the PDF, so Apply needs no model call
-        struct, _ = verify_struct(parse_resume_struct(data['tailored_resume']), data['tailored_resume'])
-    except Exception:
-        struct = None
+    posting = posting_text(item, owner)
+    meter = Meter()
+    _RUN_METER.set(meter)
+    tier = prof.get('tier') or 'economy'
+    token = _TIER.set(tier)
+    try:
+        log = lambda m: print(f'  [agent] {m.strip()}', flush=True)
+        resume = profile_base(prof, owner, log) if tier == 'economy' else prof['base_resume']
+        events = []
+        job_tailor(posting, resume, item['title'], apex_domains.sector(apex_domains.detect(item['title'])),
+                   events.append, align=(tier == 'economy'))
+        err = next((e.get('msg') for e in events if e.get('type') == 'error'), None)
+        data = next((e.get('data') for e in events if e.get('type') == 'tailor_data'), None) or {}
+        if err or not data.get('tailored_resume'):
+            raise RuntimeError(err or 'the tailored resume came back empty')
+        letter = cover_letter(item['title'], 'general', data['tailored_resume'], company=item['company'],
+                              posting=posting)
+        try:                               # sections for the PDF, so Apply needs no model call
+            struct, _ = verify_struct(parse_resume_struct(data['tailored_resume'],
+                                                          model=MODEL_CHECK if tier == 'economy' else None),
+                                      data['tailored_resume'])
+        except Exception:
+            struct = None
+    finally:
+        _TIER.reset(token)
+    spent = meter.summary()
     return {'resume': data['tailored_resume'], 'cover_letter': letter['letter'], 'letter_withheld': letter['withheld'],
             'struct': struct,
             'changes': len(data.get('changes') or []), 'gaps': (data.get('gaps') or [])[:8],
-            'score_before': data.get('match_score_before'), 'score_after': data.get('match_score_after')}
+            'score_before': data.get('match_score_before'), 'score_after': data.get('match_score_after'),
+            'tier': tier, 'cost_usd': spent['usd'], 'calls': spent['calls']}
+
+
+def cost_per_job(prof, owner=''):
+    """What preparing one more application for this profile should cost: the median of its
+    last measured kits, else the tier's default."""
+    costs = sorted(store.kit_costs(prof['id'], owner=owner))
+    if costs:
+        return {'usd': round(costs[len(costs) // 2], 4), 'measured': len(costs), 'tier': prof.get('tier') or 'economy'}
+    return {'usd': TIER_COST.get(prof.get('tier') or 'economy', TIER_COST['economy']), 'measured': 0,
+            'tier': prof.get('tier') or 'economy'}
 
 
 def agent_worker(owner=''):
@@ -6472,9 +6611,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {'profiles': store.list_profiles(owner=o), 'scan_hour': AGENT_HOUR}); return
             if method == 'GET' and path == '/api/agent/queue':
                 pid = q('profile')
-                store.get_profile(pid, owner=o)                # 404 unless the profile is in this workspace
+                prof = store.get_profile(pid, owner=o)         # 404 unless the profile is in this workspace
                 self._send_json(200, {'items': store.list_queue(pid, owner=o), 'scanning': pid in _AGENT_SCANNING,
-                                      'preparing': any(t.is_alive() for t in _AGENT_WORKERS)}); return
+                                      'preparing': any(t.is_alive() for t in _AGENT_WORKERS),
+                                      'cost': cost_per_job(prof, o)}); return
             if method == 'GET' and path == '/api/agent/radar':
                 self._send_json(200, agent_radar(q('profile'), o)); return
             if method == 'GET' and path == '/api/agent/digest':

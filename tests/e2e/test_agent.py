@@ -41,6 +41,12 @@ def test_agent_proposes_prepares_on_approval_and_files_applied_jobs(app, fixture
     st, j = call(app, 'GET', '/api/agent/item?id=' + first['id'])
     kit = j['item']['kit']
     assert kit['resume'] and kit['cover_letter'], kit
+    assert kit['tier'] == 'economy' and kit['calls'] > 0 and kit['cost_usd'] > 0, 'what the kit cost is measured'
+    st, j = call(app, 'GET', '/api/agent/queue?profile=' + pid)
+    assert j['cost']['measured'] == 1 and j['cost']['usd'] == kit['cost_usd'] and j['cost']['tier'] == 'economy'
+    p = call(app, 'GET', '/api/agent/profiles')[1]['profiles']
+    me = next(x for x in p if x['id'] == pid)
+    assert me['base_tailored'] and me['base_key'], 'the economy base is made once and kept'
 
     # A second scan never proposes the same job again.
     call(app, 'POST', '/api/agent/scan', {'profile': pid})

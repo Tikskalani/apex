@@ -283,3 +283,32 @@ def test_owner_storage_cap_also_covers_new_applications(monkeypatch):
     S.create_application({'company': 'A', 'role': 'R', 'notes': 'x' * 900})
     with pytest.raises(S.StoreError, match='using all the space'):
         S.create_application({'company': 'B', 'role': 'R', 'notes': 'y' * 200})
+
+
+def test_profile_tier_and_base_resume_round_trip():
+    p = S.save_profile({'name': 'Me', 'targets': 'AI Engineer', 'base_resume': 'SUMMARY\nx'})
+    assert p['tier'] == 'economy' and p['base_tailored'] == '' and p['base_key'] == ''
+    p = S.save_profile({'id': p['id'], 'name': 'Me', 'targets': 'AI Engineer', 'base_resume': 'SUMMARY\nx', 'tier': 'best'})
+    assert p['tier'] == 'best'
+    p = S.save_profile({'id': p['id'], 'name': 'Me', 'tier': 'platinum'})
+    assert p['tier'] == 'economy', 'an unknown tier falls back to economy'
+    S.set_profile_base(p['id'], 'k1', 'SUMMARY\noptimized')
+    p = S.get_profile(p['id'])
+    assert (p['base_key'], p['base_tailored']) == ('k1', 'SUMMARY\noptimized')
+    S.set_profile_base(p['id'], 'k1', 'nope', owner='someone-else')
+    assert S.get_profile(p['id'])['base_tailored'] == 'SUMMARY\noptimized', 'owner-scoped'
+
+
+def test_kit_costs_are_the_measured_spend_of_ready_and_applied_kits():
+    p = S.save_profile({'name': 'Me', 'targets': 'AI Engineer'})
+    assert S.add_queue_items(p['id'], [{'title': f'Job {i}', 'company': 'Acme', 'url': f'https://x.example/{i}',
+                                        'posting': 'p', 'fit': 50 - i, 'reasons': {}} for i in range(4)]) == 4
+    ids = [i['id'] for i in sorted(S.list_queue(p['id']), key=lambda i: -i['fit'])]
+    S.update_queue_item(ids[0], status='ready', kit={'cost_usd': 0.07})
+    S.update_queue_item(ids[1], status='applied', kit={'cost_usd': 0.09})
+    S.update_queue_item(ids[2], status='failed', kit={'cost_usd': 0.5})
+    S.update_queue_item(ids[3], status='ready', kit={'resume': 'no cost recorded'})
+    assert sorted(S.kit_costs(p['id'])) == [0.07, 0.09]
+    assert S.kit_costs(p['id'], owner='other') == []
+    S.update_queue_item(ids[3], posting='the posting text, fetched later')
+    assert S.get_queue_item(ids[3])['posting'] == 'the posting text, fetched later'

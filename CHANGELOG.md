@@ -6,6 +6,14 @@ All notable changes to APEX. Newest first.
 
 ## Unreleased
 
+### Cost
+
+- **Economy tier** (the job agent's default, per profile). Measured before: a prepared application was 15 Opus calls and about $0.96, 37% of it reasoning tokens on verification calls; the page quoted 30¢. Now the full pipeline runs **once per resume** (the base: your resume optimized for your first target with the terms your scanned postings ask for most, kept until the resume, targets or vault change) and each posting gets an **alignment pass**: one writer call that may change the summary, the skills order and at most six bullets, then the same deterministic fact gate, model audit with one retry, page budget and blind judge with veto. In the economy tier Sonnet writes and Haiku checks (`MODEL_WRITER`, `MODEL_CHECK` in config.json), at low reasoning effort for everything but the writer. **Best** keeps the full pipeline on `MODEL` for every posting. The profile editor has the switch.
+- **Measured prices.** Every kit records what it cost (`cost_usd`, `calls`, `tier`; the card shows it) and "Approve all" quotes the median of the profile's last kits instead of a guess. `GET /api/agent/queue` carries `cost`.
+- **No spend on an empty posting.** A queue item saved without posting text (some boards list a job before its description) is fetched from its link once; still empty, the kit fails with the reason instead of tailoring to nothing.
+- **Prompt caching.** Calls that repeat a prefix (a second batch, a retry with the reasons, the other judge order, a cover letter's repair draft) send that prefix as a cached block: Claude then charges 10% of the input price for it. The meter prices cached tokens at their real rates (reads 10%, writes 125%, OpenAI's automatic hits 50%) and the console line shows `cached=`.
+- Rewrite batches are 24 lines, not 20 (a 21-line resume was paying a second full-prompt call for one line); the alignment pass is always one call. The blind judge is skipped when no edit survived (two identical texts). The resume-section parse for the PDF runs on the check model in the economy tier (it was a full-price Opus call, 40% of a kit). The console line for each model call names its role and the answer's own token share.
+
 Everything APEX writes about you is now fact-checked, runs can be cancelled, a bad request costs nothing, and the engine reads more resume layouts. The server still reports version 11.0.
 
 ### Fixed

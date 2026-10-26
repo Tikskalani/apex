@@ -100,6 +100,9 @@ CREATE TABLE IF NOT EXISTS profiles (       -- one per person the job agent sear
     skip_ghosts  INTEGER NOT NULL DEFAULT 1,   -- likely ghost postings are not proposed
     review_first INTEGER NOT NULL DEFAULT 0,   -- the agent fills and waits for a person to press Submit
     min_fit_submit INTEGER NOT NULL DEFAULT 55, -- the quality bar: fit below this is never sent unasked
+    tier         TEXT NOT NULL DEFAULT 'economy', -- economy (base optimized once, cheap per-job alignment) | best
+    base_tailored TEXT NOT NULL DEFAULT '',    -- the base resume after the full pipeline (economy tier)
+    base_key     TEXT NOT NULL DEFAULT '',     -- hash of what base_tailored was made from; stale when it differs
     active       INTEGER NOT NULL DEFAULT 1,   -- scanned every morning
     last_scan    TEXT,                         -- YYYY-MM-DD (local) of the last scan
     created_at   TEXT NOT NULL,
@@ -254,6 +257,10 @@ def init():
         if not any(r['name'] == 'review_first' for r in conn.execute("SELECT name FROM pragma_table_info('profiles')")):
             conn.execute('ALTER TABLE profiles ADD COLUMN review_first INTEGER NOT NULL DEFAULT 0')
             conn.execute('ALTER TABLE profiles ADD COLUMN min_fit_submit INTEGER NOT NULL DEFAULT 55')
+        if not any(r['name'] == 'tier' for r in conn.execute("SELECT name FROM pragma_table_info('profiles')")):
+            conn.execute("ALTER TABLE profiles ADD COLUMN tier TEXT NOT NULL DEFAULT 'economy'")
+            conn.execute("ALTER TABLE profiles ADD COLUMN base_tailored TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE profiles ADD COLUMN base_key TEXT NOT NULL DEFAULT ''")
         if not any(r['name'] == 'contact_email' for r in conn.execute("SELECT name FROM pragma_table_info('applications')")):
             conn.execute("ALTER TABLE applications ADD COLUMN contact_email TEXT NOT NULL DEFAULT ''")
             conn.execute("ALTER TABLE applications ADD COLUMN contact_name TEXT NOT NULL DEFAULT ''")
@@ -666,7 +673,13 @@ def _profile_row(r):
     d['digest_email'] = d.get('digest_email') or ''
     d['review_first'] = bool(d.get('review_first'))
     d['min_fit_submit'] = int(d.get('min_fit_submit') if d.get('min_fit_submit') is not None else 55)
+    d['tier'] = d.get('tier') if d.get('tier') in TIERS else 'economy'
+    d['base_tailored'] = d.get('base_tailored') or ''
+    d['base_key'] = d.get('base_key') or ''
     return d
+
+
+TIERS = ('economy', 'best')
 
 
 def _int(v, field, lo, hi, default):
@@ -698,7 +711,8 @@ def save_profile(data, *, owner=''):
            'digest_email': _text(data.get('digest_email'), 'digest email', 200),
            'skip_ghosts': 1 if data.get('skip_ghosts', True) not in (False, 0, '0', 'false') else 0,
            'review_first': 1 if data.get('review_first') not in (None, False, 0, '0', 'false', '') else 0,
-           'min_fit_submit': _int(data.get('min_fit_submit'), 'minimum fit to submit', 0, 100, 55)}
+           'min_fit_submit': _int(data.get('min_fit_submit'), 'minimum fit to submit', 0, 100, 55),
+           'tier': data.get('tier') if data.get('tier') in TIERS else 'economy'}
     if rec['digest_email'] and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', rec['digest_email']):
         raise StoreError('digest email does not look like an address')
     now = _now()
@@ -707,12 +721,13 @@ def save_profile(data, *, owner=''):
         row = conn.execute('SELECT id FROM profiles WHERE id = ? AND owner = ?', (pid, owner)).fetchone() if pid else None
         vals = (rec['name'], rec['base_resume'], rec['targets'], rec['location'], rec['remote_ok'],
                 rec['daily_limit'], rec['min_fit'], rec['auto_prepare'], rec['active'], rec['auto_submit'], rec['answers'],
-                rec['followups'], rec['digest_email'], rec['skip_ghosts'], rec['review_first'], rec['min_fit_submit'])
+                rec['followups'], rec['digest_email'], rec['skip_ghosts'], rec['review_first'], rec['min_fit_submit'],
+                rec['tier'])
         if row:
             conn.execute('UPDATE profiles SET name = ?, base_resume = ?, targets = ?, location = ?, remote_ok = ?,'
                          ' daily_limit = ?, min_fit = ?, auto_prepare = ?, active = ?, auto_submit = ?, answers = ?,'
                          ' followups = ?, digest_email = ?, skip_ghosts = ?, review_first = ?, min_fit_submit = ?,'
-                         ' updated_at = ? WHERE id = ? AND owner = ?', (*vals, now, pid, owner))
+                         ' tier = ?, updated_at = ? WHERE id = ? AND owner = ?', (*vals, now, pid, owner))
         else:
             n = conn.execute('SELECT count(*) FROM profiles WHERE owner = ?', (owner,)).fetchone()[0]
             if n >= MAX_PROFILES_PER_OWNER:
@@ -720,9 +735,34 @@ def save_profile(data, *, owner=''):
             pid = uuid.uuid4().hex
             conn.execute('INSERT INTO profiles (id, owner, name, base_resume, targets, location, remote_ok, daily_limit,'
                          ' min_fit, auto_prepare, active, auto_submit, answers, followups, digest_email, skip_ghosts,'
-                         ' review_first, min_fit_submit, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                         ' review_first, min_fit_submit, tier, created_at, updated_at)'
+                         ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                          (pid, owner, *vals, now, now))
     return get_profile(pid, owner=owner)
+
+
+def set_profile_base(pid, key, text, *, owner=''):
+    """Keep the base resume the full pipeline produced for a profile (economy tier), with the
+    key of what it was made from. A later call with another key replaces it."""
+    with _db(immediate=True) as conn:
+        conn.execute('UPDATE profiles SET base_tailored = ?, base_key = ? WHERE id = ? AND owner = ?',
+                     (str(text or ''), str(key or ''), pid, owner))
+
+
+def kit_costs(pid, *, owner='', limit=12):
+    """Measured model spend (USD) of the profile's last prepared kits, newest first."""
+    with _db() as conn:
+        rows = conn.execute("SELECT kit FROM queue WHERE owner = ? AND profile_id = ? AND status IN ('ready','applied')"
+                            ' ORDER BY updated_at DESC LIMIT ?', (owner, pid, int(limit))).fetchall()
+    out = []
+    for r in rows:
+        try:
+            c = (json.loads(r['kit'] or '{}') or {}).get('cost_usd')
+        except Exception:
+            c = None
+        if isinstance(c, (int, float)) and c >= 0:
+            out.append(float(c))
+    return out
 
 
 def get_profile(pid, *, owner=''):
@@ -839,15 +879,17 @@ def set_queue_status(ids, status, *, owner='', only_from=None):
     return moved
 
 
-def update_queue_item(qid, *, owner='', status=None, kit=None, application_id=None):
-    """Set any of status, kit and application_id; the others keep their value."""
+def update_queue_item(qid, *, owner='', status=None, kit=None, application_id=None, posting=None):
+    """Set any of status, kit, application_id and posting; the others keep their value."""
     if status is not None and status not in QUEUE_STATUSES:
         raise StoreError('bad queue status')
     kit_json = None if kit is None else json.dumps(kit, ensure_ascii=False)[:MAX_TEXT]
+    posting = None if posting is None else str(posting)[:MAX_TEXT]
     with _db() as conn:
         conn.execute('UPDATE queue SET status = COALESCE(?, status), kit = COALESCE(?, kit),'
-                     ' application_id = COALESCE(?, application_id), updated_at = ? WHERE id = ? AND owner = ?',
-                     (status, kit_json, application_id, _now(), qid, owner))
+                     ' application_id = COALESCE(?, application_id), posting = COALESCE(?, posting), updated_at = ?'
+                     ' WHERE id = ? AND owner = ?',
+                     (status, kit_json, application_id, posting, _now(), qid, owner))
 
 
 def claim_approved(*, owner=''):

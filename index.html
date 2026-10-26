@@ -1803,7 +1803,7 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
           <div class="view-header">
             <div class="view-eyebrow">Job agent</div>
             <h1 class="view-title">Apply queue</h1>
-            <p class="view-subtitle">Every morning APEX searches for new jobs that fit each profile and lists the best ones here. Approve the ones you want: APEX tailors the resume to each posting and writes a cover letter, both fact-checked (about 30¢ each). Then open the posting, apply, and mark it applied. APEX never submits an application for you.</p>
+            <p class="view-subtitle">Every morning APEX searches for new jobs that fit each profile and lists the best ones here. Approve the ones you want: APEX tailors the resume to each posting and writes a cover letter, both fact-checked, for a few cents a job in the Economy tier. With Apply for me on, it submits them too.</p>
           </div>
           <div class="card" style="margin-bottom:var(--s4)">
             <div style="display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center">
@@ -1838,7 +1838,8 @@ mark.blank { background: var(--acc-bg); color: var(--acc-soft); border: 1px dash
               <label>Location <input id="ag-location" placeholder="Houston, TX (blank: anywhere)"></label>
               <label>Jobs proposed per day <input id="ag-limit" type="number" min="1" max="50" value="30"></label>
               <label>Minimum fit (0-90) <input id="ag-minfit" type="number" min="0" max="90" value="35"></label>
-              <label>Apply to the best N each day (about 30¢ each to tailor) <input id="ag-auto" type="number" min="0" max="20" value="10"></label>
+              <label>Apply to the best N each day <input id="ag-auto" type="number" min="0" max="20" value="10"></label>
+              <label>Tailoring tier <select id="ag-tier"><option value="economy">Economy: the base resume is optimized once by the strong model, then each posting gets a cheap alignment pass (about 8¢ a job)</option><option value="best">Best: the full pipeline on the strong model for every posting (about $1 a job)</option></select></label>
               <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-remote" checked> Include remote jobs</label>
               <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-active" checked> Scan every morning</label>
               <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ag-submit" checked> Apply for me: APEX submits the applications itself</label>
@@ -2395,6 +2396,7 @@ function agEditor(p) {
   $('ag-ghosts').checked = p ? p.skip_ghosts !== false : true;
   $('ag-review').checked = p ? !!p.review_first : false;
   $('ag-bar').value = p ? (p.min_fit_submit ?? 55) : 55;
+  $('ag-tier').value = p ? (p.tier || 'economy') : 'economy';
   $('ag-followups').value = p ? (p.followups || 'draft') : 'auto';
   $('ag-digest').value = p ? (p.digest_email || '') : '';
   const ans = (p && p.answers) || {};
@@ -2595,6 +2597,7 @@ async function agSave(btn) {
       targets: $('ag-targets').value, location: $('ag-location').value, daily_limit: $('ag-limit').value,
       min_fit: $('ag-minfit').value, auto_prepare: $('ag-auto').value, remote_ok: $('ag-remote').checked, active: $('ag-active').checked,
       auto_submit: $('ag-submit').checked, skip_ghosts: $('ag-ghosts').checked, review_first: $('ag-review').checked, min_fit_submit: $('ag-bar').value,
+      tier: $('ag-tier').value,
       followups: $('ag-followups').value, digest_email: $('ag-digest').value.trim(),
       answers: Object.fromEntries([...document.querySelectorAll('#ag-answers [data-ans]')].map(el => [el.dataset.ans, el.value.trim()])),
       base_resume: $('ag-resume').value });
@@ -2647,6 +2650,7 @@ async function agQueue() {
   try {
     const j = await api('/api/agent/queue?profile=' + encodeURIComponent(AG.pid));
     AG.items = j.items || [];
+    if (j.cost) AG.cost = j.cost;
     const prof = AG.profiles.find(p => p.id === AG.pid) || {};
     const n = st => AG.items.filter(i => i.status === st).length;
     $('ag-status').textContent = j.scanning ? 'Scanning job boards…'
@@ -2700,6 +2704,7 @@ function agCard(i) {
   }
   const ready = i.status === 'ready' ? tried + `<div style="font-size:12.5px;color:var(--fg-2);margin-top:6px">${k.changes || 0} verified edit${k.changes === 1 ? '' : 's'} for this posting`
     + (k.score_before != null && k.score_after != null ? ` · fit ${k.score_before} → ${k.score_after}` : '')
+    + (typeof k.cost_usd === 'number' ? ` · cost ${fmtCents(k.cost_usd * 100)}` : '')
     + (arr(k.gaps).length ? ` · not shown (never added): ${escHtml(arr(k.gaps).slice(0, 5).join(', '))}` : '')
     + (k.letter_withheld && arr(k.letter_withheld).length ? ' · cover letter withheld by the fact check' : '') + '</div>' : '';
   return `<div class="block" data-qid="${escHtml(i.id)}">
@@ -2733,7 +2738,9 @@ async function agAct(path, ids, btn) {
 async function agApproveAll(btn) {
   const ids = AG.items.filter(i => i.status === 'proposed').map(i => i.id);
   if (!ids.length) return;
-  if (!window.confirm(`Approve all ${ids.length}? APEX will tailor a resume and write a cover letter for each (about $${(ids.length * 0.3).toFixed(2)} in AI usage).`)) return;
+  const c = AG.cost || { usd: 0.08, measured: 0, tier: 'economy' };
+  const basis = c.measured ? `measured over your last ${c.measured} job${c.measured === 1 ? '' : 's'}` : `the ${c.tier === 'best' ? 'Best' : 'Economy'} tier's usual rate`;
+  if (!window.confirm(`Approve all ${ids.length}? APEX will tailor a resume and write a cover letter for each: about $${(ids.length * c.usd).toFixed(2)} in AI usage (${basis}).`)) return;
   await agAct('/api/agent/approve', ids, btn);
 }
 

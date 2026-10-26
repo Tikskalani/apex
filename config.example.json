@@ -9,6 +9,10 @@
   "MODEL_AUDIT": "",
   "MODEL_JUDGE": "",
 
+  "_economy_note": "Optional. The job agent's Economy tier: MODEL_WRITER writes the per-posting alignment and cover letter, MODEL_CHECK runs its fact audit, judge and page cuts. Empty: Sonnet and Haiku with an Anthropic key, else MODEL and MODEL_FAST.",
+  "MODEL_WRITER": "",
+  "MODEL_CHECK": "",
+
   "ANTHROPIC_KEY": "sk-ant-YOUR_ANTHROPIC_API_KEY_HERE",
   "_workspace_note": "Only for organisation-level Anthropic keys (error: 'not scoped to a workspace'). Find it under Settings > Workspaces.",
   "ANTHROPIC_WORKSPACE_ID": "",

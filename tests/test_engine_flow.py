@@ -205,3 +205,61 @@ def test_untrusted_text_is_delimited_and_marked_as_data():
                    (E.VERIFY_SYSTEM, 'strict fact checker for resumes'), (E.JUDGE_SYSTEM, 'You reward evidence'),
                    (E.REPAIR_SYSTEM, 'You correct text written for a job candidate')):
         assert sub in s
+
+
+# ── the alignment pass (economy tier) ────────────────────────────────────────
+
+def test_align_is_one_writer_call_plus_the_same_checks():
+    llm = Model({'B1': ['Built recurring reports for the management team']}, judge=(50, 70))
+    r = E.align(llm, MARCUS, TARGET)
+    systems = [s for s, _ in llm.prompts]
+    assert E.DIAGNOSE_SYSTEM not in systems, 'no recruiter review: the base was already reviewed'
+    assert systems.count(E.REWRITE_SYSTEM) == 1 and E.VERIFY_SYSTEM in systems and systems.count(E.JUDGE_SYSTEM) == 2
+    rewrite_prompt = next(u for s, u in llm.prompts if s == E.REWRITE_SYSTEM)
+    assert 'ALIGNMENT PASS' in rewrite_prompt and 'At most 6 bullet edits' in rewrite_prompt
+    assert r['mode'] == 'align' and [c['id'] for c in r['changes']] == ['B1'] and 'Built recurring reports' in r['final']
+    assert r['questions'] == [], 'no questions: nothing was diagnosed'
+
+
+def test_align_keeps_the_judge_veto():
+    r = E.align(Model({'B1': ['Built recurring reports for the management team']}, judge=(60, 52)), MARCUS, TARGET)
+    assert r['final'] == MARCUS and r['changes'] == [] and r['veto']['after'] == 52
+
+
+def test_align_caps_bullet_edits_keeping_the_ones_that_cite_the_posting():
+    class Many(Model):
+        def __call__(self, system, user, **kw):
+            if system == E.REWRITE_SYSTEM:
+                self.prompts.append((system, user))
+                return json.dumps({'edits': [
+                    {'id': 'B1', 'lines': ['Built recurring reports for the management team'], 'why': 'x', 'keywords': []},
+                    {'id': 'B2', 'lines': ['Queried SQL databases to extract reporting data'], 'why': 'y', 'keywords': ['SQL']}],
+                    'order': [], 'section_order': []})
+            return super().__call__(system, user, **kw)
+    r = E.align(Many(judge=(50, 70)), MARCUS, TARGET, max_edits=1)
+    assert [c['id'] for c in r['changes']] == ['B2'], 'the edit that uses a posting term survives the cap'
+
+
+def test_sibling_calls_name_the_prefix_they_share_for_the_prompt_cache():
+    seen = []
+
+    class Caching(Model):
+        def __call__(self, system, user, cache='', **kw):
+            seen.append((system, user, cache))
+            return super().__call__(system, user, **kw)
+    E.optimize(Caching({'B1': ['Built recurring reports for the management team']}, judge=(50, 70)), MARCUS, TARGET)
+    for sysp, marker in ((E.DIAGNOSE_SYSTEM, '\nIds present:'), (E.REWRITE_SYSTEM, '\nREVIEWER NOTES PER ID:'),
+                         (E.JUDGE_SYSTEM, '\n=== A ===')):
+        calls = [(u, c) for s, u, c in seen if s == sysp]
+        assert calls, sysp[:30]
+        for user, cache in calls:
+            assert cache and user.startswith(cache) and marker not in cache, sysp[:30]
+    a, b = [c for s, u, c in seen if s == E.JUDGE_SYSTEM]
+    assert a == b and len(a) > 200, 'both judge orders share one prefix'
+
+
+def test_no_judge_when_no_edit_survived():
+    llm = Model({}, judge=(50, 70))                      # the model proposes nothing
+    r = E.align(llm, MARCUS, TARGET)
+    assert r['changes'] == [] and r['score'] is None
+    assert E.JUDGE_SYSTEM not in [s for s, _ in llm.prompts], 'two identical texts are not worth two calls'
