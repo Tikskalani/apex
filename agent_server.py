@@ -3274,6 +3274,7 @@ List up to 20 requirements, most important first.''',
             'changes': result.get('changes') or [],
             'rejected': result.get('rejected') or [],
             'questions': result.get('questions') or [],
+            'mode': result.get('mode') or 'full',    # align: the economy pass on an optimized base
         }
         emit({'type': 'step', 'id': 'rewrite', 'status': 'done'})
         emit({'type': 'tailor_data', 'data': data})
@@ -4673,6 +4674,33 @@ def agent_prepare(item, owner=''):
             'changes': len(data.get('changes') or []), 'gaps': (data.get('gaps') or [])[:8],
             'score_before': data.get('match_score_before'), 'score_after': data.get('match_score_after'),
             'tier': tier, 'cost_usd': spent['usd'], 'calls': spent['calls']}
+
+
+def profile_for_resume(resume, owner=''):
+    """The economy-tier profile whose base resume is this text, if any: the Tailor tab then
+    works from that profile's optimized base for cents instead of the full pipeline."""
+    key = _norm(resume or '')
+    if not key:
+        return None
+    hits = [p for p in store.list_profiles(owner=owner)
+            if (p.get('tier') or 'economy') == 'economy' and _norm(p.get('base_resume') or '') == key]
+    return hits[-1] if hits else None                 # list_profiles is oldest first: the newest wins
+
+
+def tailor_for(job_posting, resume, job_title, sector, emit, owner=''):
+    """job_tailor for the Tailor tab. When the resume is an economy profile's, the profile's
+    base (made once) is aligned to the posting; otherwise the full pipeline runs as before."""
+    prof = profile_for_resume(resume, owner)
+    if not prof:
+        return job_tailor(job_posting, resume, job_title, sector, emit)
+    token = _TIER.set('economy')
+    try:
+        log = lambda m: emit({'type': 'log', 'msg': m})
+        base = profile_base(prof, owner, log)
+        log(f'  ✓ Economy tier: aligning the optimized base of "{prof["name"]}" to this posting')
+        job_tailor(job_posting, base, job_title, sector, emit, align=True)
+    finally:
+        _TIER.reset(token)
 
 
 def cost_per_job(prof, owner=''):
@@ -6857,7 +6885,8 @@ class Handler(BaseHTTPRequestHandler):
 
         # ── STREAMED TOOLS ───────────────────────────────────────────────────
         if route == '/tailor':
-            S(lambda emit: job_tailor(g('jobPosting', ''), g('resume', ''), g('jobTitle', ''), g('sector', 'general'), emit)); return
+            S(lambda emit: tailor_for(g('jobPosting', ''), g('resume', ''), g('jobTitle', ''), g('sector', 'general'), emit,
+                                      self.owner)); return
         if route == '/bullets':
             S(lambda emit: bullet_ranker(g('resume', ''), g('jobTitle', ''), g('sector', 'general'), g('keywords') or [], emit)); return
         if route == '/negotiate':

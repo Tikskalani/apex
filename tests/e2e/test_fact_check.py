@@ -29,7 +29,9 @@ def data_of(events, kind):
 
 
 def test_tailor_runs_the_evidence_engine(app, fixture_resume):
-    events = sse(app, '/tailor', {'resume': fixture_resume, 'jobTitle': 'Senior Data Analyst', 'sector': 'general',
+    # A resume no profile holds (other tests make profiles from fixture_resume): the full pipeline.
+    resume = fixture_resume + '\n\nVOLUNTEERING\n- Food bank data entry, weekends'
+    events = sse(app, '/tailor', {'resume': resume, 'jobTitle': 'Senior Data Analyst', 'sector': 'general',
                                   'jobPosting': 'Meridian Health: Senior Data Analyst. SQL, Tableau, dashboards.'})
     d = data_of(events, 'tailor_data')
     assert d['verified'] is True
@@ -124,3 +126,28 @@ def test_withheld_text_is_explained_in_the_page(probe, fixture_resume):
     expect(out.locator('.withheld')).to_contain_text("claimed something your resume doesn't show")
     expect(out).not_to_contain_text('40%')
     probe.assert_clean()
+
+
+def test_tailor_on_an_economy_profile_resume_aligns_its_base(app, fixture_resume, fake_openai):
+    """The Tailor tab on the resume of an economy profile: the profile's base is made once (full
+    pipeline), then every posting is an alignment pass (no recruiter review) for cents."""
+    resume = fixture_resume + '\n\nVOLUNTEERING\n- Mentor, Women in Data Houston'      # this profile's own resume
+    st, j = call(app, 'POST', '/api/agent/profiles', {'name': 'Eco', 'targets': 'Data Analyst', 'base_resume': resume,
+                                                      'active': False})
+    assert st == 200 and j['profile']['tier'] == 'economy'
+    pid = j['profile']['id']
+    body = {'resume': resume, 'jobTitle': 'Senior Data Analyst', 'sector': 'general',
+            'jobPosting': 'Meridian Health: Senior Data Analyst. SQL, Tableau, dashboards.'}
+    d = data_of(sse(app, '/tailor', body), 'tailor_data')
+    assert d['mode'] == 'align' and d['verified'] is True
+    me = next(p for p in call(app, 'GET', '/api/agent/profiles')[1]['profiles'] if p['id'] == pid)
+    assert me['base_tailored'] and me['base_key'], 'the base was made and kept'
+    before = len(fake_openai.calls)
+    d2 = data_of(sse(app, '/tailor', body), 'tailor_data')
+    new = fake_openai.calls[before:]
+    assert d2['mode'] == 'align' and new
+    assert not any('the way the real screen works' in c['system'] for c in new), 'no recruiter review the second time'
+    # Another resume (not a profile's) still gets the full pipeline.
+    d3 = data_of(sse(app, '/tailor', dict(body, resume=resume + '\n- Volunteer: food bank data entry')), 'tailor_data')
+    assert d3['mode'] == 'full'
+    call(app, 'POST', '/api/agent/profiles/delete', {'id': pid})

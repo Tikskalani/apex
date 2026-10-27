@@ -9,6 +9,8 @@ All notable changes to APEX. Newest first.
 ### Cost
 
 - **Economy tier** (the job agent's default, per profile). Measured before: a prepared application was 15 Opus calls and about $0.96, 37% of it reasoning tokens on verification calls; the page quoted 30¢. Now the full pipeline runs **once per resume** (the base: your resume optimized for your first target with the terms your scanned postings ask for most, kept until the resume, targets or vault change) and each posting gets an **alignment pass**: one writer call that may change the summary, the skills order and at most six bullets, then the same deterministic fact gate, model audit with one retry, page budget and blind judge with veto. In the economy tier Sonnet writes and Haiku checks (`MODEL_WRITER`, `MODEL_CHECK` in config.json), at low reasoning effort for everything but the writer. **Best** keeps the full pipeline on `MODEL` for every posting. The profile editor has the switch.
+- **Apply for me on the market cards.** Search the market now hands any listing to the agent in one click: the job is queued approved, and the agent tailors on the profile's base, writes the letter, fills and submits. The old "View & Apply" link is "Open posting".
+- **The Tailor tab uses the economy base too.** `/tailor` on the resume of an economy profile aligns that profile's optimized base to the posting (cents) instead of running the full pipeline ($1); `tailor_data.mode` says which (`align` or `full`). Any other resume runs the full pipeline as before.
 - **Measured prices.** Every kit records what it cost (`cost_usd`, `calls`, `tier`; the card shows it) and "Approve all" quotes the median of the profile's last kits instead of a guess. `GET /api/agent/queue` carries `cost`.
 - **No spend on an empty posting.** A queue item saved without posting text (some boards list a job before its description) is fetched from its link once; still empty, the kit fails with the reason instead of tailoring to nothing.
 - **Prompt caching.** Calls that repeat a prefix (a second batch, a retry with the reasons, the other judge order, a cover letter's repair draft) send that prefix as a cached block: Claude then charges 10% of the input price for it. The meter prices cached tokens at their real rates (reads 10%, writes 125%, OpenAI's automatic hits 50%) and the console line shows `cached=`.
@@ -17,6 +19,8 @@ All notable changes to APEX. Newest first.
 Everything APEX writes about you is now fact-checked, runs can be cancelled, a bad request costs nothing, and the engine reads more resume layouts. The server still reports version 11.0.
 
 ### Fixed
+
+- The Apply Queue failed to render ("Cannot access 'recordHtml' before initialization") as soon as it held an application APEX had submitted.
 
 - **From the second live run.** A job board's page (trabajo.org, jobrapido, JobLeads, Monster...) is never treated as an application form: APEX only follows its Apply link outward, and when there is none it says so and, when the source gave the employer's website, looks for the job on the employer's own careers pages. Submit is pressed only on the application form's own submit control, never a "Report", "Save job", "Share" or alert button. A cookie banner is declined (or acknowledged) before anything is clicked. Custom dropdowns that render their options a moment after the click (Phenom career sites, react-select) are now read. A picture of the page is kept whenever APEX leaves a form for you.
 

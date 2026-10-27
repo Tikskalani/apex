@@ -683,3 +683,29 @@ def test_search_health_and_sign_ins_cards_render(ui):
     page.click('#logins summary')
     expect(page.locator('#logins-list')).to_contain_text(re.compile(r'None yet|myworkday'))
     ui.assert_clean()
+
+
+def test_apply_for_me_on_a_market_card_queues_the_job_for_the_agent(ui):
+    page = ui.page
+    page.evaluate("""fetch('/api/agent/profiles', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: 'Me', targets: 'Data Analyst', base_resume: 'SUMMARY\\nAnalyst', active: false})}).then(r => r.json())""")
+    page.route('**/live-jobs', lambda r: r.fulfill(status=200, content_type='application/json', body=json.dumps({
+        'jobs': [{'title': 'Data Analyst LIVEJOB', 'company': 'Acme', 'location': 'Remote', 'url': 'https://acme.test/j',
+                  'source': 'stub', 'posted': '2 days ago', 'snippet': 'SQL'}], 'count': 1, 'query': 'Data Analyst'})))
+    seen = {}
+    def links(route):
+        seen['body'] = json.loads(route.request.post_data or '{}')
+        route.fulfill(status=200, content_type='application/json',
+                      body=json.dumps({'added': 1, 'items': [{'url': 'https://acme.test/j', 'title': 'Data Analyst LIVEJOB',
+                                                              'company': 'Acme', 'status': 'approved'}], 'failed': []}))
+    page.route('**/api/agent/links', links)
+    go(page, 'jobs')
+    page.fill('#jobs-q', 'Data Analyst'); page.click('#jobs-search-btn')
+    expect(page.locator('#jobs-list .job-card')).to_have_count(1)
+    btn = page.locator('#jobs-list .job-card button[data-action="quickAgent"]')
+    expect(btn).to_have_count(1) and expect(btn).to_have_text('Apply for me')
+    btn.click()
+    expect(page.locator('body')).to_contain_text('Queued for the agent: Data Analyst LIVEJOB at Acme')
+    expect(btn).to_have_text('Queued ✓')
+    assert seen['body']['urls'] == ['https://acme.test/j'] and seen['body']['profile']
+    ui.assert_clean()
